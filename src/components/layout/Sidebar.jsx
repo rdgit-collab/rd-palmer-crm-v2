@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { LayoutDashboard, Building2, UserCircle, TrendingUp, FileText, Receipt, Activity, Ticket, Wrench, MapPin, RotateCcw, Gauge, Hash, Package, Settings, Users, X } from 'lucide-react'
+import { LayoutDashboard, Building2, UserCircle, TrendingUp, FileText, Receipt, Activity, Ticket, Wrench, MapPin, RotateCcw, Gauge, Hash, Package, Settings, Users, X, User, LogOut } from 'lucide-react'
 
 const salesItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -43,7 +43,7 @@ const adminItems = [
 ]
 
 export default function Sidebar({ open, onClose }) {
-  const { profile } = useAuth()
+  const { profile, signOut } = useAuth()
   const location = useLocation()
   const items = profile?.role_id === 1 ? adminItems : profile?.role_id === 2 ? salesItems : serviceItems
   const roleLabel = profile?.role_id === 1 ? 'Admin' : profile?.role_id === 2 ? 'Sales' : 'Service'
@@ -78,10 +78,20 @@ export default function Sidebar({ open, onClose }) {
             )
           })}
         </nav>
-        <div className="border-t border-gray-800 px-4 py-3">
-          <div className="text-xs text-gray-500">Signed in as</div>
-          <div className="text-sm text-white font-medium truncate">{profile?.first_name} {profile?.last_name}</div>
-          <div className="text-xs text-[#CC0000]">{roleLabel}</div>
+        <div className="border-t border-gray-800 px-3 py-3 space-y-1">
+          <div className="px-2 pb-1">
+            <div className="text-xs text-gray-500">Signed in as</div>
+            <div className="text-sm text-white font-medium truncate">{profile?.first_name} {profile?.last_name}</div>
+            <div className="text-xs text-[#CC0000]">{roleLabel}</div>
+          </div>
+          <Link to="/profile" onClick={onClose}
+            className={`flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${location.pathname === '/profile' ? 'bg-[#CC0000] text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <User size={14} /> My Profile
+          </Link>
+          <button onClick={signOut}
+            className="flex items-center gap-3 w-full px-3 py-2 rounded text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+            <LogOut size={14} /> Sign Out
+          </button>
         </div>
       </div>
     </>

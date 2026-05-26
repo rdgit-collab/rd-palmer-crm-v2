@@ -18,6 +18,7 @@ import SerialNumbers from './pages/service/SerialNumbers'
 import Users from './pages/admin/Users'
 import Catalogue from './pages/admin/Catalogue'
 import Settings from './pages/admin/Settings'
+import Profile from './pages/Profile'
 
 function ProtectedRoute({ children, roles }) {
   const { user, profile, loading } = useAuth()
@@ -56,6 +57,7 @@ function AppRoutes() {
         <Route path="catalogue" element={<Catalogue />} />
         <Route path="admin/users" element={<ProtectedRoute roles={[1]}><Users /></ProtectedRoute>} />
         <Route path="settings" element={<ProtectedRoute roles={[1]}><Settings /></ProtectedRoute>} />
+        <Route path="profile" element={<Profile />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

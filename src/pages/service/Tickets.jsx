@@ -44,6 +44,7 @@ const emptyProduct = { sku: '', item_description: '', serial_number: '', remark:
 export default function Tickets() {
   const { user } = useAuth()
   const [view, setView]             = useState('list')
+  const [tab, setTab]               = useState('open')
   const [tickets, setTickets]       = useState([])
   const [total, setTotal]           = useState(0)
   const [page, setPage]             = useState(1)
@@ -75,7 +76,7 @@ export default function Tickets() {
     let q = supabase
       .from('ticket')
       .select('*', { count: 'exact' })
-      .eq('is_completed', 0)
+      .eq('is_completed', tab === 'open' ? 0 : 1)
       .order('id', { ascending: false })
 
     if (search)        q = q.or(`company_name.ilike.%${search}%,priority.ilike.%${search}%`)
@@ -85,7 +86,7 @@ export default function Tickets() {
     const { data, count, error: err } = await q
     if (!err) { setTickets(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, priorityFilter, page])
+  }, [search, priorityFilter, page, tab])
 
   useEffect(() => { fetchTickets() }, [fetchTickets])
 
@@ -264,14 +265,25 @@ export default function Tickets() {
   if (view === 'list') {
     return (
       <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Open Tickets</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold text-gray-900">Tickets</h1>
           <button
             onClick={openAdd}
             className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"
           >
             <Plus size={16} /> New Ticket
           </button>
+        </div>
+
+        {/* Open / Closed tabs */}
+        <div className="flex gap-1 mb-5 border-b border-gray-200">
+          {[['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => (
+            <button key={id} onClick={() => { setTab(id); setPage(1) }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >{label}</button>
+          ))}
         </div>
 
         {/* Search + Priority Filter */}
@@ -316,7 +328,7 @@ export default function Tickets() {
               {loading ? (
                 <tr><td colSpan={8} className="text-center py-12 text-gray-400">Loading...</td></tr>
               ) : tickets.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No open tickets found.</td></tr>
+                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No {tab} tickets found.</td></tr>
               ) : tickets.map(t => {
                 const assignedUser = users.find(u => u.id == t.assigned_to)
                 const today = new Date().toISOString().split('T')[0]
@@ -353,9 +365,11 @@ export default function Tickets() {
                         <button onClick={() => openEdit(t)} className="text-gray-500 hover:text-gray-700" title="Edit">
                           <Edit2 size={15} />
                         </button>
-                        <button onClick={() => setCompleteId(t.id)} className="text-green-600 hover:text-green-700" title="Mark Complete">
-                          <CheckCircle size={15} />
-                        </button>
+                        {tab === 'open' && (
+                          <button onClick={() => setCompleteId(t.id)} className="text-green-600 hover:text-green-700" title="Mark Complete">
+                            <CheckCircle size={15} />
+                          </button>
+                        )}
                         <button onClick={() => setDeleteId(t.id)} className="text-red-500 hover:text-red-700" title="Delete">
                           <Trash2 size={15} />
                         </button>

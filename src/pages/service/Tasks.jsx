@@ -21,6 +21,7 @@ const emptyForm = {
 export default function Tasks() {
   const { user } = useAuth()
   const [view, setView]           = useState('list')
+  const [tab, setTab]             = useState('open')
   const [tasks, setTasks]         = useState([])
   const [total, setTotal]         = useState(0)
   const [page, setPage]           = useState(1)
@@ -45,7 +46,7 @@ export default function Tasks() {
     let q = supabase
       .from('task')
       .select('*', { count: 'exact' })
-      .eq('is_completed', 0)
+      .eq('is_completed', tab === 'open' ? 0 : 1)
       .order('id', { ascending: false })
 
     if (search) q = q.or(`servicetype.ilike.%${search}%,description.ilike.%${search}%`)
@@ -54,7 +55,7 @@ export default function Tasks() {
     const { data, count, error: err } = await q
     if (!err) { setTasks(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page])
+  }, [search, page, tab])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
@@ -169,11 +170,22 @@ export default function Tasks() {
   if (view === 'list') {
     return (
       <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Open Tasks</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
           <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700">
             <Plus size={16} /> New Task
           </button>
+        </div>
+
+        {/* Open / Closed tabs */}
+        <div className="flex gap-1 mb-5 border-b border-gray-200">
+          {[['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => (
+            <button key={id} onClick={() => { setTab(id); setPage(1) }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >{label}</button>
+          ))}
         </div>
 
         <div className="flex gap-3 mb-4">
@@ -205,7 +217,7 @@ export default function Tasks() {
               {loading ? (
                 <tr><td colSpan={6} className="text-center py-12 text-gray-400">Loading...</td></tr>
               ) : tasks.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-gray-400">No open tasks found.</td></tr>
+                <tr><td colSpan={6} className="text-center py-12 text-gray-400">No {tab} tasks found.</td></tr>
               ) : tasks.map(t => (
                 <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(t.ticket_id)}</td>
@@ -217,7 +229,7 @@ export default function Tasks() {
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => { setDetail(t); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                       <button onClick={() => openEdit(t)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
-                      <button onClick={() => setCompleteId(t.id)} className="text-green-600 hover:text-green-700" title="Mark Complete"><CheckCircle size={15} /></button>
+                      {tab === 'open' && <button onClick={() => setCompleteId(t.id)} className="text-green-600 hover:text-green-700" title="Mark Complete"><CheckCircle size={15} /></button>}
                       <button onClick={() => setDeleteId(t.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
                     </div>
                   </td>

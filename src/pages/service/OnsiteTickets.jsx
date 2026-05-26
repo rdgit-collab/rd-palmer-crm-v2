@@ -24,6 +24,7 @@ const emptyForm = {
 export default function OnsiteTickets() {
   const { user } = useAuth()
   const [view, setView]           = useState('list')
+  const [tab, setTab]             = useState('open')
   const [rows, setRows]           = useState([])
   const [total, setTotal]         = useState(0)
   const [page, setPage]           = useState(1)
@@ -42,13 +43,13 @@ export default function OnsiteTickets() {
   const fetchRows = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('onsiteticket').select('*', { count: 'exact' })
-      .eq('is_completed', 0).order('id', { ascending: false })
+      .eq('is_completed', tab === 'open' ? 0 : 1).order('id', { ascending: false })
     if (search) q = q.or(`product.ilike.%${search}%,location.ilike.%${search}%`)
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
     if (!err) { setRows(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page])
+  }, [search, page, tab])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -118,9 +119,19 @@ export default function OnsiteTickets() {
 
   if (view === 'list') return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">On-Site Service Tickets</h1>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Onsite Ticket</button>
+      </div>
+      {/* Open / Closed tabs */}
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        {[['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => (
+          <button key={id} onClick={() => { setTab(id); setPage(1) }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >{label}</button>
+        ))}
       </div>
       <div className="relative flex-1 max-w-sm mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -142,7 +153,7 @@ export default function OnsiteTickets() {
           </thead>
           <tbody>
             {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No open onsite tickets.</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No {tab} onsite tickets.</td></tr>
             : rows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(r.ticket_id)}</td>
@@ -155,7 +166,7 @@ export default function OnsiteTickets() {
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                     <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
-                    <button onClick={() => setCompleteId(r.id)} className="text-green-600 hover:text-green-700"><CheckCircle size={15} /></button>
+                    {tab === 'open' && <button onClick={() => setCompleteId(r.id)} className="text-green-600 hover:text-green-700"><CheckCircle size={15} /></button>}
                     <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
                   </div>
                 </td>
