@@ -93,7 +93,7 @@ export default function Tickets() {
   useEffect(() => {
     const run = async () => {
       const [catR, custR, usrR, skuR] = await Promise.all([
-        supabase.from('ticket_category').select('id, name').order('name'),
+        supabase.from('category').select('id, name').order('name'),
         supabase.from('customer').select('id, company_name').order('company_name'),
         supabase.from('users').select('id, first_name, last_name').order('first_name'),
         supabase.from('goodsservices').select('id, sku, description').order('sku'),

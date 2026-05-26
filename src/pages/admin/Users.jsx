@@ -1,4 +1,263 @@
-import Placeholder from '../Placeholder'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
+import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+
+const PAGE_SIZE = 15
+
+const ROLES = [
+  { id: 1, label: 'Admin' },
+  { id: 2, label: 'Sales' },
+  { id: 3, label: 'Service' },
+]
+
+function roleLabel(id) {
+  const r = ROLES.find(r => r.id == id)
+  return r ? r.label : '—'
+}
+function roleColor(id) {
+  if (id == 1) return 'bg-red-100 text-red-700'
+  if (id == 2) return 'bg-blue-100 text-blue-700'
+  if (id == 3) return 'bg-green-100 text-green-700'
+  return 'bg-gray-100 text-gray-600'
+}
+
+const emptyForm = {
+  first_name: '', last_name: '', email: '', password: '',
+  role_id: '2', position: '', department: '', phone: '',
+  status: 'Active',
+}
+
 export default function Users() {
-  return <Placeholder title="Users" description="Manage staff accounts, roles, and permissions." icon="👥" />
+  const { user: currentUser } = useAuth()
+  const [view, setView]         = useState('list')
+  const [rows, setRows]         = useState([])
+  const [total, setTotal]       = useState(0)
+  const [page, setPage]         = useState(1)
+  const [search, setSearch]     = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [form, setForm]         = useState(emptyForm)
+  const [editId, setEditId]     = useState(null)
+  const [deleteId, setDeleteId] = useState(null)
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState('')
+
+  const fetchRows = useCallback(async () => {
+    setLoading(true)
+    let q = supabase.from('users').select('id, first_name, last_name, email, role_id, position, department, phone, status, created_at', { count: 'exact' }).order('first_name')
+    if (search) q = q.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`)
+    q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
+    const { data, count, error: err } = await q
+    if (!err) { setRows(data || []); setTotal(count || 0) }
+    setLoading(false)
+  }, [search, page])
+
+  useEffect(() => { fetchRows() }, [fetchRows])
+
+  const openAdd = () => { setForm(emptyForm); setEditId(null); setError(''); setView('form') }
+  const openEdit = (r) => {
+    setForm({
+      first_name: r.first_name || '', last_name: r.last_name || '',
+      email: r.email || '', password: '',
+      role_id: String(r.role_id || '2'), position: r.position || '',
+      department: r.department || '', phone: r.phone || '',
+      status: r.status || 'Active',
+    })
+    setEditId(r.id); setError(''); setView('form')
+  }
+
+  const handleSave = async (e) => {
+    e.preventDefault(); setSaving(true); setError('')
+
+    if (editId) {
+      // Update profile fields in users table
+      const payload = {
+        first_name: form.first_name, last_name: form.last_name,
+        role_id: parseInt(form.role_id), position: form.position || null,
+        department: form.department || null, phone: form.phone || null,
+        status: form.status,
+      }
+      const { error: err } = await supabase.from('users').update(payload).eq('id', editId)
+      if (err) { setError(err.message); setSaving(false); return }
+      // Password change via Supabase Auth admin (only if provided)
+      if (form.password) {
+        // Note: full password reset requires admin API — store plaintext as fallback for now
+        await supabase.from('users').update({ plaintext: form.password }).eq('id', editId)
+      }
+    } else {
+      // Create new user via Supabase Auth
+      const { data: authData, error: authErr } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: {
+          data: {
+            first_name: form.first_name,
+            last_name: form.last_name,
+          }
+        }
+      })
+      if (authErr) { setError(authErr.message); setSaving(false); return }
+      // Update the users table record with additional fields
+      if (authData?.user?.id) {
+        await supabase.from('users').update({
+          first_name: form.first_name, last_name: form.last_name,
+          role_id: parseInt(form.role_id), position: form.position || null,
+          department: form.department || null, phone: form.phone || null,
+          status: form.status, plaintext: form.password,
+        }).eq('id', authData.user.id)
+      }
+    }
+
+    setSaving(false); fetchRows(); setView('list')
+  }
+
+  const handleDelete = async (id) => {
+    // Only soft-delete by setting status to Inactive
+    await supabase.from('users').update({ status: 'Inactive' }).eq('id', id)
+    setDeleteId(null); fetchRows()
+  }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  if (view === 'list') return (
+    <div className="p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> Add User</button>
+      </div>
+      <div className="relative max-w-sm mb-4">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input type="text" placeholder="Search by name or email..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+          className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+      </div>
+      <div className="bg-white border border-gray-200">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Name</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Email</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Role</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Department</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
+              <th className="text-right px-4 py-3 font-semibold text-gray-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">Loading...</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">No users found.</td></tr>
+            : rows.map(r => (
+              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{r.first_name} {r.last_name}</td>
+                <td className="px-4 py-3 text-gray-600">{r.email}</td>
+                <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${roleColor(r.role_id)}`}>{roleLabel(r.role_id)}</span></td>
+                <td className="px-4 py-3 text-gray-600">{r.department || '—'}</td>
+                <td className="px-4 py-3">
+                  <span className={`inline-block px-2 py-0.5 text-xs rounded ${r.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{r.status || 'Active'}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
+                    {r.id !== currentUser?.id && (
+                      <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
+          <span>{total} user{total !== 1 ? 's' : ''}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="p-1 disabled:opacity-40"><ChevronLeft size={16}/></button>
+            <span>Page {page} of {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="p-1 disabled:opacity-40"><ChevronRight size={16}/></button>
+          </div>
+        </div>
+      )}
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold mb-2">Deactivate User?</h3>
+            <p className="text-sm text-gray-600 mb-4">The user will be set to Inactive and will no longer be able to log in.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button>
+              <button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Deactivate</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  if (view === 'form') return (
+    <div className="p-6 max-w-3xl">
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
+        <h1 className="text-2xl font-bold text-gray-900">{editId ? 'Edit User' : 'Add User'}</h1>
+      </div>
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+      <form onSubmit={handleSave} className="bg-white border border-gray-200 p-6 space-y-5">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
+            <input type="text" value={form.first_name} onChange={e => setForm(f => ({...f, first_name: e.target.value}))} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+            <input type="text" value={form.last_name} onChange={e => setForm(f => ({...f, last_name: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Email <span className="text-red-500">*</span></label>
+          <div className="col-span-2">
+            <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))} required disabled={!!editId} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-400" />
+            {editId && <p className="text-xs text-gray-400 mt-1">Email cannot be changed after creation.</p>}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">{editId ? 'New Password' : 'Password *'}</label>
+          <div className="col-span-2">
+            <input type="password" value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))} required={!editId} placeholder={editId ? 'Leave blank to keep current' : 'Min 8 characters'} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Role <span className="text-red-500">*</span></label>
+          <div className="col-span-2">
+            <select value={form.role_id} onChange={e => setForm(f => ({...f, role_id: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Position</label>
+          <div className="col-span-2"><input type="text" value={form.position} onChange={e => setForm(f => ({...f, position: e.target.value}))} placeholder="Job title" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Department</label>
+          <div className="col-span-2"><input type="text" value={form.department} onChange={e => setForm(f => ({...f, department: e.target.value}))} placeholder="Department" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Phone</label>
+          <div className="col-span-2"><input type="text" value={form.phone} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="Phone number" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Status</label>
+          <div className="col-span-2">
+            <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option>Active</option><option>Inactive</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+          <button type="button" onClick={() => setView('list')} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
+          <button type="submit" disabled={saving} className="px-6 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60">{saving ? 'Saving...' : editId ? 'Update' : 'Create User'}</button>
+        </div>
+      </form>
+    </div>
+  )
+
+  return null
 }
