@@ -35,6 +35,14 @@ function ProtectedRoute({ children, roles }) {
   return children
 }
 
+// Redirects to "/" if the user's role permissions don't include this module
+function PermissionRoute({ children, module }) {
+  const { hasPermission, loading } = useAuth()
+  if (loading) return null
+  if (!hasPermission(module)) return <Navigate to="/" replace />
+  return children
+}
+
 function AppRoutes() {
   const { user } = useAuth()
   return (
@@ -42,22 +50,22 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
-        <Route path="customers" element={<Customers />} />
-        <Route path="contacts" element={<Contacts />} />
-        <Route path="leads" element={<Leads />} />
-        <Route path="activities" element={<Activities />} />
-        <Route path="quotations" element={<Quotations />} />
-        <Route path="invoices" element={<Invoices />} />
-        <Route path="tickets" element={<Tickets />} />
-        <Route path="tasks" element={<Tasks />} />
-        <Route path="onsite-tickets" element={<OnsiteTickets />} />
-        <Route path="rma" element={<RMA />} />
-        <Route path="calibration" element={<Calibration />} />
-        <Route path="serial-numbers" element={<SerialNumbers />} />
-        <Route path="catalogue" element={<Catalogue />} />
-        <Route path="admin/users" element={<ProtectedRoute roles={[1]}><Users /></ProtectedRoute>} />
-        <Route path="settings" element={<ProtectedRoute roles={[1]}><Settings /></ProtectedRoute>} />
-        <Route path="profile" element={<Profile />} />
+        <Route path="customers"     element={<PermissionRoute module="customers">   <Customers />   </PermissionRoute>} />
+        <Route path="contacts"      element={<PermissionRoute module="contacts">    <Contacts />    </PermissionRoute>} />
+        <Route path="leads"         element={<PermissionRoute module="leads">       <Leads />       </PermissionRoute>} />
+        <Route path="activities"    element={<PermissionRoute module="activities">  <Activities />  </PermissionRoute>} />
+        <Route path="quotations"    element={<PermissionRoute module="quotations">  <Quotations />  </PermissionRoute>} />
+        <Route path="invoices"      element={<PermissionRoute module="invoices">    <Invoices />    </PermissionRoute>} />
+        <Route path="tickets"       element={<PermissionRoute module="tickets">     <Tickets />     </PermissionRoute>} />
+        <Route path="tasks"         element={<PermissionRoute module="tasks">       <Tasks />       </PermissionRoute>} />
+        <Route path="onsite-tickets"element={<PermissionRoute module="onsite-tickets"><OnsiteTickets /></PermissionRoute>} />
+        <Route path="rma"           element={<PermissionRoute module="rma">         <RMA />         </PermissionRoute>} />
+        <Route path="calibration"   element={<PermissionRoute module="calibration"> <Calibration /> </PermissionRoute>} />
+        <Route path="serial-numbers"element={<PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute>} />
+        <Route path="catalogue"     element={<ProtectedRoute roles={[1]}><Catalogue /></ProtectedRoute>} />
+        <Route path="admin/users"   element={<ProtectedRoute roles={[1]}><Users /></ProtectedRoute>} />
+        <Route path="settings"      element={<ProtectedRoute roles={[1]}><Settings /></ProtectedRoute>} />
+        <Route path="profile"       element={<Profile />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
