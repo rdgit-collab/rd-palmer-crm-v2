@@ -1,4 +1,684 @@
-import Placeholder from '../Placeholder'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
+import {
+  Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
+  X, ChevronLeft, ChevronRight, Building2, Phone, Mail
+} from 'lucide-react'
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+
+// ─── Inline Add Modal (for Industry / Account Type) ────────────────────────────
+function InlineAddModal({ title, label, onSave, onClose }) {
+  const [val, setVal] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-xl">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+          <button onClick={onClose}><X size={18} className="text-gray-500" /></button>
+        </div>
+        <label className="block text-sm text-gray-700 mb-1">{label}</label>
+        <input
+          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          placeholder={`Enter ${label.toLowerCase()}`}
+          autoFocus
+        />
+        <div className="flex justify-end gap-3 mt-4">
+          <button onClick={onClose} className="px-4 py-2 text-sm border rounded text-gray-600 hover:bg-gray-50">Cancel</button>
+          <button
+            onClick={() => { if (val.trim()) { onSave(val.trim()); onClose() } }}
+            className="px-4 py-2 text-sm bg-[#CC0000] text-white rounded hover:bg-red-700"
+          >Save</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Customer Form (Add / Edit) ────────────────────────────────────────────────
+function CustomerForm({ customer, onSave, onCancel }) {
+  const isEdit = !!customer
+
+  const [industries, setIndustries] = useState([])
+  const [accountTypes, setAccountTypes] = useState([])
+  const [users, setUsers] = useState([])
+  const [showAddIndustry, setShowAddIndustry] = useState(false)
+  const [showAddAccountType, setShowAddAccountType] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const [form, setForm] = useState({
+    industry: customer?.industry || '',
+    account_type: customer?.account_type || '',
+    company_name: customer?.company_name || '',
+    address1: customer?.address1 || '',
+    address2: customer?.address2 || '',
+    country: customer?.country || '',
+    state: customer?.state || '',
+    city: customer?.city || '',
+    zipcode: customer?.zipcode || '',
+    office_number: customer?.office_number || '',
+    mobile_number: customer?.mobile_number || '',
+    email: customer?.email || '',
+    website: customer?.website || '',
+    assignto: customer?.assignto ? String(customer.assignto) : '',
+  })
+
+  useEffect(() => {
+    supabase.from('industries').select('id, name').order('name').then(({ data }) => setIndustries(data || []))
+    supabase.from('account_type').select('id, type').order('type').then(({ data }) => setAccountTypes(data || []))
+    supabase.from('users').select('id, first_name, last_name').order('first_name').then(({ data }) => setUsers(data || []))
+  }, [])
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleAddIndustry = async (name) => {
+    const { data } = await supabase.from('industries').insert({ name, user_id: 1 }).select().single()
+    if (data) {
+      setIndustries(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+      set('industry', name)
+    }
+  }
+
+  const handleAddAccountType = async (type) => {
+    const { data } = await supabase.from('account_type').insert({ type, user_id: 1 }).select().single()
+    if (data) {
+      setAccountTypes(prev => [...prev, data].sort((a, b) => a.type.localeCompare(b.type)))
+      set('account_type', type)
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!form.company_name.trim()) { setError('Company name is required'); return }
+    setSaving(true); setError('')
+
+    const assignedUser = users.find(u => String(u.id) === String(form.assignto))
+    const assignedName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : ''
+
+    const payload = {
+      industry: form.industry,
+      account_type: form.account_type,
+      company_name: form.company_name,
+      address1: form.address1,
+      address2: form.address2,
+      country: form.country,
+      state: form.state,
+      city: form.city,
+      zipcode: form.zipcode,
+      office_number: form.office_number,
+      mobile_number: form.mobile_number,
+      email: form.email,
+      website: form.website,
+      assigned: assignedName,
+      assignto: form.assignto ? parseInt(form.assignto) : null,
+      user_id: 1,
+      updated_at: new Date().toISOString(),
+    }
+
+    let result
+    if (isEdit) {
+      result = await supabase.from('customer').update(payload).eq('id', customer.id).select().single()
+    } else {
+      payload.created_at = new Date().toISOString()
+      result = await supabase.from('customer').insert(payload).select().single()
+    }
+
+    setSaving(false)
+    if (result.error) { setError(result.error.message); return }
+    onSave(result.data)
+  }
+
+  const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500'
+  const labelCls = 'block text-sm font-medium text-gray-700 mb-1'
+
+  return (
+    <>
+      {showAddIndustry && (
+        <InlineAddModal title="Add Industry" label="Industry Name" onSave={handleAddIndustry} onClose={() => setShowAddIndustry(false)} />
+      )}
+      {showAddAccountType && (
+        <InlineAddModal title="Add Account Type" label="Account Type" onSave={handleAddAccountType} onClose={() => setShowAddAccountType(false)} />
+      )}
+
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={onCancel} className="flex items-center gap-1 text-gray-500 hover:text-gray-800 text-sm">
+          <ArrowLeft size={16} /> Back
+        </button>
+        <h1 className="text-xl font-semibold text-gray-900">{isEdit ? 'Edit Customer' : 'Add Customer'}</h1>
+      </div>
+
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6 max-w-3xl">
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{error}</div>
+        )}
+
+        {/* Industry + Account Type */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className={labelCls}>Industry</label>
+            <div className="flex gap-2">
+              <select className={inputCls} value={form.industry} onChange={e => set('industry', e.target.value)}>
+                <option value="">Please Select</option>
+                {industries.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+              </select>
+              <button type="button" onClick={() => setShowAddIndustry(true)}
+                className="flex-shrink-0 w-9 h-9 flex items-center justify-center border border-gray-300 rounded text-gray-500 hover:bg-gray-50" title="Add new industry">
+                <Plus size={14} />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Account Type</label>
+            <div className="flex gap-2">
+              <select className={inputCls} value={form.account_type} onChange={e => set('account_type', e.target.value)}>
+                <option value="">Please Select</option>
+                {accountTypes.map(a => <option key={a.id} value={a.type}>{a.type}</option>)}
+              </select>
+              <button type="button" onClick={() => setShowAddAccountType(true)}
+                className="flex-shrink-0 w-9 h-9 flex items-center justify-center border border-gray-300 rounded text-gray-500 hover:bg-gray-50" title="Add new account type">
+                <Plus size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Company Name */}
+        <div className="mb-4">
+          <label className={labelCls}>Company Name <span className="text-red-500">*</span></label>
+          <input className={inputCls} value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Company Name" required />
+        </div>
+
+        {/* Address Lines */}
+        <div className="mb-4">
+          <label className={labelCls}>Address</label>
+          <input className={inputCls} value={form.address1} onChange={e => set('address1', e.target.value)} placeholder="Street Address" />
+        </div>
+        <div className="mb-4">
+          <input className={inputCls} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Street Address Line 2 (optional)" />
+        </div>
+
+        {/* Country / State */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className={labelCls}>Country</label>
+            <input className={inputCls} value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" />
+          </div>
+          <div>
+            <label className={labelCls}>State</label>
+            <input className={inputCls} value={form.state} onChange={e => set('state', e.target.value)} placeholder="State" />
+          </div>
+        </div>
+
+        {/* City / Postcode */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className={labelCls}>City</label>
+            <input className={inputCls} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" />
+          </div>
+          <div>
+            <label className={labelCls}>Postal / Zip Code</label>
+            <input className={inputCls} value={form.zipcode} onChange={e => set('zipcode', e.target.value)} placeholder="Postal/Zip Code" />
+          </div>
+        </div>
+
+        {/* Office / Mobile */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className={labelCls}>Office Tel. No.</label>
+            <input className={inputCls} value={form.office_number} onChange={e => set('office_number', e.target.value)} placeholder="Office number" />
+          </div>
+          <div>
+            <label className={labelCls}>Phone Number</label>
+            <input className={inputCls} value={form.mobile_number} onChange={e => set('mobile_number', e.target.value)} placeholder="Mobile number" />
+          </div>
+        </div>
+
+        {/* Email / Website */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className={labelCls}>Email</label>
+            <input className={inputCls} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="example@example.com" />
+          </div>
+          <div>
+            <label className={labelCls}>Website</label>
+            <input className={inputCls} value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.domain.com" />
+          </div>
+        </div>
+
+        {/* Assigned To */}
+        <div className="mb-6">
+          <label className={labelCls}>Assigned To</label>
+          <select className={inputCls} value={form.assignto} onChange={e => set('assignto', e.target.value)}>
+            <option value="">Please Select</option>
+            {users.map(u => (
+              <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 disabled:opacity-50">
+            <Save size={14} />
+            {saving ? 'Saving...' : (isEdit ? 'Update' : 'Save')}
+          </button>
+        </div>
+      </form>
+    </>
+  )
+}
+
+// ─── Customer Detail View ──────────────────────────────────────────────────────
+function CustomerDetail({ customerId, onBack, onEdit }) {
+  const [customer, setCustomer] = useState(null)
+  const [contacts, setContacts] = useState([])
+  const [activities, setActivities] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const [{ data: c }, { data: con }, { data: act }] = await Promise.all([
+        supabase.from('customer').select('*').eq('id', customerId).single(),
+        supabase.from('contact').select('*').eq('company_id', customerId).order('created_at', { ascending: false }),
+        supabase.from('activity').select('*').eq('company_id', customerId).order('created_at', { ascending: false }),
+      ])
+      setCustomer(c)
+      setContacts(con || [])
+      setActivities(act || [])
+      setLoading(false)
+    }
+    load()
+  }, [customerId])
+
+  if (loading) return <div className="flex items-center justify-center h-40 text-gray-500 text-sm">Loading...</div>
+  if (!customer) return <div className="text-gray-500 text-sm p-4">Customer not found.</div>
+
+  const phone = customer.mobile_number || customer.office_number || '—'
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="flex items-center gap-1 text-gray-500 hover:text-gray-800 text-sm">
+            <ArrowLeft size={16} /> Back
+          </button>
+          <h1 className="text-xl font-semibold text-gray-900">Customer Information</h1>
+        </div>
+        <button onClick={onEdit}
+          className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+          <Pencil size={14} /> Edit
+        </button>
+      </div>
+
+      {/* Account Info */}
+      <div className="bg-white rounded-lg border border-gray-200 mb-4">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Account Information</h2>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-10">
+          <table className="text-sm w-full">
+            <tbody>
+              {[
+                ['Customer Name', customer.company_name],
+                ['Address', [customer.address1, customer.address2].filter(Boolean).join(', ') || '—'],
+                ['City', customer.city || '—'],
+                ['State', customer.state || '—'],
+                ['Country', customer.country || '—'],
+                ['Postcode', customer.zipcode || '—'],
+                ['Phone', phone],
+                ['Website', customer.website || '—'],
+              ].map(([label, val]) => (
+                <tr key={label} className="border-b border-gray-50 last:border-0">
+                  <td className="py-2 pr-4 text-gray-500 font-medium w-36 align-top">{label}</td>
+                  <td className="py-2 text-gray-800">{val}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <table className="text-sm w-full">
+            <tbody>
+              {[
+                ['Type', 'Customer'],
+                ['Assigned To', customer.assigned || '—'],
+                ['Industry', customer.industry || '—'],
+                ['Account Type', customer.account_type || '—'],
+                ['Email', customer.email || '—'],
+                ['Created', fmt(customer.created_at)],
+              ].map(([label, val]) => (
+                <tr key={label} className="border-b border-gray-50 last:border-0">
+                  <td className="py-2 pr-4 text-gray-500 font-medium w-36 align-top">{label}</td>
+                  <td className="py-2 text-gray-800">{val}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Contacts */}
+      <div className="bg-white rounded-lg border border-gray-200 mb-4">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contacts</h2>
+        </div>
+        {contacts.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-gray-400">No contacts linked to this customer.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {['Name', 'Position', 'Mobile', 'Email', 'Created'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {contacts.map(c => (
+                  <tr key={c.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-900">{c.first_name} {c.last_name}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.position || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.mobile_number || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{c.email || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{fmt(c.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Activity History */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Activity History</h2>
+        </div>
+        {activities.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-gray-400">No activity history for this customer.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {['Date & Time', 'Activity Type', 'Priority', 'Status', 'Description'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {activities.map(a => (
+                  <tr key={a.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{fmt(a.created_at)}</td>
+                    <td className="px-4 py-3 text-gray-600">{a.type || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{a.priority || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">{a.status || '—'}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{a.description || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Customers Page (List) ────────────────────────────────────────────────
+const PAGE_SIZE = 15
+
 export default function Customers() {
-  return <Placeholder title="Customers" description="Manage your company accounts and customer records." icon="🏢" />
+  const [view, setView] = useState('list')   // 'list' | 'form' | 'detail'
+  const [selectedId, setSelectedId] = useState(null)
+  const [editCustomer, setEditCustomer] = useState(null)
+
+  const [customers, setCustomers] = useState([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [deleteId, setDeleteId] = useState(null)
+  const [deleteError, setDeleteError] = useState('')
+
+  const fetchCustomers = useCallback(async () => {
+    setLoading(true)
+    let q = supabase.from('customer').select('*', { count: 'exact' })
+    if (search.trim()) q = q.ilike('company_name', `%${search.trim()}%`)
+    q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+    const { data, count, error } = await q
+    if (!error) { setCustomers(data || []); setTotal(count || 0) }
+    setLoading(false)
+  }, [search, page])
+
+  useEffect(() => { fetchCustomers() }, [fetchCustomers])
+  useEffect(() => { setPage(0) }, [search])
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  const handleDelete = async (id) => {
+    setDeleteError('')
+    const { data: quoteCheck } = await supabase.from('quotation').select('id').eq('companyid', id).limit(1)
+    if (quoteCheck && quoteCheck.length > 0) {
+      setDeleteError('Cannot delete: this customer has linked quotations.')
+      return
+    }
+    await supabase.from('customer').delete().eq('id', id)
+    setDeleteId(null)
+    fetchCustomers()
+  }
+
+  const handleSaved = () => {
+    setView('list')
+    setEditCustomer(null)
+    fetchCustomers()
+  }
+
+  const openEdit = async (c) => {
+    // If we have the full object, use it; otherwise fetch
+    if (c) { setEditCustomer(c); setView('form') }
+    else {
+      const { data } = await supabase.from('customer').select('*').eq('id', selectedId).single()
+      if (data) { setEditCustomer(data); setView('form') }
+    }
+  }
+
+  // ─── Sub-views ──────────────────────────────────────────────────────────────
+  if (view === 'form') {
+    return (
+      <CustomerForm
+        customer={editCustomer}
+        onSave={handleSaved}
+        onCancel={() => { setView('list'); setEditCustomer(null) }}
+      />
+    )
+  }
+
+  if (view === 'detail') {
+    return (
+      <CustomerDetail
+        customerId={selectedId}
+        onBack={() => setView('list')}
+        onEdit={() => openEdit(null)}
+      />
+    )
+  }
+
+  // ─── List View ───────────────────────────────────────────────────────────────
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Manage Customers</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{total} customer{total !== 1 ? 's' : ''} total</p>
+        </div>
+        <button
+          onClick={() => { setEditCustomer(null); setView('form') }}
+          className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700"
+        >
+          <Plus size={16} /> Add Customer
+        </button>
+      </div>
+
+      {/* Search bar */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+            placeholder="Search by company name..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        {search && (
+          <button onClick={() => setSearch('')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+            <X size={14} /> Clear
+          </button>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide w-10">#</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Company / Address</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Industry</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Phone / Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Assigned To</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Created</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400 text-sm">Loading...</td></tr>
+              ) : customers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-gray-400 text-sm">
+                    {search ? 'No customers match your search.' : 'No customers yet. Click "Add Customer" to get started.'}
+                  </td>
+                </tr>
+              ) : (
+                customers.map((c, idx) => {
+                  const phone = c.mobile_number || c.office_number || ''
+                  const addrParts = [c.address1, c.city, c.state].filter(Boolean)
+                  return (
+                    <tr key={c.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-500 text-xs">{page * PAGE_SIZE + idx + 1}</td>
+                      <td className="px-4 py-3">
+                        <button onClick={() => { setSelectedId(c.id); setView('detail') }} className="text-left">
+                          <div className="flex items-center gap-2">
+                            <Building2 size={13} className="text-gray-400 flex-shrink-0" />
+                            <span className="font-medium text-gray-900 hover:text-[#CC0000]">{c.company_name}</span>
+                          </div>
+                          {addrParts.length > 0 && (
+                            <div className="text-xs text-gray-400 mt-0.5 pl-5">{addrParts.join(', ')}</div>
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{c.industry || '—'}</td>
+                      <td className="px-4 py-3">
+                        {phone && (
+                          <div className="flex items-center gap-1 text-gray-700 text-xs">
+                            <Phone size={11} className="text-gray-400" />{phone}
+                          </div>
+                        )}
+                        {c.email && (
+                          <div className="flex items-center gap-1 text-gray-500 text-xs mt-0.5">
+                            <Mail size={11} className="text-gray-400" />{c.email}
+                          </div>
+                        )}
+                        {!phone && !c.email && <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{c.assigned || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmt(c.created_at)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => { setSelectedId(c.id); setView('detail') }}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="View">
+                            <Eye size={14} />
+                          </button>
+                          <button
+                            onClick={() => openEdit(c)}
+                            className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Edit">
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => { setDeleteId(c.id); setDeleteError('') }}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <p className="text-xs text-gray-500">
+              Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+            </p>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="p-1.5 text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed">
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-xs text-gray-600 px-2">Page {page + 1} of {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                className="p-1.5 text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed">
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Delete Confirm Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Customer</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to delete this customer? This action cannot be undone.
+            </p>
+            {deleteError && (
+              <p className="text-sm text-red-600 mb-3 bg-red-50 p-2 rounded">{deleteError}</p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setDeleteId(null); setDeleteError('') }}
+                className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={() => handleDelete(deleteId)}
+                className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
