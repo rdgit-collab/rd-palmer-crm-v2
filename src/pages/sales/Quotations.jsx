@@ -172,8 +172,18 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       setPaymentTerms(pts || [])
 
       if (!isEdit) {
-        const qnum = await getNextQNumber()
-        setForm(f => ({ ...f, number: qnum }))
+        const [qnum, { data: tplData }] = await Promise.all([
+          getNextQNumber(),
+          supabase.from('app_setting').select('key, value').in('key', ['quotation_notes', 'quotation_terms']),
+        ])
+        const tpl = {}
+        ;(tplData || []).forEach(r => { tpl[r.key] = r.value || '' })
+        setForm(f => ({
+          ...f,
+          number: qnum,
+          notes: tpl.quotation_notes || '',
+          terms: tpl.quotation_terms || '',
+        }))
       }
     }
     load()

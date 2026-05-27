@@ -26,6 +26,17 @@ export default function Catalogue() {
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
 
+  // Lookup data for dropdowns
+  const [categories, setCategories]       = useState([])
+  const [models, setModels]               = useState([])
+  const [manufacturers, setManufacturers] = useState([])
+
+  useEffect(() => {
+    supabase.from('product_category').select('id, name').order('name').then(({ data }) => setCategories(data || []))
+    supabase.from('product_model').select('id, name').order('name').then(({ data }) => setModels(data || []))
+    supabase.from('product_manufacturer').select('id, name').order('name').then(({ data }) => setManufacturers(data || []))
+  }, [])
+
   const fetchRows = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('goodsservices').select('*', { count: 'exact' }).order('name')
@@ -175,15 +186,33 @@ export default function Catalogue() {
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Category</label>
-          <div className="col-span-2"><input type="text" value={form.category} onChange={e => setForm(f => ({...f, category: e.target.value}))} placeholder="Category" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+          <div className="col-span-2">
+            <select value={form.category} onChange={e => setForm(f => ({...f, category: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">— Select Category —</option>
+              {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+            {categories.length === 0 && <p className="text-xs text-gray-400 mt-1">No categories yet — add them in Settings → Catalogue.</p>}
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Model</label>
-          <div className="col-span-2"><input type="text" value={form.model} onChange={e => setForm(f => ({...f, model: e.target.value}))} placeholder="Model number" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+          <div className="col-span-2">
+            <select value={form.model} onChange={e => setForm(f => ({...f, model: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">— Select Model —</option>
+              {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+            </select>
+            {models.length === 0 && <p className="text-xs text-gray-400 mt-1">No models yet — add them in Settings → Catalogue.</p>}
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Manufacturer</label>
-          <div className="col-span-2"><input type="text" value={form.manufacture} onChange={e => setForm(f => ({...f, manufacture: e.target.value}))} placeholder="Manufacturer" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+          <div className="col-span-2">
+            <select value={form.manufacture} onChange={e => setForm(f => ({...f, manufacture: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">— Select Manufacturer —</option>
+              {manufacturers.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+            </select>
+            {manufacturers.length === 0 && <p className="text-xs text-gray-400 mt-1">No manufacturers yet — add them in Settings → Catalogue.</p>}
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Item Type</label>

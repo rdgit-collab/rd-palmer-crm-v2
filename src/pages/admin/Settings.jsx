@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, Edit2, Trash2, Check, X } from 'lucide-react'
+import { Plus, Edit2, Trash2, Check, X, Save } from 'lucide-react'
 
 // Generic CRUD panel for simple name/type lookup tables
-function LookupPanel({ title, tableName, valueField = 'name', extraField = null, extraLabel = null, extraType = 'text' }) {
+function LookupPanel({ title, tableName, valueField = 'name', extraField = null, extraLabel = null, extraType = 'text', noUserId = false }) {
   const { user } = useAuth()
   const [rows, setRows]           = useState([])
   const [loading, setLoading]     = useState(false)
@@ -25,7 +25,8 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
 
   const handleAdd = async () => {
     if (!newVal.trim()) return
-    const payload = { [valueField]: newVal.trim(), user_id: user?.id }
+    const payload = { [valueField]: newVal.trim() }
+    if (!noUserId && user?.id) payload.user_id = user.id
     if (extraField) payload[extraField] = newExtra
     await supabase.from(tableName).insert([payload])
     setNewVal(''); setNewExtra(''); setAdding(false); fetch()
@@ -102,6 +103,322 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
   )
 }
 
+// ── Locations Panel ───────────────────────────────────────────────
+function LocationsPanel() {
+  const [countries, setCountries] = useState([])
+  const [states, setStates]       = useState([])
+  const [cities, setCities]       = useState([])
+
+  const [selCountry, setSelCountry] = useState('')
+  const [selState, setSelState]     = useState('')
+
+  const [addingCountry, setAddingCountry] = useState(false)
+  const [addingState, setAddingState]     = useState(false)
+  const [addingCity, setAddingCity]       = useState(false)
+
+  const [editCountry, setEditCountry] = useState(null)
+  const [editState, setEditState]     = useState(null)
+  const [editCity, setEditCity]       = useState(null)
+
+  const [newCountry, setNewCountry] = useState({ name: '', code: '' })
+  const [newState, setNewState]     = useState('')
+  const [newCity, setNewCity]       = useState('')
+  const [editVal, setEditVal]       = useState('')
+
+  const loadCountries = async () => {
+    const { data } = await supabase.from('country').select('*').order('name')
+    setCountries(data || [])
+  }
+  const loadStates = async (countryId) => {
+    if (!countryId) { setStates([]); return }
+    const { data } = await supabase.from('state').select('*').eq('country_id', countryId).order('name')
+    setStates(data || [])
+  }
+  const loadCities = async (stateId) => {
+    if (!stateId) { setCities([]); return }
+    const { data } = await supabase.from('city').select('*').eq('state_id', stateId).order('name')
+    setCities(data || [])
+  }
+
+  useEffect(() => { loadCountries() }, [])
+  useEffect(() => { loadStates(selCountry); setSelState(''); setCities([]) }, [selCountry])
+  useEffect(() => { loadCities(selState) }, [selState])
+
+  // Country CRUD
+  const addCountry = async () => {
+    if (!newCountry.name.trim()) return
+    await supabase.from('country').insert([{ name: newCountry.name.trim(), code: newCountry.code.trim().toUpperCase() }])
+    setNewCountry({ name: '', code: '' }); setAddingCountry(false); loadCountries()
+  }
+  const updateCountry = async (id, field, val) => {
+    await supabase.from('country').update({ [field]: val }).eq('id', id)
+    setEditCountry(null); loadCountries()
+  }
+  const deleteCountry = async (id) => {
+    await supabase.from('country').delete().eq('id', id)
+    if (String(selCountry) === String(id)) setSelCountry('')
+    loadCountries()
+  }
+
+  // State CRUD
+  const addState = async () => {
+    if (!newState.trim() || !selCountry) return
+    await supabase.from('state').insert([{ name: newState.trim(), country_id: selCountry }])
+    setNewState(''); setAddingState(false); loadStates(selCountry)
+  }
+  const updateState = async (id) => {
+    await supabase.from('state').update({ name: editVal }).eq('id', id)
+    setEditState(null); loadStates(selCountry)
+  }
+  const deleteState = async (id) => {
+    await supabase.from('state').delete().eq('id', id)
+    if (String(selState) === String(id)) setSelState('')
+    loadStates(selCountry)
+  }
+
+  // City CRUD
+  const addCity = async () => {
+    if (!newCity.trim() || !selState) return
+    await supabase.from('city').insert([{ name: newCity.trim(), state_id: selState }])
+    setNewCity(''); setAddingCity(false); loadCities(selState)
+  }
+  const updateCity = async (id) => {
+    await supabase.from('city').update({ name: editVal }).eq('id', id)
+    setEditCity(null); loadCities(selState)
+  }
+  const deleteCity = async (id) => {
+    await supabase.from('city').delete().eq('id', id)
+    loadCities(selState)
+  }
+
+  const colClass = "bg-white border border-gray-200 rounded overflow-hidden"
+  const headerClass = "flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50"
+  const rowClass = "px-4 py-2 flex items-center gap-2 hover:bg-gray-50"
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      {/* Countries */}
+      <div className={colClass}>
+        <div className={headerClass}>
+          <h3 className="font-semibold text-gray-800 text-sm">Countries</h3>
+          <button onClick={() => setAddingCountry(true)} className="flex items-center gap-1 text-xs bg-red-600 text-white px-2.5 py-1.5 hover:bg-red-700">
+            <Plus size={12} /> Add
+          </button>
+        </div>
+        <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+          {countries.length === 0 && !addingCountry && <div className="px-4 py-6 text-sm text-gray-400 text-center">No countries yet.</div>}
+          {addingCountry && (
+            <div className="px-4 py-2 flex items-center gap-2 bg-red-50">
+              <input autoFocus type="text" value={newCountry.name} onChange={e => setNewCountry(p => ({ ...p, name: e.target.value }))}
+                placeholder="Country name" className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+              <input type="text" maxLength={2} value={newCountry.code} onChange={e => setNewCountry(p => ({ ...p, code: e.target.value }))}
+                placeholder="Code" className="w-14 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+              <button onClick={addCountry} className="text-green-600 hover:text-green-700"><Check size={16} /></button>
+              <button onClick={() => { setAddingCountry(false); setNewCountry({ name: '', code: '' }) }} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+            </div>
+          )}
+          {countries.map(c => (
+            <div key={c.id}
+              onClick={() => { if (editCountry !== c.id) setSelCountry(String(c.id)) }}
+              className={`${rowClass} cursor-pointer ${String(selCountry) === String(c.id) ? 'bg-red-50' : ''}`}>
+              {editCountry === c.id ? (
+                <>
+                  <input autoFocus type="text" defaultValue={c.name}
+                    onChange={e => setEditVal(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && updateCountry(c.id, 'name', editVal)}
+                    className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+                  <button onClick={() => updateCountry(c.id, 'name', editVal)} className="text-green-600"><Check size={14} /></button>
+                  <button onClick={() => setEditCountry(null)} className="text-gray-400"><X size={14} /></button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 text-sm text-gray-800">{c.name}</span>
+                  {c.code && <span className="text-xs text-gray-400 w-8">{c.code}</span>}
+                  <button onClick={e => { e.stopPropagation(); setEditCountry(c.id); setEditVal(c.name) }} className="text-gray-400 hover:text-gray-600"><Edit2 size={13} /></button>
+                  <button onClick={e => { e.stopPropagation(); deleteCountry(c.id) }} className="text-gray-400 hover:text-red-500"><Trash2 size={13} /></button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">Click a country to manage its states →</div>
+      </div>
+
+      {/* States */}
+      <div className={colClass}>
+        <div className={headerClass}>
+          <h3 className="font-semibold text-gray-800 text-sm">
+            States / Provinces
+            {selCountry && <span className="ml-1 text-gray-400 font-normal">— {countries.find(c => String(c.id) === String(selCountry))?.name}</span>}
+          </h3>
+          {selCountry && (
+            <button onClick={() => setAddingState(true)} className="flex items-center gap-1 text-xs bg-red-600 text-white px-2.5 py-1.5 hover:bg-red-700">
+              <Plus size={12} /> Add
+            </button>
+          )}
+        </div>
+        <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+          {!selCountry && <div className="px-4 py-6 text-sm text-gray-400 text-center">Select a country first.</div>}
+          {selCountry && states.length === 0 && !addingState && <div className="px-4 py-6 text-sm text-gray-400 text-center">No states yet.</div>}
+          {addingState && (
+            <div className="px-4 py-2 flex items-center gap-2 bg-red-50">
+              <input autoFocus type="text" value={newState} onChange={e => setNewState(e.target.value)}
+                placeholder="State name" className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+              <button onClick={addState} className="text-green-600"><Check size={16} /></button>
+              <button onClick={() => { setAddingState(false); setNewState('') }} className="text-gray-400"><X size={16} /></button>
+            </div>
+          )}
+          {states.map(s => (
+            <div key={s.id}
+              onClick={() => { if (editState !== s.id) setSelState(String(s.id)) }}
+              className={`${rowClass} cursor-pointer ${String(selState) === String(s.id) ? 'bg-red-50' : ''}`}>
+              {editState === s.id ? (
+                <>
+                  <input autoFocus type="text" defaultValue={s.name}
+                    onChange={e => setEditVal(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && updateState(s.id)}
+                    className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+                  <button onClick={() => updateState(s.id)} className="text-green-600"><Check size={14} /></button>
+                  <button onClick={() => setEditState(null)} className="text-gray-400"><X size={14} /></button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 text-sm text-gray-800">{s.name}</span>
+                  <button onClick={e => { e.stopPropagation(); setEditState(s.id); setEditVal(s.name) }} className="text-gray-400 hover:text-gray-600"><Edit2 size={13} /></button>
+                  <button onClick={e => { e.stopPropagation(); deleteState(s.id) }} className="text-gray-400 hover:text-red-500"><Trash2 size={13} /></button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">Click a state to manage its cities →</div>
+      </div>
+
+      {/* Cities */}
+      <div className={colClass}>
+        <div className={headerClass}>
+          <h3 className="font-semibold text-gray-800 text-sm">
+            Cities
+            {selState && <span className="ml-1 text-gray-400 font-normal">— {states.find(s => String(s.id) === String(selState))?.name}</span>}
+          </h3>
+          {selState && (
+            <button onClick={() => setAddingCity(true)} className="flex items-center gap-1 text-xs bg-red-600 text-white px-2.5 py-1.5 hover:bg-red-700">
+              <Plus size={12} /> Add
+            </button>
+          )}
+        </div>
+        <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+          {!selState && <div className="px-4 py-6 text-sm text-gray-400 text-center">Select a state first.</div>}
+          {selState && cities.length === 0 && !addingCity && <div className="px-4 py-6 text-sm text-gray-400 text-center">No cities yet.</div>}
+          {addingCity && (
+            <div className="px-4 py-2 flex items-center gap-2 bg-red-50">
+              <input autoFocus type="text" value={newCity} onChange={e => setNewCity(e.target.value)}
+                placeholder="City name" className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+              <button onClick={addCity} className="text-green-600"><Check size={16} /></button>
+              <button onClick={() => { setAddingCity(false); setNewCity('') }} className="text-gray-400"><X size={16} /></button>
+            </div>
+          )}
+          {cities.map(c => (
+            <div key={c.id} className={rowClass}>
+              {editCity === c.id ? (
+                <>
+                  <input autoFocus type="text" defaultValue={c.name}
+                    onChange={e => setEditVal(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && updateCity(c.id)}
+                    className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+                  <button onClick={() => updateCity(c.id)} className="text-green-600"><Check size={14} /></button>
+                  <button onClick={() => setEditCity(null)} className="text-gray-400"><X size={14} /></button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 text-sm text-gray-800">{c.name}</span>
+                  <button onClick={() => { setEditCity(c.id); setEditVal(c.name) }} className="text-gray-400 hover:text-gray-600"><Edit2 size={13} /></button>
+                  <button onClick={() => deleteCity(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={13} /></button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+// ── Document Templates Panel ──────────────────────────────────────
+function TemplatesPanel() {
+  const [vals, setVals] = useState({
+    quotation_notes: '',
+    quotation_terms: '',
+    invoice_notes: '',
+    invoice_terms: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    supabase.from('app_setting')
+      .select('key, value')
+      .in('key', ['quotation_notes', 'quotation_terms', 'invoice_notes', 'invoice_terms'])
+      .then(({ data }) => {
+        const map = {}
+        ;(data || []).forEach(r => { map[r.key] = r.value || '' })
+        setVals(prev => ({ ...prev, ...map }))
+        setLoaded(true)
+      })
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    for (const [key, value] of Object.entries(vals)) {
+      await supabase.from('app_setting')
+        .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    }
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+
+  if (!loaded) return <div className="text-sm text-gray-400 py-6 text-center">Loading templates...</div>
+
+  const TextBlock = ({ label, fieldKey, placeholder }) => (
+    <div className="bg-white border border-gray-200 rounded overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-800 text-sm">{label}</h3>
+        <p className="text-xs text-gray-400 mt-0.5">Pre-filled when staff create a new document — they can still edit before saving.</p>
+      </div>
+      <textarea
+        rows={6}
+        value={vals[fieldKey]}
+        onChange={e => setVals(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+        placeholder={placeholder}
+        className="w-full px-4 py-3 text-sm text-gray-800 focus:outline-none resize-none"
+      />
+    </div>
+  )
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <TextBlock label="Quotation — Notes" fieldKey="quotation_notes" placeholder="e.g. Thank you for your interest. This quotation is valid for 30 days." />
+        <TextBlock label="Quotation — Terms & Conditions" fieldKey="quotation_terms" placeholder="e.g. 1. Prices are subject to change without notice..." />
+        <TextBlock label="Invoice — Notes" fieldKey="invoice_notes" placeholder="e.g. Thank you for your business. Please retain this invoice for your records." />
+        <TextBlock label="Invoice — Terms & Conditions" fieldKey="invoice_terms" placeholder="e.g. Payment is due within 30 days of invoice date..." />
+      </div>
+      <div className="flex items-center gap-3">
+        <button onClick={handleSave} disabled={saving}
+          className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-sm font-medium disabled:opacity-50 transition-colors">
+          <Save size={14} />
+          {saving ? 'Saving…' : 'Save Templates'}
+        </button>
+        {saved && <span className="text-sm text-green-600 font-medium">✓ Saved successfully</span>}
+      </div>
+    </div>
+  )
+}
+
 // ── Role Permissions Panel ────────────────────────────────────────
 const SALES_MODULES = [
   { module: 'customers',  label: 'Customers' },
@@ -121,7 +438,7 @@ const SERVICE_MODULES = [
 ]
 
 function RolePermissionsPanel() {
-  const [perms, setPerms] = useState({}) // { 'sales:customers': true, ... }
+  const [perms, setPerms] = useState({})
   const [saving, setSaving] = useState(null)
   const [loaded, setLoaded] = useState(false)
 
@@ -167,7 +484,6 @@ function RolePermissionsPanel() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {/* Sales Role */}
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
@@ -179,7 +495,6 @@ function RolePermissionsPanel() {
         </div>
       </div>
 
-      {/* Service Role */}
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
@@ -199,10 +514,13 @@ function RolePermissionsPanel() {
 }
 
 const TABS = [
-  { id: 'sales',   label: 'Sales' },
-  { id: 'service', label: 'Service' },
-  { id: 'finance', label: 'Finance' },
-  { id: 'roles',   label: 'Role Permissions' },
+  { id: 'sales',      label: 'Sales' },
+  { id: 'service',    label: 'Service' },
+  { id: 'finance',    label: 'Finance' },
+  { id: 'catalogue',  label: 'Catalogue' },
+  { id: 'locations',  label: 'Locations' },
+  { id: 'templates',  label: 'Doc Templates' },
+  { id: 'roles',      label: 'Role Permissions' },
 ]
 
 export default function Settings() {
@@ -213,7 +531,7 @@ export default function Settings() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
+      <div className="flex flex-wrap gap-1 mb-6 border-b border-gray-200">
         {TABS.map(t => (
           <button
             key={t.id}
@@ -256,6 +574,18 @@ export default function Settings() {
           <LookupPanel title="Payment Terms" tableName="payment_term" valueField="name" />
         </div>
       )}
+
+      {tab === 'catalogue' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <LookupPanel title="Product Categories" tableName="product_category" valueField="name" noUserId />
+          <LookupPanel title="Product Models" tableName="product_model" valueField="name" noUserId />
+          <LookupPanel title="Manufacturers" tableName="product_manufacturer" valueField="name" noUserId />
+        </div>
+      )}
+
+      {tab === 'locations' && <LocationsPanel />}
+
+      {tab === 'templates' && <TemplatesPanel />}
 
       {tab === 'roles' && <RolePermissionsPanel />}
     </div>

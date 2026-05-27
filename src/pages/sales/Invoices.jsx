@@ -147,8 +147,18 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       setTaxes(txs || [])
       setPaymentTerms(pts || [])
       if (!isEdit) {
-        const invNum = await getNextInvNumber()
-        setForm(f => ({ ...f, invoice_number: invNum }))
+        const [invNum, { data: tplData }] = await Promise.all([
+          getNextInvNumber(),
+          supabase.from('app_setting').select('key, value').in('key', ['invoice_notes', 'invoice_terms']),
+        ])
+        const tpl = {}
+        ;(tplData || []).forEach(r => { tpl[r.key] = r.value || '' })
+        setForm(f => ({
+          ...f,
+          invoice_number: invNum,
+          notes: tpl.invoice_notes || '',
+          term_condition: tpl.invoice_terms || '',
+        }))
       }
     }
     load()
