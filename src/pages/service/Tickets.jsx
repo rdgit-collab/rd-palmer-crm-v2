@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { notifyUser } from '../../lib/notifyUser'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -69,6 +70,9 @@ export default function Tickets() {
 
   // Products rows in form
   const [products, setProducts] = useState([{ ...emptyProduct }])
+
+  // Track original assigned_to to detect changes during edit
+  const origAssignedTo = useRef(null)
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTickets = useCallback(async () => {
@@ -165,6 +169,7 @@ export default function Tickets() {
           }))
         : [{ ...emptyProduct }]
     )
+    origAssignedTo.current = String(t.assigned_to || '')
     setEditId(t.id)
     setError('')
     setView('form')
@@ -229,6 +234,22 @@ export default function Tickets() {
           remark:           p.remark,
         }))
       )
+    }
+
+    // ── Notify assigned user ──────────────────────────────────────
+    // form.assigned_to holds the UUID directly (from users dropdown)
+    const newAssignee = form.assigned_to || ''
+    const oldAssignee = editId ? (origAssignedTo.current || '') : ''
+    const isNewAssignment = newAssignee && newAssignee !== user?.id &&
+      (!editId || newAssignee !== oldAssignee)
+
+    if (isNewAssignment) {
+      await notifyUser(supabase, {
+        userId: newAssignee,
+        title:  'Ticket assigned to you',
+        body:   `You have been assigned ${form.ticket_number}${form.company_name ? ' — ' + form.company_name : ''}`,
+        link:   '/tickets',
+      })
     }
 
     setSaving(false)

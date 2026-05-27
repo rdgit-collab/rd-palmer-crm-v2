@@ -363,7 +363,20 @@ function ServiceDashboard({ firstName }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// ROOT — picks the right dashboard by role
+// Named exports for dedicated routes
+// ════════════════════════════════════════════════════════════════════
+export function SalesDashboardPage() {
+  const { profile } = useAuth()
+  return <SalesDashboard firstName={profile?.first_name || 'there'} />
+}
+
+export function ServiceDashboardPage() {
+  const { profile } = useAuth()
+  return <ServiceDashboard firstName={profile?.first_name || 'there'} />
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ROOT — default route picks the right dashboard by role
 // ════════════════════════════════════════════════════════════════════
 export default function Dashboard() {
   const { profile } = useAuth()

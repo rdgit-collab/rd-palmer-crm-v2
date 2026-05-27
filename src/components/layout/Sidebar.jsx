@@ -7,28 +7,29 @@ import {
 } from 'lucide-react'
 
 const salesItems = [
-  { name: 'Dashboard',    href: '/',            icon: LayoutDashboard },
-  { name: 'Customers',    href: '/customers',   icon: Building2,    module: 'customers' },
-  { name: 'Contacts',     href: '/contacts',    icon: UserCircle,   module: 'contacts' },
-  { name: 'Sales Leads',  href: '/leads',       icon: TrendingUp,   module: 'leads' },
-  { name: 'Activities',   href: '/activities',  icon: Activity,     module: 'activities' },
-  { name: 'Quotations',   href: '/quotations',  icon: FileText,     module: 'quotations' },
-  { name: 'Invoices',     href: '/invoices',    icon: Receipt,      module: 'invoices' },
+  { name: 'Dashboard',    href: '/sales-dashboard', icon: LayoutDashboard },
+  { name: 'Customers',    href: '/customers',        icon: Building2,   module: 'customers' },
+  { name: 'Contacts',     href: '/contacts',         icon: UserCircle,  module: 'contacts' },
+  { name: 'Sales Leads',  href: '/leads',            icon: TrendingUp,  module: 'leads' },
+  { name: 'Activities',   href: '/activities',       icon: Activity,    module: 'activities' },
+  { name: 'Quotations',   href: '/quotations',       icon: FileText,    module: 'quotations' },
+  { name: 'Invoices',     href: '/invoices',         icon: Receipt,     module: 'invoices' },
 ]
 
 const serviceItems = [
-  { name: 'Dashboard',       href: '/',                icon: LayoutDashboard },
-  { name: 'Tickets',         href: '/tickets',         icon: Ticket,        module: 'tickets' },
-  { name: 'Tasks',           href: '/tasks',           icon: Wrench,        module: 'tasks' },
-  { name: 'Onsite Tickets',  href: '/onsite-tickets',  icon: MapPin,        module: 'onsite-tickets' },
-  { name: 'RMA',             href: '/rma',             icon: RotateCcw,     module: 'rma' },
-  { name: 'Calibration',     href: '/calibration',     icon: Gauge,         module: 'calibration' },
-  { name: 'Serial Numbers',  href: '/serial-numbers',  icon: Hash,          module: 'serial-numbers' },
+  { name: 'Dashboard',      href: '/service-dashboard', icon: LayoutDashboard },
+  { name: 'Tickets',        href: '/tickets',            icon: Ticket,       module: 'tickets' },
+  { name: 'Tasks',          href: '/tasks',              icon: Wrench,       module: 'tasks' },
+  { name: 'Onsite Tickets', href: '/onsite-tickets',     icon: MapPin,       module: 'onsite-tickets' },
+  { name: 'RMA',            href: '/rma',                icon: RotateCcw,    module: 'rma' },
+  { name: 'Calibration',    href: '/calibration',        icon: Gauge,        module: 'calibration' },
+  { name: 'Serial Numbers', href: '/serial-numbers',     icon: Hash,         module: 'serial-numbers' },
 ]
 
 const adminItems = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Overview',  href: '/', icon: LayoutDashboard },
   { divider: 'SALES' },
+  { name: 'Sales Dashboard', href: '/sales-dashboard', icon: LayoutDashboard },
   { name: 'Customers',   href: '/customers',  icon: Building2   },
   { name: 'Contacts',    href: '/contacts',   icon: UserCircle  },
   { name: 'Sales Leads', href: '/leads',      icon: TrendingUp  },
@@ -36,6 +37,7 @@ const adminItems = [
   { name: 'Quotations',  href: '/quotations', icon: FileText    },
   { name: 'Invoices',    href: '/invoices',   icon: Receipt     },
   { divider: 'SERVICE' },
+  { name: 'Service Dashboard', href: '/service-dashboard', icon: LayoutDashboard },
   { name: 'Tickets',        href: '/tickets',        icon: Ticket   },
   { name: 'Tasks',          href: '/tasks',          icon: Wrench   },
   { name: 'Onsite Tickets', href: '/onsite-tickets', icon: MapPin   },

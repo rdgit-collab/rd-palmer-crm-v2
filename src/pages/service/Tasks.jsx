@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { notifyUser } from '../../lib/notifyUser'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -39,6 +40,7 @@ export default function Tasks() {
   const [serviceTypes, setServiceTypes] = useState([])
   const [users, setUsers]             = useState([])
   const [spares, setSpares]           = useState([])
+  const origAssignedTo                = useRef(null)
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
@@ -98,6 +100,7 @@ export default function Tasks() {
       action_taken: t.action_taken      || '',
       assigned_to: String(t.assigned_to || ''),
     })
+    origAssignedTo.current = t.assigned_to || ''
     setEditId(t.id)
     setError('')
     setView('form')
@@ -131,6 +134,22 @@ export default function Tasks() {
     } else {
       const { error: err } = await supabase.from('task').insert([payload])
       if (err) { setError(err.message); setSaving(false); return }
+    }
+
+    // ── Notify assigned user ──────────────────────────────────────
+    const newAssignee = form.assigned_to || ''
+    const oldAssignee = editId ? (origAssignedTo.current || '') : ''
+    const isNewAssignment = newAssignee && newAssignee !== user?.id &&
+      (!editId || newAssignee !== oldAssignee)
+
+    if (isNewAssignment) {
+      const tickRef = tickets.find(t => String(t.id) === String(form.ticket_id))
+      await notifyUser(supabase, {
+        userId: newAssignee,
+        title:  'Task assigned to you',
+        body:   `You have been assigned a task${tickRef ? ' for ' + tickRef.company_name : ''}`,
+        link:   '/tasks',
+      })
     }
 
     setSaving(false)

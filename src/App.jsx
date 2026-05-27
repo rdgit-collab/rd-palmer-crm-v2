@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/layout/Layout'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
+import Dashboard, { SalesDashboardPage, ServiceDashboardPage } from './pages/Dashboard'
 import Customers from './pages/sales/Customers'
 import Contacts from './pages/sales/Contacts'
 import Leads from './pages/sales/Leads'
@@ -50,6 +50,8 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
+        <Route path="sales-dashboard"   element={<SalesDashboardPage />} />
+        <Route path="service-dashboard" element={<ServiceDashboardPage />} />
         <Route path="customers"     element={<PermissionRoute module="customers">   <Customers />   </PermissionRoute>} />
         <Route path="contacts"      element={<PermissionRoute module="contacts">    <Contacts />    </PermissionRoute>} />
         <Route path="leads"         element={<PermissionRoute module="leads">       <Leads />       </PermissionRoute>} />
