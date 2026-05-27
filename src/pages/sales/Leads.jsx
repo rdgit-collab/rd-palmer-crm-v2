@@ -21,31 +21,6 @@ const stageColor = (name = '') => {
   return 'bg-gray-100 text-gray-600'
 }
 
-// ─── InlineAddModal ────────────────────────────────────────────────────────────
-function InlineAddModal({ title, label, onSave, onClose }) {
-  const [val, setVal] = useState('')
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-xl">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-          <button onClick={onClose}><X size={18} className="text-gray-500" /></button>
-        </div>
-        <label className="block text-sm text-gray-700 mb-1">{label}</label>
-        <input
-          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-          value={val} onChange={e => setVal(e.target.value)} placeholder={`Enter ${label.toLowerCase()}`} autoFocus
-        />
-        <div className="flex justify-end gap-3 mt-4">
-          <button onClick={onClose} className="px-4 py-2 text-sm border rounded text-gray-600 hover:bg-gray-50">Cancel</button>
-          <button onClick={() => { if (val.trim()) { onSave(val.trim()); onClose() } }}
-            className="px-4 py-2 text-sm bg-[#CC0000] text-white rounded hover:bg-red-700">Save</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Lead Detail View ──────────────────────────────────────────────────────────
 function LeadDetail({ leadId, onBack, onEdit }) {
   const [lead, setLead] = useState(null)
@@ -185,8 +160,6 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [leadSources, setLeadSources] = useState([])
   const [stages, setStages] = useState([])
   const [users, setUsers] = useState([])
-  const [showAddSource, setShowAddSource] = useState(false)
-  const [showAddStage, setShowAddStage] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -223,20 +196,10 @@ function LeadForm({ lead, onSave, onCancel }) {
   useEffect(() => {
     supabase.from('lead').select('id, name').order('name').then(({ data }) => setLeadSources(data || []))
     supabase.from('stage').select('id, name').order('name').then(({ data }) => setStages(data || []))
-    supabase.from('users').select('id, first_name, last_name').order('first_name').then(({ data }) => setUsers(data || []))
+    supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name').then(({ data }) => setUsers(data || []))
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-
-  const handleAddSource = async (name) => {
-    const { data } = await supabase.from('lead').insert({ name, user_id: 1 }).select().single()
-    if (data) { setLeadSources(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name))); set('lead_source', name) }
-  }
-
-  const handleAddStage = async (name) => {
-    const { data } = await supabase.from('stage').insert({ name, user_id: 1 }).select().single()
-    if (data) { setStages(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name))); set('status', name) }
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -293,9 +256,6 @@ function LeadForm({ lead, onSave, onCancel }) {
 
   return (
     <>
-      {showAddSource && <InlineAddModal title="Add Lead Source" label="Source Name" onSave={handleAddSource} onClose={() => setShowAddSource(false)} />}
-      {showAddStage && <InlineAddModal title="Add Stage" label="Stage Name" onSave={handleAddStage} onClose={() => setShowAddStage(false)} />}
-
       <div className="flex items-center gap-3 mb-6">
         <button onClick={onCancel} className="flex items-center gap-1 text-gray-500 hover:text-gray-800 text-sm">
           <ArrowLeft size={16} /> Back
@@ -310,29 +270,17 @@ function LeadForm({ lead, onSave, onCancel }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className={labelCls}>Lead Source <span className="text-red-500">*</span></label>
-            <div className="flex gap-2">
-              <select className={inputCls} value={form.lead_source} onChange={e => set('lead_source', e.target.value)}>
-                <option value="">Please Select</option>
-                {leadSources.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-              </select>
-              <button type="button" onClick={() => setShowAddSource(true)}
-                className="flex-shrink-0 w-9 h-9 flex items-center justify-center border border-gray-300 rounded text-gray-500 hover:bg-gray-50" title="Add source">
-                <Plus size={14} />
-              </button>
-            </div>
+            <select className={inputCls} value={form.lead_source} onChange={e => set('lead_source', e.target.value)}>
+              <option value="">Please Select</option>
+              {leadSources.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
           </div>
           <div>
             <label className={labelCls}>Status <span className="text-red-500">*</span></label>
-            <div className="flex gap-2">
-              <select className={inputCls} value={form.status} onChange={e => set('status', e.target.value)}>
-                <option value="">Please Select</option>
-                {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-              </select>
-              <button type="button" onClick={() => setShowAddStage(true)}
-                className="flex-shrink-0 w-9 h-9 flex items-center justify-center border border-gray-300 rounded text-gray-500 hover:bg-gray-50" title="Add stage">
-                <Plus size={14} />
-              </button>
-            </div>
+            <select className={inputCls} value={form.status} onChange={e => set('status', e.target.value)}>
+              <option value="">Please Select</option>
+              {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
           </div>
         </div>
 

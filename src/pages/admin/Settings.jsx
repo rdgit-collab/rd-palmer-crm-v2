@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../contexts/AuthContext'
 import { Plus, Edit2, Trash2, Check, X, Save } from 'lucide-react'
 
 // Generic CRUD panel for simple name/type lookup tables
-function LookupPanel({ title, tableName, valueField = 'name', extraField = null, extraLabel = null, extraType = 'text', noUserId = false }) {
-  const { user } = useAuth()
+// hasUserIdInt = true  → table has a user_id INTEGER column (old Lovable tables); send 1
+// noUserId     = true  → table has no user_id column at all (new tables)
+// default (both false) → same as noUserId for safety
+function LookupPanel({ title, tableName, valueField = 'name', extraField = null, extraLabel = null, extraType = 'text', noUserId = true, hasUserIdInt = false }) {
   const [rows, setRows]           = useState([])
   const [loading, setLoading]     = useState(false)
   const [adding, setAdding]       = useState(false)
@@ -26,7 +27,7 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
   const handleAdd = async () => {
     if (!newVal.trim()) return
     const payload = { [valueField]: newVal.trim() }
-    if (!noUserId && user?.id) payload.user_id = user.id
+    if (hasUserIdInt) payload.user_id = 1          // old Lovable tables use INTEGER user_id
     if (extraField) payload[extraField] = newExtra
     await supabase.from(tableName).insert([payload])
     setNewVal(''); setNewExtra(''); setAdding(false); fetch()
@@ -545,17 +546,22 @@ export default function Settings() {
 
       {tab === 'sales' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <LookupPanel title="Industries" tableName="industries" valueField="name" />
-          <LookupPanel title="Account Types" tableName="account_type" valueField="type" />
-          <LookupPanel title="Lead Sources" tableName="lead" valueField="name" />
-          <LookupPanel title="Stages" tableName="stage" valueField="name" />
+          <LookupPanel title="Industries"       tableName="industries"     valueField="name" hasUserIdInt />
+          <LookupPanel title="Account Types"    tableName="account_type"   valueField="type" hasUserIdInt />
+          <LookupPanel title="Lead Sources"     tableName="lead"           valueField="name" hasUserIdInt />
+          <LookupPanel title="Stages"           tableName="stage"          valueField="name" hasUserIdInt />
+          <LookupPanel title="Activity Types"   tableName="activity_type"  valueField="type" hasUserIdInt />
+          <LookupPanel title="Activity Statuses" tableName="activity_status" valueField="name" />
+          <LookupPanel title="Priority Levels"  tableName="priority"       valueField="name" />
         </div>
       )}
 
       {tab === 'service' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <LookupPanel title="Ticket Categories" tableName="category" valueField="name" />
-          <LookupPanel title="Service Types" tableName="service_type" valueField="type" />
+          <LookupPanel title="Ticket Categories" tableName="category"     valueField="name" hasUserIdInt />
+          <LookupPanel title="Service Types"     tableName="service_type" valueField="type" hasUserIdInt />
+          <LookupPanel title="Spare Parts"       tableName="spare"        valueField="name" hasUserIdInt />
+          <LookupPanel title="Vendors"           tableName="vendor"       valueField="name" hasUserIdInt />
         </div>
       )}
 
@@ -568,8 +574,9 @@ export default function Settings() {
             extraField="rate"
             extraLabel="Rate (%)"
             extraType="number"
+            hasUserIdInt
           />
-          <LookupPanel title="Payment Terms" tableName="payment_term" valueField="name" />
+          <LookupPanel title="Payment Terms" tableName="payment_term" valueField="name" hasUserIdInt />
         </div>
       )}
 

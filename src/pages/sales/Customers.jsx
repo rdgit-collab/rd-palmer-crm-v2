@@ -9,35 +9,6 @@ import {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
-// ─── Inline Add Modal (for Industry / Account Type) ────────────────────────────
-function InlineAddModal({ title, label, onSave, onClose }) {
-  const [val, setVal] = useState('')
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-xl">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-          <button onClick={onClose}><X size={18} className="text-gray-500" /></button>
-        </div>
-        <label className="block text-sm text-gray-700 mb-1">{label}</label>
-        <input
-          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          placeholder={`Enter ${label.toLowerCase()}`}
-          autoFocus
-        />
-        <div className="flex justify-end gap-3 mt-4">
-          <button onClick={onClose} className="px-4 py-2 text-sm border rounded text-gray-600 hover:bg-gray-50">Cancel</button>
-          <button
-            onClick={() => { if (val.trim()) { onSave(val.trim()); onClose() } }}
-            className="px-4 py-2 text-sm bg-[#CC0000] text-white rounded hover:bg-red-700"
-          >Save</button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Customer Form (Add / Edit) ────────────────────────────────────────────────
 function CustomerForm({ customer, onSave, onCancel }) {
@@ -49,8 +20,6 @@ function CustomerForm({ customer, onSave, onCancel }) {
   const [countries, setCountries] = useState([])
   const [states, setStates] = useState([])
   const [cities, setCities] = useState([])
-  const [showAddIndustry, setShowAddIndustry] = useState(false)
-  const [showAddAccountType, setShowAddAccountType] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -74,7 +43,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
   useEffect(() => {
     supabase.from('industries').select('id, name').order('name').then(({ data }) => setIndustries(data || []))
     supabase.from('account_type').select('id, type').order('type').then(({ data }) => setAccountTypes(data || []))
-    supabase.from('users').select('id, first_name, last_name').order('first_name').then(({ data }) => setUsers(data || []))
+    supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name').then(({ data }) => setUsers(data || []))
     supabase.from('country').select('id, name').order('name').then(({ data }) => setCountries(data || []))
   }, [])
 
@@ -108,22 +77,6 @@ function CustomerForm({ customer, onSave, onCancel }) {
   const setCountry = (val) => setForm(f => ({ ...f, country: val, state: '', city: '' }))
   const setState  = (val) => setForm(f => ({ ...f, state: val, city: '' }))
   const setCity   = (val) => setForm(f => ({ ...f, city: val }))
-
-  const handleAddIndustry = async (name) => {
-    const { data } = await supabase.from('industries').insert({ name, user_id: 1 }).select().single()
-    if (data) {
-      setIndustries(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
-      set('industry', name)
-    }
-  }
-
-  const handleAddAccountType = async (type) => {
-    const { data } = await supabase.from('account_type').insert({ type, user_id: 1 }).select().single()
-    if (data) {
-      setAccountTypes(prev => [...prev, data].sort((a, b) => a.type.localeCompare(b.type)))
-      set('account_type', type)
-    }
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -171,13 +124,6 @@ function CustomerForm({ customer, onSave, onCancel }) {
 
   return (
     <>
-      {showAddIndustry && (
-        <InlineAddModal title="Add Industry" label="Industry Name" onSave={handleAddIndustry} onClose={() => setShowAddIndustry(false)} />
-      )}
-      {showAddAccountType && (
-        <InlineAddModal title="Add Account Type" label="Account Type" onSave={handleAddAccountType} onClose={() => setShowAddAccountType(false)} />
-      )}
-
       <div className="flex items-center gap-3 mb-6">
         <button onClick={onCancel} className="flex items-center gap-1 text-gray-500 hover:text-gray-800 text-sm">
           <ArrowLeft size={16} /> Back
@@ -194,29 +140,17 @@ function CustomerForm({ customer, onSave, onCancel }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className={labelCls}>Industry</label>
-            <div className="flex gap-2">
-              <select className={inputCls} value={form.industry} onChange={e => set('industry', e.target.value)}>
-                <option value="">Please Select</option>
-                {industries.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
-              </select>
-              <button type="button" onClick={() => setShowAddIndustry(true)}
-                className="flex-shrink-0 w-9 h-9 flex items-center justify-center border border-gray-300 rounded text-gray-500 hover:bg-gray-50" title="Add new industry">
-                <Plus size={14} />
-              </button>
-            </div>
+            <select className={inputCls} value={form.industry} onChange={e => set('industry', e.target.value)}>
+              <option value="">Please Select</option>
+              {industries.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+            </select>
           </div>
           <div>
             <label className={labelCls}>Account Type</label>
-            <div className="flex gap-2">
-              <select className={inputCls} value={form.account_type} onChange={e => set('account_type', e.target.value)}>
-                <option value="">Please Select</option>
-                {accountTypes.map(a => <option key={a.id} value={a.type}>{a.type}</option>)}
-              </select>
-              <button type="button" onClick={() => setShowAddAccountType(true)}
-                className="flex-shrink-0 w-9 h-9 flex items-center justify-center border border-gray-300 rounded text-gray-500 hover:bg-gray-50" title="Add new account type">
-                <Plus size={14} />
-              </button>
-            </div>
+            <select className={inputCls} value={form.account_type} onChange={e => set('account_type', e.target.value)}>
+              <option value="">Please Select</option>
+              {accountTypes.map(a => <option key={a.id} value={a.type}>{a.type}</option>)}
+            </select>
           </div>
         </div>
 

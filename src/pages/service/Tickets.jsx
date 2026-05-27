@@ -67,6 +67,7 @@ export default function Tickets() {
   const [contacts, setContacts]     = useState([])
   const [users, setUsers]           = useState([])
   const [skuList, setSkuList]       = useState([])
+  const [priorities, setPriorities] = useState([])
 
   // Products rows in form
   const [products, setProducts] = useState([{ ...emptyProduct }])
@@ -97,16 +98,18 @@ export default function Tickets() {
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
     const run = async () => {
-      const [catR, custR, usrR, skuR] = await Promise.all([
+      const [catR, custR, usrR, skuR, prioR] = await Promise.all([
         supabase.from('category').select('id, name').order('name'),
         supabase.from('customer').select('id, company_name').order('company_name'),
-        supabase.from('users').select('id, first_name, last_name').order('first_name'),
+        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
         supabase.from('goodsservices').select('id, sku, description').order('sku'),
+        supabase.from('priority').select('id, name').order('name'),
       ])
       if (!catR.error)  setCategories(catR.data  || [])
       if (!custR.error) setCustomers(custR.data  || [])
       if (!usrR.error)  setUsers(usrR.data       || [])
       if (!skuR.error)  setSkuList(skuR.data     || [])
+      if (!prioR.error) setPriorities(prioR.data || [])
     }
     run()
   }, [])
@@ -325,9 +328,7 @@ export default function Tickets() {
             className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
           >
             <option value="">All Priorities</option>
-            <option>High</option>
-            <option>Medium</option>
-            <option>Low</option>
+            {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
           </select>
         </div>
 
@@ -677,9 +678,7 @@ export default function Tickets() {
                 className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
               >
                 <option value="">Please Select</option>
-                <option>High</option>
-                <option>Medium</option>
-                <option>Low</option>
+                {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
               </select>
             </div>
           </div>

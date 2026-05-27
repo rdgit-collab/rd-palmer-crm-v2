@@ -57,7 +57,7 @@ export default function OnsiteTickets() {
     const run = async () => {
       const [tickR, usrR] = await Promise.all([
         supabase.from('ticket').select('id, ticket_id, company_name').eq('is_completed', 0).order('id', { ascending: false }),
-        supabase.from('users').select('id, first_name, last_name').order('first_name'),
+        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
       ])
       if (!tickR.error) setTickets(tickR.data || [])
       if (!usrR.error)  setUsers(usrR.data || [])

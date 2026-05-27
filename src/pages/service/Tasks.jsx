@@ -67,7 +67,7 @@ export default function Tasks() {
       const [tickR, stR, usrR, sprR] = await Promise.all([
         supabase.from('ticket').select('id, ticket_id, company_name').eq('is_completed', 0).order('id', { ascending: false }),
         supabase.from('service_type').select('id, type').order('type'),
-        supabase.from('users').select('id, first_name, last_name').order('first_name'),
+        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
         supabase.from('spare').select('id, name').order('name'),
       ])
       if (!tickR.error) setTickets(tickR.data || [])

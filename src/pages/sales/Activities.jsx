@@ -5,9 +5,9 @@ import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'luc
 
 const PAGE_SIZE = 15
 
-const ACTIVITY_TYPES = ['Call', 'Meeting', 'Follow-Up', 'Email', 'Visit', 'Other']
-const PRIORITIES = ['High', 'Medium', 'Low']
-const STATUSES = ['Pending', 'In Progress', 'Completed', 'Cancelled']
+// These are loaded from DB — kept as fallbacks for badge colours only
+const PRIORITY_COLORS = { High: 'bg-red-100 text-red-700', Medium: 'bg-yellow-100 text-yellow-700', Low: 'bg-green-100 text-green-700' }
+const STATUS_COLORS   = { Completed: 'bg-green-100 text-green-700', 'In Progress': 'bg-blue-100 text-blue-700', Cancelled: 'bg-gray-100 text-gray-500' }
 
 function priorityColor(p) {
   if (p === 'High')   return 'bg-red-100 text-red-700'
@@ -29,7 +29,7 @@ function typeColor(t) {
 }
 
 const emptyForm = {
-  type: 'Call', priority: 'Medium', status: 'Pending',
+  type: '', priority: '', status: '',
   date: new Date().toISOString().split('T')[0], time: '',
   description: '', lead_id: '', company_id: '', assigned_to: '',
 }
@@ -50,9 +50,12 @@ export default function Activities() {
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
 
-  const [leads, setLeads]       = useState([])
-  const [customers, setCustomers] = useState([])
-  const [users, setUsers]       = useState([])
+  const [leads, setLeads]           = useState([])
+  const [customers, setCustomers]   = useState([])
+  const [users, setUsers]           = useState([])
+  const [activityTypes, setActivityTypes] = useState([])
+  const [priorities, setPriorities] = useState([])
+  const [activityStatuses, setActivityStatuses] = useState([])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -69,14 +72,20 @@ export default function Activities() {
 
   useEffect(() => {
     const run = async () => {
-      const [leadR, custR, usrR] = await Promise.all([
+      const [leadR, custR, usrR, atR, prioR, statusR] = await Promise.all([
         supabase.from('sales_lead').select('id, company_name, first_name, last_name').order('company_name'),
         supabase.from('customer').select('id, company_name').order('company_name'),
-        supabase.from('users').select('id, first_name, last_name').order('first_name'),
+        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
+        supabase.from('activity_type').select('id, type').order('type'),
+        supabase.from('priority').select('id, name').order('name'),
+        supabase.from('activity_status').select('id, name').order('name'),
       ])
-      if (!leadR.error) setLeads(leadR.data || [])
-      if (!custR.error) setCustomers(custR.data || [])
-      if (!usrR.error)  setUsers(usrR.data || [])
+      if (!leadR.error)   setLeads(leadR.data || [])
+      if (!custR.error)   setCustomers(custR.data || [])
+      if (!usrR.error)    setUsers(usrR.data || [])
+      if (!atR.error)     setActivityTypes(atR.data || [])
+      if (!prioR.error)   setPriorities(prioR.data || [])
+      if (!statusR.error) setActivityStatuses(statusR.data || [])
     }
     run()
   }, [])
@@ -93,7 +102,7 @@ export default function Activities() {
   const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
   const openEdit = (r) => {
     setForm({
-      type: r.type || 'Call', priority: r.priority || 'Medium', status: r.status || 'Pending',
+      type: r.type || '', priority: r.priority || '', status: r.status || '',
       date: r.date || '', time: r.time || '', description: r.description || '',
       lead_id: String(r.lead_id || ''), company_id: String(r.company_id || ''),
       assigned_to: String(r.assigned_to || ''),
@@ -139,7 +148,7 @@ export default function Activities() {
         </div>
         <select value={typeFilter} onChange={e => { setTF(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
           <option value="">All Types</option>
-          {ACTIVITY_TYPES.map(t => <option key={t}>{t}</option>)}
+          {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
         </select>
       </div>
       <div className="bg-white border border-gray-200">
@@ -204,7 +213,8 @@ export default function Activities() {
           <label className="text-sm font-medium text-gray-700">Activity Type <span className="text-red-500">*</span></label>
           <div className="col-span-2">
             <select value={form.type} onChange={e => setForm(f => ({...f, type: e.target.value}))} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              {ACTIVITY_TYPES.map(t => <option key={t}>{t}</option>)}
+              <option value="">Please Select</option>
+              {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
             </select>
           </div>
         </div>
@@ -237,7 +247,8 @@ export default function Activities() {
           <label className="text-sm font-medium text-gray-700">Priority</label>
           <div className="col-span-2">
             <select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              {PRIORITIES.map(p => <option key={p}>{p}</option>)}
+              <option value="">Please Select</option>
+              {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
             </select>
           </div>
         </div>
@@ -245,7 +256,8 @@ export default function Activities() {
           <label className="text-sm font-medium text-gray-700">Status</label>
           <div className="col-span-2">
             <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
+              <option value="">Please Select</option>
+              {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
           </div>
         </div>
