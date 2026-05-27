@@ -46,6 +46,9 @@ function CustomerForm({ customer, onSave, onCancel }) {
   const [industries, setIndustries] = useState([])
   const [accountTypes, setAccountTypes] = useState([])
   const [users, setUsers] = useState([])
+  const [countries, setCountries] = useState([])
+  const [states, setStates] = useState([])
+  const [cities, setCities] = useState([])
   const [showAddIndustry, setShowAddIndustry] = useState(false)
   const [showAddAccountType, setShowAddAccountType] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -72,9 +75,39 @@ function CustomerForm({ customer, onSave, onCancel }) {
     supabase.from('industries').select('id, name').order('name').then(({ data }) => setIndustries(data || []))
     supabase.from('account_type').select('id, type').order('type').then(({ data }) => setAccountTypes(data || []))
     supabase.from('users').select('id, first_name, last_name').order('first_name').then(({ data }) => setUsers(data || []))
+    supabase.from('country').select('id, name').order('name').then(({ data }) => setCountries(data || []))
   }, [])
 
+  // Load states when country changes
+  useEffect(() => {
+    if (!form.country || countries.length === 0) { setStates([]); return }
+    const countryRow = countries.find(c => c.name === form.country)
+    if (countryRow) {
+      supabase.from('state').select('id, name').eq('country_id', countryRow.id).order('name')
+        .then(({ data }) => setStates(data || []))
+    } else {
+      setStates([])
+    }
+  }, [form.country, countries])
+
+  // Load cities when state changes
+  useEffect(() => {
+    if (!form.state || states.length === 0) { setCities([]); return }
+    const stateRow = states.find(s => s.name === form.state)
+    if (stateRow) {
+      supabase.from('city').select('id, name').eq('state_id', stateRow.id).order('name')
+        .then(({ data }) => setCities(data || []))
+    } else {
+      setCities([])
+    }
+  }, [form.state, states])
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  // Cascading location handlers — reset child fields when parent changes
+  const setCountry = (val) => setForm(f => ({ ...f, country: val, state: '', city: '' }))
+  const setState  = (val) => setForm(f => ({ ...f, state: val, city: '' }))
+  const setCity   = (val) => setForm(f => ({ ...f, city: val }))
 
   const handleAddIndustry = async (name) => {
     const { data } = await supabase.from('industries').insert({ name, user_id: 1 }).select().single()
@@ -206,11 +239,26 @@ function CustomerForm({ customer, onSave, onCancel }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className={labelCls}>Country</label>
-            <input className={inputCls} value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" />
+            {countries.length > 0 ? (
+              <select className={inputCls} value={form.country} onChange={e => setCountry(e.target.value)}>
+                <option value="">— Select Country —</option>
+                {countries.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            ) : (
+              <input className={inputCls} value={form.country} onChange={e => setCountry(e.target.value)} placeholder="Country" />
+            )}
           </div>
           <div>
             <label className={labelCls}>State</label>
-            <input className={inputCls} value={form.state} onChange={e => set('state', e.target.value)} placeholder="State" />
+            {states.length > 0 ? (
+              <select className={inputCls} value={form.state} onChange={e => setState(e.target.value)}>
+                <option value="">— Select State —</option>
+                {states.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            ) : (
+              <input className={inputCls} value={form.state} onChange={e => setState(e.target.value)}
+                placeholder={form.country ? 'State / Province' : 'Select country first'} />
+            )}
           </div>
         </div>
 
@@ -218,7 +266,15 @@ function CustomerForm({ customer, onSave, onCancel }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className={labelCls}>City</label>
-            <input className={inputCls} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" />
+            {cities.length > 0 ? (
+              <select className={inputCls} value={form.city} onChange={e => setCity(e.target.value)}>
+                <option value="">— Select City —</option>
+                {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            ) : (
+              <input className={inputCls} value={form.city} onChange={e => setCity(e.target.value)}
+                placeholder={form.state ? 'City' : 'Select state first'} />
+            )}
           </div>
           <div>
             <label className={labelCls}>Postal / Zip Code</label>

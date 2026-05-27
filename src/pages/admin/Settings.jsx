@@ -120,7 +120,7 @@ function LocationsPanel() {
   const [editState, setEditState]     = useState(null)
   const [editCity, setEditCity]       = useState(null)
 
-  const [newCountry, setNewCountry] = useState({ name: '', code: '' })
+  const [newCountry, setNewCountry] = useState('')
   const [newState, setNewState]     = useState('')
   const [newCity, setNewCity]       = useState('')
   const [editVal, setEditVal]       = useState('')
@@ -146,9 +146,9 @@ function LocationsPanel() {
 
   // Country CRUD
   const addCountry = async () => {
-    if (!newCountry.name.trim()) return
-    await supabase.from('country').insert([{ name: newCountry.name.trim(), code: newCountry.code.trim().toUpperCase() }])
-    setNewCountry({ name: '', code: '' }); setAddingCountry(false); loadCountries()
+    if (!newCountry.trim()) return
+    await supabase.from('country').insert([{ name: newCountry.trim() }])
+    setNewCountry(''); setAddingCountry(false); loadCountries()
   }
   const updateCountry = async (id, field, val) => {
     await supabase.from('country').update({ [field]: val }).eq('id', id)
@@ -210,12 +210,11 @@ function LocationsPanel() {
           {countries.length === 0 && !addingCountry && <div className="px-4 py-6 text-sm text-gray-400 text-center">No countries yet.</div>}
           {addingCountry && (
             <div className="px-4 py-2 flex items-center gap-2 bg-red-50">
-              <input autoFocus type="text" value={newCountry.name} onChange={e => setNewCountry(p => ({ ...p, name: e.target.value }))}
+              <input autoFocus type="text" value={newCountry} onChange={e => setNewCountry(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCountry()}
                 placeholder="Country name" className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
-              <input type="text" maxLength={2} value={newCountry.code} onChange={e => setNewCountry(p => ({ ...p, code: e.target.value }))}
-                placeholder="Code" className="w-14 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
               <button onClick={addCountry} className="text-green-600 hover:text-green-700"><Check size={16} /></button>
-              <button onClick={() => { setAddingCountry(false); setNewCountry({ name: '', code: '' }) }} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+              <button onClick={() => { setAddingCountry(false); setNewCountry('') }} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
             </div>
           )}
           {countries.map(c => (
@@ -234,7 +233,6 @@ function LocationsPanel() {
               ) : (
                 <>
                   <span className="flex-1 text-sm text-gray-800">{c.name}</span>
-                  {c.code && <span className="text-xs text-gray-400 w-8">{c.code}</span>}
                   <button onClick={e => { e.stopPropagation(); setEditCountry(c.id); setEditVal(c.name) }} className="text-gray-400 hover:text-gray-600"><Edit2 size={13} /></button>
                   <button onClick={e => { e.stopPropagation(); deleteCountry(c.id) }} className="text-gray-400 hover:text-red-500"><Trash2 size={13} /></button>
                 </>
