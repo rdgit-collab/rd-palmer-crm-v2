@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 
 const PAGE_SIZE = 15
 
@@ -17,6 +17,11 @@ function statusColor(s) {
 const emptyForm = {
   ticket_id: '', certificate_number: '', serial_number: '',
   snumber: '', conduct_by: '', status: '', remark: '',
+}
+
+function storageUrl(path) {
+  if (!path) return null
+  return supabase.storage.from('crm-uploads').getPublicUrl(path).data.publicUrl
 }
 
 export default function Calibration() {
@@ -128,6 +133,7 @@ export default function Calibration() {
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || '—'}</span></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
+                    {r.file && <a href={storageUrl(r.file)} target="_blank" rel="noreferrer" className="text-gray-500 hover:text-red-600" title="Open certificate PDF"><FileText size={15} /></a>}
                     <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                     <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                     <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
@@ -203,6 +209,7 @@ export default function Calibration() {
           <div><span className="font-medium text-gray-500">Std. Number: </span>{detail.snumber || '—'}</div>
           <div><span className="font-medium text-gray-500">Conducted By: </span>{detail.conduct_by || '—'}</div>
           <div><span className="font-medium text-gray-500">Status: </span><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status || '—'}</span></div>
+          <div><span className="font-medium text-gray-500">Certificate PDF: </span>{detail.file ? <a href={storageUrl(detail.file)} target="_blank" rel="noreferrer" className="text-red-600 font-semibold hover:underline">Open PDF</a> : '—'}</div>
         </div>
         {detail.remark && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Remark</p><p className="whitespace-pre-wrap">{detail.remark}</p></div>}
       </div>
