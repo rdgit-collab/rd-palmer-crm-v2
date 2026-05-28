@@ -10,6 +10,13 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 15
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
+const DEFAULT_QUOTATION_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
+const DEFAULT_QUOTATION_TERMS = `Availability:
+Validity: 30 days from quotation date.
+Warranty: 12 months standard manufacturer warranty unless otherwise specified.
+Prices quoted are EX-Work Kuala Lumpur, Malaysia unless other specified.
+
+Please confirm your agreement to the terms and conditions stated therein by signing at the below.`
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
@@ -38,14 +45,27 @@ function HtmlBlock({ value }) {
   return <div className="text-sm text-gray-600 leading-6 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2" dangerouslySetInnerHTML={{ __html: sanitizeHtml(value) }} />
 }
 
-function quotationHtml(quotation, items) {
+function contactDisplayName(contact) {
+  if (!contact) return ''
+  return [contact.Salutation, contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || ''
+}
+
+function isNumericId(value) {
+  return /^[0-9]+$/.test(String(value || '').trim())
+}
+
+function resolvedContactName(value, contact) {
+  return isNumericId(value) ? (contactDisplayName(contact) || value || '-') : (value || '-')
+}
+
+function quotationHtml(quotation, items, contactName) {
   const itemRows = items.map((item, idx) => `
     <tr>
       <td>${idx + 1}</td>
-      <td>${escapeHtml(item.item || '')}</td>
-      <td>${sanitizeHtml(item.description || '')}</td>
+      <td><strong>${escapeHtml(item.item || '')}</strong><div class="desc">${sanitizeHtml(item.description || '')}</div></td>
       <td>${escapeHtml(item.qty || '')}</td>
       <td>${fmtMoney(item.rate)}</td>
+      <td>${escapeHtml(item.taxlbl || '-')}</td>
       <td>${fmtMoney(item.amount)}</td>
     </tr>
   `).join('')
@@ -54,34 +74,43 @@ function quotationHtml(quotation, items) {
     <head>
       <title>${escapeHtml(quotation.number || 'Quotation')}</title>
       <style>
-        body { font-family: Arial, sans-serif; color: #111827; margin: 32px; font-size: 12px; }
-        h1 { font-size: 22px; margin: 0 0 20px; color: #b91c1c; }
-        .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin-bottom: 24px; }
-        .meta div { border-bottom: 1px solid #e5e7eb; padding: 6px 0; }
-        .label { color: #6b7280; font-weight: 700; display: inline-block; min-width: 120px; }
-        table { width: 100%; border-collapse: collapse; margin: 18px 0; }
-        th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
-        th { background: #f9fafb; color: #4b5563; }
-        .totals { margin-left: auto; width: 280px; }
-        .totals div { display: flex; justify-content: space-between; padding: 5px 0; }
-        .total { border-top: 1px solid #111827; font-weight: 700; font-size: 14px; }
-        .section { margin-top: 20px; }
-        .section h2 { font-size: 13px; color: #4b5563; text-transform: uppercase; }
-        ul { padding-left: 20px; }
+        @page { size: A4; margin: 20mm 15mm; }
+        body { font-family: Arial, sans-serif; color: #111; margin: 0; font-size: 11px; }
+        .brand { color: #d10000; font-size: 22px; font-weight: 800; margin: 18px 0 54px; line-height: 1; }
+        .brand span { display: block; color: #d10000; font-size: 8px; font-weight: 700; margin-left: 2px; }
+        .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin-top: -74px; margin-bottom: 28px; }
+        .meta { display: grid; grid-template-columns: 1.1fr .9fr; gap: 4px 36px; margin-bottom: 18px; }
+        .meta div { padding: 3px 0; }
+        .label { color: #555; font-weight: 700; display: inline-block; min-width: 92px; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 28px 0 18px; border: 1px solid #222; border-radius: 3px; overflow: hidden; }
+        th, td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #222; }
+        th { background: #d4d4d4; color: #111; font-weight: 700; }
+        td:nth-child(1), th:nth-child(1) { width: 28px; text-align: center; }
+        td:nth-child(3), th:nth-child(3), td:nth-child(4), th:nth-child(4), td:nth-child(5), th:nth-child(5), td:nth-child(6), th:nth-child(6) { text-align: right; width: 82px; }
+        tr:last-child td { border-bottom: 0; }
+        .desc { margin-top: 4px; line-height: 1.4; }
+        .totals { margin: 34px 0 0 auto; width: 260px; border-top: 1px solid #aaa; padding-top: 10px; }
+        .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
+        .total { border-top: 1px solid #111; margin-top: 4px; font-weight: 700; font-size: 13px; }
+        .section { margin-top: 22px; line-height: 1.5; }
+        .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin-bottom: 6px; }
+        .signature { margin-top: 48px; margin-left: auto; width: 190px; border-top: 1px solid #999; text-align: center; padding-top: 8px; }
+        ul { padding-left: 18px; margin-top: 4px; }
       </style>
     </head>
     <body>
-      <h1>Quotation ${escapeHtml(quotation.number || '')}</h1>
+      <div class="brand">RD-Palmer<span>Underground Utility Solution</span></div>
+      <div class="doc-title">QUOTATION</div>
       <div class="meta">
         <div><span class="label">Customer</span>${escapeHtml(quotation.name || '')}</div>
+        <div><span class="label">Quotation No.</span>${escapeHtml(quotation.number || '')}</div>
+        <div><span class="label">Contact</span>${escapeHtml(contactName || '-')}</div>
         <div><span class="label">Date</span>${fmt(quotation.date)}</div>
         <div><span class="label">Reference</span>${escapeHtml(quotation.reference || '-')}</div>
         <div><span class="label">Expiry</span>${fmt(quotation.expiry_date)}</div>
-        <div><span class="label">Sales Person</span>${escapeHtml(quotation.sales_person || '-')}</div>
-        <div><span class="label">Contact</span>${escapeHtml(quotation.contact_person || '-')}</div>
       </div>
       <table>
-        <thead><tr><th>#</th><th>Item</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+        <thead><tr><th>#</th><th>Item & Description</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Amount</th></tr></thead>
         <tbody>${itemRows}</tbody>
       </table>
       <div class="totals">
@@ -93,6 +122,7 @@ function quotationHtml(quotation, items) {
       </div>
       ${quotation.notes ? `<div class="section"><h2>Notes</h2>${sanitizeHtml(quotation.notes)}</div>` : ''}
       ${quotation.terms ? `<div class="section"><h2>Terms & Conditions</h2>${sanitizeHtml(quotation.terms)}</div>` : ''}
+      <div class="signature">Authorised Signature</div>
     </body>
   </html>`
 }
@@ -277,8 +307,8 @@ function QuotationForm({ quotation, onSave, onCancel }) {
         setForm(f => ({
           ...f,
           number: qnum,
-          notes: tpl.quotation_notes || '',
-          terms: tpl.quotation_terms || '',
+          notes: tpl.quotation_notes || DEFAULT_QUOTATION_NOTES,
+          terms: tpl.quotation_terms || DEFAULT_QUOTATION_TERMS,
         }))
       }
     }
@@ -473,7 +503,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
               {contacts.length > 0 ? (
                 <select className={inputCls} value={form.contact_person} onChange={e => setF('contact_person', e.target.value)}>
                   <option value="">Please Select</option>
-                  {contacts.map(c => <option key={c.id} value={`${c.first_name} ${c.last_name}`}>{c.first_name} {c.last_name}</option>)}
+                  {contacts.map(c => <option key={c.id} value={c.id}>{contactDisplayName(c)}</option>)}
                 </select>
               ) : (
                 <input className={inputCls} value={form.contact_person} onChange={e => setF('contact_person', e.target.value)} placeholder="Contact person name" />
@@ -605,6 +635,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
 function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
   const [quotation, setQuotation] = useState(null)
   const [items, setItems] = useState([])
+  const [contact, setContact] = useState(null)
   const [loading, setLoading] = useState(true)
   const [converting, setConverting] = useState(false)
 
@@ -615,8 +646,14 @@ function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
         supabase.from('quotation').select('*').eq('id', quotationId).single(),
         supabase.from('quotation_item').select('*').eq('qid', quotationId).order('id'),
       ])
+      let contactRow = null
+      if (isNumericId(q?.contact_person)) {
+        const { data } = await supabase.from('contact').select('*').eq('id', parseInt(q.contact_person)).maybeSingle()
+        contactRow = data || null
+      }
       setQuotation(q)
       setItems(qi || [])
+      setContact(contactRow)
       setLoading(false)
     }
     load()
@@ -634,8 +671,9 @@ function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
   if (!quotation) return <div className="text-gray-500 text-sm p-4">Quotation not found.</div>
 
   const isConverted = quotation.isconvert === 1
-  const openPreview = () => openPrintable(quotationHtml(quotation, items))
-  const downloadPdf = () => openPrintable(quotationHtml(quotation, items), true)
+  const contactName = resolvedContactName(quotation.contact_person, contact)
+  const openPreview = () => openPrintable(quotationHtml(quotation, items, contactName))
+  const downloadPdf = () => openPrintable(quotationHtml(quotation, items, contactName), true)
 
   return (
     <div>
@@ -702,7 +740,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
                 ['Payment Terms', quotation.payment_term || '—'],
                 ['Currency', quotation.currency || 'MYR'],
                 ['Sales Person', quotation.sales_person || '—'],
-                ['Contact Person', quotation.contact_person || '—'],
+                ['Contact Person', contactName],
               ].map(([l, v]) => (
                 <tr key={l} className="border-b border-gray-50 last:border-0">
                   <td className="py-2 pr-4 text-gray-500 font-medium w-36">{l}</td>
@@ -735,7 +773,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
                   <td className="px-4 py-3 font-medium text-gray-900">{item.item}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs max-w-xs">{item.description || '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 text-xs max-w-xs"><HtmlBlock value={item.description || '—'} /></td>
                   <td className="px-4 py-3 text-gray-700">{item.qty}</td>
                   <td className="px-4 py-3 text-gray-700">{fmtMoney(item.rate)}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{item.taxlbl || '—'}</td>
