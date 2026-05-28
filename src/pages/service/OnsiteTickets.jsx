@@ -6,6 +6,8 @@ import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRigh
 
 const PAGE_SIZE = 50
 
+const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
+
 function storageUrl(path) {
   if (!path) return ''
   return supabase.storage.from('crm-uploads').getPublicUrl(path).data.publicUrl
@@ -26,6 +28,53 @@ const emptyForm = {
   assigned_to: '', status: 'Open', workdone: '',
   date: new Date().toISOString().split('T')[0],
   file: '',
+}
+
+function SpareChecklist({ options, value, onChange }) {
+  const [term, setTerm] = useState('')
+  const selected = splitCsv(value)
+  const selectedSet = new Set(selected)
+  const filtered = options.filter(spare => spare.name.toLowerCase().includes(term.trim().toLowerCase()))
+
+  const toggle = (name) => {
+    const next = selectedSet.has(name)
+      ? selected.filter(item => item !== name)
+      : [...selected, name]
+    onChange(next.join(','))
+  }
+
+  return (
+    <div className="border border-gray-200 bg-white">
+      <div className="relative border-b border-gray-100">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={term}
+          onChange={e => setTerm(e.target.value)}
+          placeholder="Search spare parts..."
+          className="w-full pl-8 pr-3 py-2 text-sm focus:outline-none"
+        />
+      </div>
+      <div className="max-h-48 overflow-y-auto p-2 space-y-1">
+        {filtered.length === 0 ? (
+          <p className="px-2 py-3 text-sm text-gray-400">No spare parts found.</p>
+        ) : filtered.map(spare => (
+          <label key={spare.id} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedSet.has(spare.name)}
+              onChange={() => toggle(spare.name)}
+              className="h-4 w-4 accent-red-600"
+            />
+            <span className="text-gray-700">{spare.name}</span>
+          </label>
+        ))}
+      </div>
+      <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
+        {selected.length ? `${selected.length} selected: ${selected.join(', ')}` : 'No spare parts selected'}
+      </div>
+    </div>
+  )
 }
 
 export default function OnsiteTickets() {
@@ -87,7 +136,7 @@ export default function OnsiteTickets() {
     return formatUserName(users, id)
   }
 
-  const productValues = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
+  const productValues = (value) => splitCsv(value)
 
   const stripHtml = (value = '') => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 
@@ -277,10 +326,7 @@ export default function OnsiteTickets() {
           ['Serial Number', <input type="text" value={form.serial_number} onChange={e => setForm(f => ({...f, serial_number: e.target.value}))} placeholder="S/N" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
           ['Location', <input type="text" value={form.location} onChange={e => setForm(f => ({...f, location: e.target.value}))} placeholder="Site location" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
           ['Vendor Order Ref', <input type="text" value={form.vandor_order_ref} onChange={e => setForm(f => ({...f, vandor_order_ref: e.target.value}))} placeholder="Vendor reference" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
-          ['Spare Used', <select multiple value={productValues(form.spare)} onChange={e => {
-            const selected = Array.from(e.target.selectedOptions).map(option => option.value)
-            setForm(f => ({...f, spare: selected.join(',')}))
-          }} className="w-full min-h-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="" disabled>Please Select</option>{spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>],
+          ['Spare Used', <SpareChecklist options={spares} value={form.spare} onChange={value => setForm(f => ({...f, spare: value}))} />],
         ].map(([label, el], i) => (
           <div key={i} className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">{label}</label>

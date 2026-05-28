@@ -169,7 +169,7 @@ function quotationHtml(quotation, items, contactName, customer) {
     <head>
       <title>${escapeHtml(quotation.number || 'Quotation')}</title>
       <style>
-        @page { size: A4; margin: 15mm; }
+        @page { size: A4; margin: 0; }
         body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
         .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
         .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
@@ -206,7 +206,14 @@ function quotationHtml(quotation, items, contactName, customer) {
         ul { padding-left: 18px; margin-top: 4px; }
         @media print {
           body { background: #fff; }
-          .sheet { width: auto; min-height: 0; margin: 0; padding: 0; }
+          .sheet {
+            width: auto;
+            min-height: 0;
+            margin: 0;
+            padding: 15mm;
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
+          }
         }
       </style>
     </head>

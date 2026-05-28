@@ -7,6 +7,55 @@ import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronR
 
 const PAGE_SIZE = 50
 
+const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
+
+function SpareChecklist({ options, value, onChange }) {
+  const [term, setTerm] = useState('')
+  const selected = splitCsv(value)
+  const selectedSet = new Set(selected)
+  const filtered = options.filter(spare => spare.name.toLowerCase().includes(term.trim().toLowerCase()))
+
+  const toggle = (name) => {
+    const next = selectedSet.has(name)
+      ? selected.filter(item => item !== name)
+      : [...selected, name]
+    onChange(next.join(','))
+  }
+
+  return (
+    <div className="border border-gray-200 bg-white">
+      <div className="relative border-b border-gray-100">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={term}
+          onChange={e => setTerm(e.target.value)}
+          placeholder="Search spare parts..."
+          className="w-full pl-8 pr-3 py-2 text-sm focus:outline-none"
+        />
+      </div>
+      <div className="max-h-48 overflow-y-auto p-2 space-y-1">
+        {filtered.length === 0 ? (
+          <p className="px-2 py-3 text-sm text-gray-400">No spare parts found.</p>
+        ) : filtered.map(spare => (
+          <label key={spare.id} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedSet.has(spare.name)}
+              onChange={() => toggle(spare.name)}
+              className="h-4 w-4 accent-red-600"
+            />
+            <span className="text-gray-700">{spare.name}</span>
+          </label>
+        ))}
+      </div>
+      <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
+        {selected.length ? `${selected.length} selected: ${selected.join(', ')}` : 'No spare parts selected'}
+      </div>
+    </div>
+  )
+}
+
 function fmtDateTime(value) {
   return value ? new Date(value).toLocaleString('en-GB') : '—'
 }
@@ -1156,10 +1205,7 @@ export default function Tickets() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
-                    <select value={quickForm.spare || ''} onChange={e => setQuick('spare', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                      <option value="">None</option>
-                      {spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                    </select>
+                    <SpareChecklist options={spares} value={quickForm.spare || ''} onChange={value => setQuick('spare', value)} />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Issue Description</label>
