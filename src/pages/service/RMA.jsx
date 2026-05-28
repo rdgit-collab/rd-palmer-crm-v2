@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 const emptyForm = {
   ticket_id: '', rma_number: '', vendor: '', date_sent: '',
@@ -33,7 +33,21 @@ export default function RMA() {
   const fetchRows = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('rma').select('*', { count: 'exact' }).order('id', { ascending: false })
-    if (search) q = q.or(`rma_number.ilike.%${search}%,vendor.ilike.%${search}%`)
+    if (search) {
+      const term = search.trim()
+      const tid = term.replace(/^TID/i, '')
+      const ticketFilters = [`company_name.ilike.%${term}%`]
+      if (/^\d+$/.test(tid)) ticketFilters.push(`ticket_id.eq.${parseInt(tid)}`)
+      const { data: matchedTickets } = await supabase
+        .from('ticket')
+        .select('id')
+        .or(ticketFilters.join(','))
+        .limit(500)
+      const ticketIds = (matchedTickets || []).map(t => t.id)
+      const filters = [`rma_number.ilike.%${term}%`, `vendor.ilike.%${term}%`]
+      if (ticketIds.length > 0) filters.push(`ticket_id.in.(${ticketIds.join(',')})`)
+      q = q.or(filters.join(','))
+    }
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
     if (!err) { setRows(data || []); setTotal(count || 0) }
@@ -109,7 +123,7 @@ export default function RMA() {
       </div>
       <div className="relative max-w-sm mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Search RMA number or vendor..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+        <input type="text" placeholder="Search RMA, vendor, ticket number or company..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
           className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
       </div>
       <div className="bg-white border border-gray-200">

@@ -5,7 +5,7 @@ import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 function fmtDateTime(value) {
   return value ? new Date(value).toLocaleString('en-GB') : '—'
@@ -116,7 +116,13 @@ export default function Tickets() {
       .eq('is_completed', tab === 'open' ? 0 : 1)
       .order('id', { ascending: false })
 
-    if (search)        q = q.or(`company_name.ilike.%${search}%,priority.ilike.%${search}%`)
+    if (search) {
+      const term = search.trim()
+      const tid = term.replace(/^TID/i, '')
+      const filters = [`company_name.ilike.%${term}%`, `priority.ilike.%${term}%`]
+      if (/^\d+$/.test(tid)) filters.push(`ticket_id.eq.${parseInt(tid)}`)
+      q = q.or(filters.join(','))
+    }
     if (priorityFilter) q = q.eq('priority', priorityFilter)
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 

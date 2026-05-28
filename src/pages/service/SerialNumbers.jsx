@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 const emptyForm = {
   date: new Date().toISOString().split('T')[0],

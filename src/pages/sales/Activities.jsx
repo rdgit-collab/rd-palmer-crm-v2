@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 const emptyForm = {
   type: '', priority: '', status: '',

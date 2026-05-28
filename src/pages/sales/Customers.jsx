@@ -427,7 +427,7 @@ function CustomerDetail({ customerId, onBack, onEdit }) {
 }
 
 // ─── Main Customers Page (List) ────────────────────────────────────────────────
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 export default function Customers() {
   const [view, setView] = useState('list')   // 'list' | 'form' | 'detail'

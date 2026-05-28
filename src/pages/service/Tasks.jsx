@@ -5,7 +5,7 @@ import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 function storageUrl(path) {
   if (!path) return ''

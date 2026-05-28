@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, FileText, X } from 'lucide-react'
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 function statusColor(s) {
   if (!s) return 'bg-gray-100 text-gray-600'
@@ -384,6 +384,11 @@ export default function Calibration() {
           </div>
         </div>
 
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Remark</label>
+          <textarea value={form.remark} onChange={e => setForm(f => ({...f, remark: e.target.value}))} rows={3} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Terms & Conditions</label>
@@ -397,11 +402,6 @@ export default function Calibration() {
             <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onChange={e => setUploadFile(e.target.files?.[0] || null)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
             {form.file && !uploadFile && <a href={storageUrl(form.file)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-red-600 font-semibold hover:underline"><FileText size={13} /> Existing document</a>}
           </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Remark</label>
-          <textarea value={form.remark} onChange={e => setForm(f => ({...f, remark: e.target.value}))} rows={3} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
         </div>
 
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">

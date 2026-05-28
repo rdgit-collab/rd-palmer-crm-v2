@@ -8,7 +8,7 @@ import {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
 const DEFAULT_INVOICE_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_INVOICE_TERMS = `Availability:
@@ -928,10 +928,30 @@ export default function Invoices() {
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('invoice').select('*', { count: 'exact' })
-    if (search.trim()) q = q.ilike('name', `%${search.trim()}%`)
+    if (search.trim()) {
+      const term = search.trim()
+      q = q.or(`name.ilike.%${term}%,invoice_number.ilike.%${term}%`)
+    }
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q
-    if (!error) { setInvoices(data || []); setTotal(count || 0) }
+    if (!error) {
+      const rows = data || []
+      if (rows.length > 0) {
+        const { data: itemRows } = await supabase
+          .from('invoice_item')
+          .select('invoiceid, item')
+          .in('invoiceid', rows.map(row => row.id))
+          .order('id')
+        const firstItemByInvoiceId = {}
+        ;(itemRows || []).forEach(item => {
+          if (!firstItemByInvoiceId[item.invoiceid]) firstItemByInvoiceId[item.invoiceid] = item.item
+        })
+        setInvoices(rows.map(row => ({ ...row, first_item: firstItemByInvoiceId[row.id] || '' })))
+      } else {
+        setInvoices([])
+      }
+      setTotal(count || 0)
+    }
     setLoading(false)
   }, [search, page])
 
@@ -982,7 +1002,7 @@ export default function Invoices() {
         <div className="relative flex-1 max-w-sm">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-            placeholder="Search by customer name..." value={search} onChange={e => setSearch(e.target.value)} />
+            placeholder="Search by customer or invoice number..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         {search && (
           <button onClick={() => setSearch('')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
@@ -1000,6 +1020,7 @@ export default function Invoices() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Customer</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Due Date</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">First Item</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Quot. Ref.</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Total</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
@@ -1008,10 +1029,10 @@ export default function Invoices() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-sm">Loading...</td></tr>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">Loading...</td></tr>
               ) : invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-sm">
+                  <td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">
                     {search ? 'No invoices match your search.' : 'No invoices yet. Click "New Invoice" to get started.'}
                   </td>
                 </tr>
@@ -1031,6 +1052,7 @@ export default function Invoices() {
                       <td className="px-4 py-3 text-xs">
                         <span className={isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'}>{fmt(inv.due_date)}</span>
                       </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate">{inv.first_item || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{inv.quote_ref_number || '—'}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900 text-xs">
                         {inv.currency} {fmtMoney(inv.total)}

@@ -8,7 +8,7 @@ import {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
 const DEFAULT_QUOTATION_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_QUOTATION_TERMS = `Availability:
@@ -275,6 +275,12 @@ async function getNextQNumber() {
   const { data } = await supabase.from('quotation').select('id').order('id', { ascending: false }).limit(1)
   const lastId = data?.[0]?.id ?? 0
   return `QUO${100 + lastId + 1}`
+}
+
+async function getNextInvoiceNumber() {
+  const { data } = await supabase.from('invoice').select('id').order('id', { ascending: false }).limit(1)
+  const lastId = data?.[0]?.id ?? 0
+  return `INV${100 + lastId + 1}`
 }
 
 // ─── Line Item Row ─────────────────────────────────────────────────────────────
@@ -800,6 +806,63 @@ function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
   const handleConvert = async () => {
     if (!window.confirm('Convert this quotation to an invoice? The quotation will be marked as converted.')) return
     setConverting(true)
+    const invoiceNumber = await getNextInvoiceNumber()
+    const now = new Date().toISOString()
+    const invoicePayload = {
+      user_id: quotation.user_id || 1,
+      companyid: quotation.companyid,
+      name: quotation.name,
+      invoice_number: invoiceNumber,
+      order_number: quotation.reference || null,
+      quote_ref_number: quotation.number,
+      date: new Date().toISOString().split('T')[0],
+      due_date: quotation.expiry_date || null,
+      terms: quotation.payment_term,
+      term_condition: quotation.terms,
+      sales_person: quotation.sales_person,
+      contact_person: quotation.contact_person,
+      currency: quotation.currency || 'MYR',
+      notes: quotation.notes,
+      subtotal: quotation.subtotal,
+      discount: quotation.discount,
+      discouttype: quotation.discouttype,
+      discountvalue: quotation.discountvalue,
+      shiping_charge: quotation.shiping_charge,
+      tax: quotation.tax || 0,
+      adjustment: quotation.adjustment,
+      total: quotation.total,
+      created_at: now,
+      updated_at: now,
+    }
+    const { data: invoice, error: invoiceErr } = await supabase.from('invoice').insert(invoicePayload).select().single()
+    if (invoiceErr) {
+      alert(invoiceErr.message)
+      setConverting(false)
+      return
+    }
+    if (items.length > 0) {
+      const invoiceItems = items.map(item => ({
+        user_id: item.user_id || 1,
+        invoiceid: invoice.id,
+        item: item.item,
+        description: item.description,
+        qty: item.qty,
+        rate: item.rate,
+        tax: item.tax,
+        amount: item.amount,
+        itemid: item.itemid,
+        taxid: item.taxid,
+        taxlbl: item.taxlbl,
+        created_at: now,
+        updated_at: now,
+      }))
+      const { error: itemErr } = await supabase.from('invoice_item').insert(invoiceItems)
+      if (itemErr) {
+        alert(itemErr.message)
+        setConverting(false)
+        return
+      }
+    }
     await supabase.from('quotation').update({ isconvert: 1 }).eq('id', quotationId)
     setConverting(false)
     onConverted()
@@ -995,10 +1058,30 @@ export default function Quotations() {
   const fetchQuotations = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('quotation').select('*', { count: 'exact' })
-    if (search.trim()) q = q.ilike('name', `%${search.trim()}%`)
+    if (search.trim()) {
+      const term = search.trim()
+      q = q.or(`name.ilike.%${term}%,number.ilike.%${term}%`)
+    }
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q
-    if (!error) { setQuotations(data || []); setTotal(count || 0) }
+    if (!error) {
+      const rows = data || []
+      if (rows.length > 0) {
+        const { data: itemRows } = await supabase
+          .from('quotation_item')
+          .select('qid, item')
+          .in('qid', rows.map(row => row.id))
+          .order('id')
+        const firstItemByQid = {}
+        ;(itemRows || []).forEach(item => {
+          if (!firstItemByQid[item.qid]) firstItemByQid[item.qid] = item.item
+        })
+        setQuotations(rows.map(row => ({ ...row, first_item: firstItemByQid[row.id] || '' })))
+      } else {
+        setQuotations([])
+      }
+      setTotal(count || 0)
+    }
     setLoading(false)
   }, [search, page])
 
@@ -1063,7 +1146,7 @@ export default function Quotations() {
         <div className="relative flex-1 max-w-sm">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-            placeholder="Search by customer name..." value={search} onChange={e => setSearch(e.target.value)} />
+            placeholder="Search by customer or quotation number..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         {search && (
           <button onClick={() => setSearch('')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
@@ -1082,7 +1165,7 @@ export default function Quotations() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Customer</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Expiry</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Payment</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">First Item</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Total</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
@@ -1110,7 +1193,7 @@ export default function Quotations() {
                     <td className="px-4 py-3 text-gray-800 text-xs">{q.name || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{fmt(q.date)}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{fmt(q.expiry_date)}</td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{q.payment_term || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate">{q.first_item || '—'}</td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900 text-xs">
                       {q.currency} {fmtMoney(q.total)}
                     </td>

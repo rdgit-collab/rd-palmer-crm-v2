@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 const lookupName = (items, id, fallbackPrefix) => {
   if (!id) return '—'
