@@ -47,6 +47,24 @@ function fmtDate(value) {
   return value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'
 }
 
+function fmtCurrency(value) {
+  return `MYR ${Number(value || 0).toLocaleString('en-MY', { maximumFractionDigits: 0 })}`
+}
+
+function monthStartIso() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+}
+
+function isThisMonth(value, start = monthStartIso()) {
+  return String(value || '').slice(0, 10) >= start
+}
+
+function isClosedLeadStatus(status) {
+  const value = String(status || '').toLowerCase()
+  return ['won', 'lost', 'closed', 'complete', 'completed'].includes(value)
+}
+
 function addStaffMetric(map, users, assignee, updates) {
   const key = assignee ? String(assignee) : 'unassigned'
   if (!map[key]) {
@@ -58,6 +76,40 @@ function addStaffMetric(map, users, assignee, updates) {
       openOnsites: 0,
       completed: 0,
       overdue: 0,
+    }
+  }
+  Object.entries(updates).forEach(([field, value]) => {
+    map[key][field] += value
+  })
+}
+
+function salesOwnerKey(users, value) {
+  const raw = String(value || '').trim()
+  if (!raw) return 'unassigned'
+  const userName = formatUserName(users, raw)
+  return userName !== '—' ? raw : `name:${raw}`
+}
+
+function salesOwnerName(users, key) {
+  if (key === 'unassigned') return 'Unassigned'
+  if (String(key).startsWith('name:')) return String(key).slice(5)
+  return formatUserName(users, key)
+}
+
+function addSalesMetric(map, users, owner, updates) {
+  const key = salesOwnerKey(users, owner)
+  if (!map[key]) {
+    map[key] = {
+      id: key,
+      name: salesOwnerName(users, key),
+      openLeads: 0,
+      wonLeads: 0,
+      lostLeads: 0,
+      activities: 0,
+      quotations: 0,
+      quotationValue: 0,
+      converted: 0,
+      invoiceValue: 0,
     }
   }
   Object.entries(updates).forEach(([field, value]) => {
@@ -176,27 +228,113 @@ function SalesDashboard({ firstName }) {
   const [stats, setStats] = useState({})
   const [recentActivities, setRecentActivities] = useState([])
   const [recentLeads, setRecentLeads] = useState([])
+  const [salesRows, setSalesRows] = useState([])
+  const [followUpItems, setFollowUpItems] = useState([])
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
+    const monthStart = monthStartIso()
+    const staleDate = new Date()
+    staleDate.setDate(staleDate.getDate() - 7)
+    const staleIso = staleDate.toISOString().split('T')[0]
     Promise.all([
       supabase.from('customer').select('*', { count: 'exact', head: true }),
       supabase.from('sales_lead').select('*', { count: 'exact', head: true }),
       supabase.from('quotation').select('*', { count: 'exact', head: true }),
-      supabase.from('invoice').select('*', { count: 'exact', head: true }).eq('status', 'Unpaid'),
-      supabase.from('invoice').select('*', { count: 'exact', head: true }).eq('status', 'Unpaid').lt('due_date', today),
+      supabase.from('invoice').select('*', { count: 'exact', head: true }),
+      supabase.from('invoice').select('*', { count: 'exact', head: true }).lt('due_date', today),
       supabase.from('activity').select('id, type, date, description, company_id').order('date', { ascending: false }).limit(8),
-      supabase.from('sales_lead').select('id, full_name, company_name, status, created_at').order('id', { ascending: false }).limit(5),
-    ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads]) => {
+      supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').order('id', { ascending: false }).limit(5),
+      supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').limit(2000),
+      supabase.from('activity').select('id, lead_id, assigned_to, type, status, date, description, created_at').limit(2000),
+      supabase.from('quotation').select('id, number, date, sales_person, total, isconvert').limit(2000),
+      supabase.from('invoice').select('id, invoice_number, date, sales_person, total').limit(2000),
+      fetchAssignableUsers(supabase),
+    ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads, allLeads, allActivities, allQuotations, allInvoices, users]) => {
+      const leadRows = allLeads.data || []
+      const activityRows = allActivities.data || []
+      const quotationRows = allQuotations.data || []
+      const invoiceRows = allInvoices.data || []
+      const openLeads = leadRows.filter(lead => !isClosedLeadStatus(lead.status))
+      const newLeadsThisMonth = leadRows.filter(lead => isThisMonth(lead.created_at, monthStart)).length
+      const quoteValueThisMonth = quotationRows
+        .filter(row => isThisMonth(row.date, monthStart))
+        .reduce((sum, row) => sum + Number(row.total || 0), 0)
+      const invoiceValueThisMonth = invoiceRows
+        .filter(row => isThisMonth(row.date, monthStart))
+        .reduce((sum, row) => sum + Number(row.total || 0), 0)
+      const convertedQuotes = quotationRows.filter(row => row.isconvert === 1).length
+      const salesMap = {}
+
+      leadRows.forEach(lead => {
+        const status = String(lead.status || '').toLowerCase()
+        addSalesMetric(salesMap, users, lead.assigned_to, {
+          openLeads: isClosedLeadStatus(lead.status) ? 0 : 1,
+          wonLeads: status === 'won' ? 1 : 0,
+          lostLeads: status === 'lost' ? 1 : 0,
+        })
+      })
+      activityRows
+        .filter(activity => isThisMonth(activity.date || activity.created_at, monthStart))
+        .forEach(activity => {
+          addSalesMetric(salesMap, users, activity.assigned_to, { activities: 1 })
+        })
+      quotationRows
+        .filter(row => isThisMonth(row.date, monthStart))
+        .forEach(row => {
+          addSalesMetric(salesMap, users, row.sales_person, {
+            quotations: 1,
+            quotationValue: Number(row.total || 0),
+            converted: row.isconvert === 1 ? 1 : 0,
+          })
+        })
+      invoiceRows
+        .filter(row => isThisMonth(row.date, monthStart))
+        .forEach(row => {
+          addSalesMetric(salesMap, users, row.sales_person, { invoiceValue: Number(row.total || 0) })
+        })
+
+      const lastActivityByLead = {}
+      activityRows.forEach(activity => {
+        if (!activity.lead_id) return
+        const date = String(activity.date || activity.created_at || '').slice(0, 10)
+        if (!lastActivityByLead[activity.lead_id] || date > lastActivityByLead[activity.lead_id]) {
+          lastActivityByLead[activity.lead_id] = date
+        }
+      })
+      const followUps = openLeads
+        .map(lead => {
+          const lastActivity = lastActivityByLead[lead.id] || String(lead.updated_at || lead.created_at || '').slice(0, 10)
+          return {
+            id: lead.id,
+            name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed lead',
+            company: lead.company_name || '—',
+            owner: formatUserName(users, lead.assigned_to),
+            status: lead.status || 'Open',
+            lastActivity,
+          }
+        })
+        .filter(lead => !lead.lastActivity || lead.lastActivity <= staleIso)
+        .sort((a, b) => String(a.lastActivity).localeCompare(String(b.lastActivity)))
+        .slice(0, 8)
+
       setStats({
         customers:      cust.count    || 0,
-        leads:          leads.count   || 0,
+        leads:          openLeads.length,
+        newLeadsThisMonth,
         quotations:     quot.count    || 0,
-        unpaidInvoices: unpaidInv.count || 0,
+        invoices: unpaidInv.count || 0,
         overdueInvoices: overdue.count || 0,
+        quoteValueThisMonth,
+        invoiceValueThisMonth,
+        quoteConversion: quotationRows.length > 0 ? Math.round((convertedQuotes / quotationRows.length) * 100) : 0,
       })
       setRecentActivities(acts.data || [])
       setRecentLeads(rLeads.data || [])
+      setSalesRows(Object.values(salesMap)
+        .sort((a, b) => (b.invoiceValue + b.quotationValue + b.openLeads) - (a.invoiceValue + a.quotationValue + a.openLeads))
+        .slice(0, 8))
+      setFollowUpItems(followUps)
     })
   }, [])
 
@@ -220,10 +358,54 @@ function SalesDashboard({ firstName }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label="Customers"        value={stats.customers}       icon={Building2}     color="#2563EB" bg="#EFF6FF" to="/customers" />
-        <StatCard label="Active Leads"     value={stats.leads}           icon={TrendingUp}    color="#BE185D" bg="#FDF2F8" to="/leads" />
+        <StatCard label="Open Leads"       value={stats.leads}           icon={TrendingUp}    color="#BE185D" bg="#FDF2F8" to="/leads" />
+        <StatCard label="New Leads This Month" value={stats.newLeadsThisMonth} icon={Users} color="#7C3AED" bg="#F5F3FF" to="/leads" />
         <StatCard label="Quotations"       value={stats.quotations}      icon={FileText}      color="#7C3AED" bg="#F5F3FF" to="/quotations" />
-        <StatCard label="Unpaid Invoices"  value={stats.unpaidInvoices}  icon={Receipt}       color="#D97706" bg="#FFFBEB" to="/invoices" />
+        <StatCard label="Quotation Value"  value={fmtCurrency(stats.quoteValueThisMonth)} icon={FileText} color="#0891B2" bg="#ECFEFF" to="/quotations" />
+        <StatCard label="Invoice Value"    value={fmtCurrency(stats.invoiceValueThisMonth)} icon={Receipt} color="#059669" bg="#ECFDF5" to="/invoices" />
+        <StatCard label="Quote Conversion" value={`${stats.quoteConversion ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" />
+        <StatCard label="Invoices"         value={stats.invoices}         icon={Receipt}       color="#D97706" bg="#FFFBEB" to="/invoices" />
         <StatCard label="Overdue Invoices" value={stats.overdueInvoices} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/invoices" />
+      </div>
+
+      <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-[#111111] text-sm">Salesperson Performance</h3>
+            <p className="text-xs text-gray-400 mt-0.5">This month’s activities, quotation value, invoice value, and open pipeline ownership.</p>
+          </div>
+          <Link to="/quotations" className="text-xs text-red-600 hover:underline">Review sales docs</Link>
+        </div>
+        {salesRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No sales performance data yet.</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Salesperson</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Open Leads</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Activities</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Quotes</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Converted</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Quote Value</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Invoice Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {salesRows.map(row => (
+                  <tr key={row.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-3 py-2 font-medium text-gray-900">{row.name || '—'}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{row.openLeads}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{row.activities}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{row.quotations}</td>
+                    <td className="px-3 py-2 text-right text-green-700">{row.converted}</td>
+                    <td className="px-3 py-2 text-right font-medium text-gray-900">{fmtCurrency(row.quotationValue)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-gray-900">{fmtCurrency(row.invoiceValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -237,11 +419,36 @@ function SalesDashboard({ firstName }) {
               {recentLeads.map(l => (
                 <div key={l.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{l.full_name || '—'}</p>
+                    <p className="text-sm font-medium text-gray-900">{[l.first_name, l.last_name].filter(Boolean).join(' ') || '—'}</p>
                     <p className="text-xs text-gray-500">{l.company_name || ''}</p>
                   </div>
                   {l.status && <span className={`text-xs px-2 py-0.5 rounded ${leadStatusColor(l.status)}`}>{l.status}</span>}
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-[#111111] text-sm">Follow-Up Attention</h3>
+            <span className="text-xs text-gray-400">{followUpItems.length} stale leads</span>
+          </div>
+          {followUpItems.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No stale open leads.</p> : (
+            <div className="space-y-2">
+              {followUpItems.map(lead => (
+                <Link key={lead.id} to="/leads" className="block py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded ${leadStatusColor(lead.status)}`}>{lead.status}</span>
+                        <span className="text-sm font-semibold text-gray-900 truncate">{lead.name}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 truncate">{lead.company} · {lead.owner}</p>
+                    </div>
+                    <span className="text-xs font-medium text-red-600 shrink-0">{lead.lastActivity ? fmtDate(lead.lastActivity) : 'No update'}</span>
+                  </div>
+                </Link>
               ))}
             </div>
           )}
