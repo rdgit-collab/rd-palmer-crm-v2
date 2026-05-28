@@ -173,7 +173,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
         body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
         .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
         .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
-        .brand-logo { display: block; width: 175px; height: auto; margin-top: 8px; }
+        .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
         .company { text-align: right; line-height: 1.35; font-size: 11px; }
         .company strong { font-size: 12px; }
         .intro { display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: start; margin-bottom: 12px; }
