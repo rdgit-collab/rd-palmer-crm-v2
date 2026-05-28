@@ -6,7 +6,7 @@ import { Plus, Edit2, Trash2, Check, X, Save } from 'lucide-react'
 // hasUserIdInt = true  → table has a user_id INTEGER column (old Lovable tables); send 1
 // noUserId     = true  → table has no user_id column at all (new tables)
 // default (both false) → same as noUserId for safety
-function LookupPanel({ title, tableName, valueField = 'name', extraField = null, extraLabel = null, extraType = 'text', noUserId = true, hasUserIdInt = false }) {
+function LookupPanel({ title, tableName, valueField = 'name', extraField = null, extraLabel = null, extraType = 'text', noUserId = true, hasUserIdInt = false, multiline = false }) {
   const [rows, setRows]           = useState([])
   const [loading, setLoading]     = useState(false)
   const [adding, setAdding]       = useState(false)
@@ -60,10 +60,16 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
 
         {adding && (
           <div className="px-4 py-2 flex items-center gap-2 bg-red-50">
-            <input autoFocus type="text" value={newVal} onChange={e => setNewVal(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              placeholder={`Enter ${valueField}...`}
-              className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+            {multiline ? (
+              <textarea autoFocus value={newVal} onChange={e => setNewVal(e.target.value)}
+                placeholder={`Enter ${valueField}...`} rows={3}
+                className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400 resize-y" />
+            ) : (
+              <input autoFocus type="text" value={newVal} onChange={e => setNewVal(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                placeholder={`Enter ${valueField}...`}
+                className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+            )}
             {extraField && (
               <input type={extraType} value={newExtra} onChange={e => setNewExtra(e.target.value)}
                 placeholder={extraLabel || extraField}
@@ -78,9 +84,15 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
           <div key={r.id} className="px-4 py-2 flex items-center gap-2 hover:bg-gray-50">
             {editId === r.id ? (
               <>
-                <input autoFocus type="text" value={editVal} onChange={e => setEditVal(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleUpdate(r.id)}
-                  className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+                {multiline ? (
+                  <textarea autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                    rows={3}
+                    className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400 resize-y" />
+                ) : (
+                  <input autoFocus type="text" value={editVal} onChange={e => setEditVal(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleUpdate(r.id)}
+                    className="flex-1 border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:border-red-400" />
+                )}
                 {extraField && (
                   <input type={extraType} value={editExtra} onChange={e => setEditExtra(e.target.value)}
                     placeholder={extraLabel || extraField}
@@ -91,7 +103,7 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
               </>
             ) : (
               <>
-                <span className="flex-1 text-sm text-gray-800">{r[valueField]}</span>
+                <span className={`flex-1 text-sm text-gray-800 ${multiline ? 'whitespace-pre-wrap' : ''}`}>{r[valueField]}</span>
                 {extraField && <span className="text-xs text-gray-500 w-20">{r[extraField] || '—'}</span>}
                 <button onClick={() => { setEditId(r.id); setEditVal(r[valueField]); setEditExtra(r[extraField] || '') }} className="text-gray-400 hover:text-gray-600 ml-auto"><Edit2 size={14} /></button>
                 <button onClick={() => handleDelete(r.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
@@ -563,6 +575,8 @@ export default function Settings() {
           <LookupPanel title="Spare Parts"       tableName="spare"        valueField="name" hasUserIdInt />
           <LookupPanel title="Vendors"           tableName="vendor"       valueField="name" hasUserIdInt />
           <LookupPanel title="RMA Modes"         tableName="mode"         valueField="name" hasUserIdInt />
+          <LookupPanel title="Calibration Checklist" tableName="checklist" valueField="name" hasUserIdInt />
+          <LookupPanel title="Calibration T&Cs" tableName="termcondition" valueField="name" hasUserIdInt multiline />
         </div>
       )}
 
