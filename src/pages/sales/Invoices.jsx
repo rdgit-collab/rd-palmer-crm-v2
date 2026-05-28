@@ -169,7 +169,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
     <head>
       <title>${escapeHtml(invoice.invoice_number || 'Invoice')}</title>
       <style>
-        @page { size: A4; margin: 0; }
+        @page { size: A4; margin: 15mm; }
         body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
         .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
         .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
@@ -190,6 +190,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
         td:nth-child(3), th:nth-child(3), td:nth-child(4), th:nth-child(4), td:nth-child(5), th:nth-child(5), td:nth-child(6), th:nth-child(6) { text-align: right; width: 82px; }
         tr:last-child td { border-bottom: 0; }
         .desc { margin-top: 4px; line-height: 1.4; }
+        tr, .totals, .section, .document-signature { break-inside: avoid; page-break-inside: avoid; }
         .below-table { display: grid; grid-template-columns: 1fr 250px; gap: 28px; align-items: start; margin-top: 6px; }
         .totals { width: 250px; margin-left: auto; border-top: 1px solid #aaa; padding-top: 8px; }
         .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
@@ -203,7 +204,10 @@ function invoiceHtml(invoice, items, contactName, customer) {
         .document-signature { display: grid; grid-template-columns: 220px 220px; gap: 32px; margin-top: 18px; }
         .signature-line { border-top: 1px dotted #111; padding-top: 6px; font-style: italic; min-height: 42px; }
         ul { padding-left: 18px; margin-top: 4px; }
-        @media print { body { background: #fff; } .sheet { width: 210mm; min-height: 297mm; margin: 0; } }
+        @media print {
+          body { background: #fff; }
+          .sheet { width: auto; min-height: 0; margin: 0; padding: 0; }
+        }
       </style>
     </head>
     <body>
