@@ -78,6 +78,10 @@ export default function Tickets() {
   const [detailOnsites, setDetailOnsites] = useState([])
   const [detailRmas, setDetailRmas] = useState([])
   const [detailRemarks, setDetailRemarks] = useState([])
+  const [quickAction, setQuickAction] = useState(null)
+  const [quickForm, setQuickForm] = useState({})
+  const [quickSaving, setQuickSaving] = useState(false)
+  const [quickError, setQuickError] = useState('')
   const [deleteId, setDeleteId]     = useState(null)
   const [completeId, setCompleteId] = useState(null)
   const [saving, setSaving]         = useState(false)
@@ -92,6 +96,10 @@ export default function Tickets() {
   const [skuList, setSkuList]       = useState([])
   const [serialOptions, setSerialOptions] = useState({})
   const [priorities, setPriorities] = useState([])
+  const [serviceTypes, setServiceTypes] = useState([])
+  const [spares, setSpares] = useState([])
+  const [vendors, setVendors] = useState([])
+  const [modes, setModes] = useState([])
 
   // Products rows in form
   const [products, setProducts] = useState([{ ...emptyProduct }])
@@ -122,13 +130,17 @@ export default function Tickets() {
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
     const run = async () => {
-      const [catR, custR, usrR, allUsrR, skuR, prioR] = await Promise.all([
+      const [catR, custR, usrR, allUsrR, skuR, prioR, svcR, spareR, vendorR, modeR] = await Promise.all([
         supabase.from('category').select('id, name').order('name'),
         supabase.from('customer').select('id, company_name').order('company_name'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
         supabase.from('goodsservices').select('id, sku, description').order('sku'),
         supabase.from('priority').select('id, name').order('name'),
+        supabase.from('service_type').select('id, type').order('type'),
+        supabase.from('spare').select('id, name').order('name'),
+        supabase.from('vendor').select('id, name').order('name'),
+        supabase.from('mode').select('id, name').order('name'),
       ])
       if (!catR.error)  setCategories(catR.data  || [])
       if (!custR.error) setCustomers(custR.data  || [])
@@ -136,6 +148,10 @@ export default function Tickets() {
       setAllUsers(allUsrR || [])
       if (!skuR.error)  setSkuList(skuR.data     || [])
       if (!prioR.error) setPriorities(prioR.data || [])
+      if (!svcR.error) setServiceTypes(svcR.data || [])
+      if (!spareR.error) setSpares(spareR.data || [])
+      if (!vendorR.error) setVendors(vendorR.data || [])
+      if (!modeR.error) setModes(modeR.data || [])
     }
     run()
   }, [])
@@ -345,6 +361,134 @@ export default function Tickets() {
     if (term) q = q.ilike('serial_number', `%${term}%`)
     const { data, error: err } = await q
     if (!err) setSerialOptions(prev => ({ ...prev, [idx]: data || [] }))
+  }
+
+  const openQuickAction = (type) => {
+    const today = new Date().toISOString().split('T')[0]
+    const defaults = {
+      task: {
+        servicetype: '',
+        startdate: today,
+        starttime: '',
+        enddate: '',
+        endtime: '',
+        spare: '',
+        description: '',
+        action_taken: '',
+        assigned_to: detail?.assigned_to ? String(detail.assigned_to) : '',
+      },
+      onsite: {
+        date: today,
+        product: '',
+        serial_number: '',
+        location: '',
+        spare: '',
+        issue_description: detail?.description || '',
+        workdone: '',
+        remark: '',
+        assigned_to: detail?.assigned_to ? String(detail.assigned_to) : '',
+        status: 'Open',
+      },
+      rma: {
+        rma_number: '',
+        vendor: '',
+        date_sent: today,
+        mode: '',
+        traking_number_out: '',
+        date_return: '',
+        traking_number_in: '',
+        remark: '',
+      },
+      remark: { remark: '' },
+    }
+    setQuickAction(type)
+    setQuickForm(defaults[type] || {})
+    setQuickError('')
+  }
+
+  const closeQuickAction = () => {
+    setQuickAction(null)
+    setQuickForm({})
+    setQuickError('')
+  }
+
+  const setQuick = (field, value) => setQuickForm(prev => ({ ...prev, [field]: value }))
+
+  const saveQuickAction = async (e) => {
+    e.preventDefault()
+    if (!detail?.id || !quickAction) return
+    setQuickSaving(true)
+    setQuickError('')
+
+    let table = ''
+    let payload = {}
+    if (quickAction === 'task') {
+      table = 'task'
+      payload = {
+        ticket_id: detail.id,
+        servicetype: quickForm.servicetype || null,
+        startdate: quickForm.startdate || null,
+        starttime: quickForm.starttime || null,
+        enddate: quickForm.enddate || null,
+        endtime: quickForm.endtime || null,
+        spare: quickForm.spare || null,
+        description: quickForm.description || '',
+        action_taken: quickForm.action_taken || null,
+        assigned_to: quickForm.assigned_to ? parseInt(quickForm.assigned_to) : null,
+        is_completed: 0,
+        is_archived: 0,
+        user_id: getLegacyUserId(profile),
+      }
+    } else if (quickAction === 'onsite') {
+      table = 'onsiteticket'
+      payload = {
+        ticket_id: detail.id,
+        product: quickForm.product || null,
+        serial_number: quickForm.serial_number || null,
+        location: quickForm.location || null,
+        spare: quickForm.spare || null,
+        issue_description: quickForm.issue_description || null,
+        workdone: quickForm.workdone || null,
+        remark: quickForm.remark || null,
+        assigned_to: quickForm.assigned_to ? parseInt(quickForm.assigned_to) : null,
+        status: quickForm.status || 'Open',
+        is_completed: quickForm.status === 'Completed' ? 1 : 0,
+        date: quickForm.date || null,
+        user_id: getLegacyUserId(profile),
+      }
+    } else if (quickAction === 'rma') {
+      table = 'rma'
+      payload = {
+        ticket_id: detail.id,
+        rma_number: quickForm.rma_number || '',
+        vendor: quickForm.vendor || null,
+        date_sent: quickForm.date_sent || null,
+        mode: quickForm.mode || null,
+        traking_number_out: quickForm.traking_number_out || null,
+        date_return: quickForm.date_return || null,
+        traking_number_in: quickForm.traking_number_in || null,
+        remark: quickForm.remark || null,
+        user_id: getLegacyUserId(profile),
+      }
+    } else if (quickAction === 'remark') {
+      table = 'ticket_remark'
+      payload = {
+        ticket_id: detail.id,
+        remark: quickForm.remark || '',
+        user_id: getLegacyUserId(profile),
+      }
+    }
+
+    const { error: err } = await supabase.from(table).insert([payload])
+    if (err) {
+      setQuickError(err.message)
+      setQuickSaving(false)
+      return
+    }
+
+    await openDetail(detail)
+    setQuickSaving(false)
+    closeQuickAction()
   }
   const addProdRow    = () => setProducts(prev => [...prev, { ...emptyProduct }])
   const removeProdRow = (idx) => setProducts(prev => prev.filter((_, i) => i !== idx))
@@ -902,6 +1046,181 @@ export default function Tickets() {
         </div>
 
         <div className="bg-white border border-gray-200 p-6 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ticket Workspace</p>
+              <p className="mt-1 text-sm text-gray-500">Create linked work records without leaving this ticket.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => openQuickAction('task')} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Plus size={14} /> Task</button>
+              <button type="button" onClick={() => openQuickAction('onsite')} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Plus size={14} /> Onsite</button>
+              <button type="button" onClick={() => openQuickAction('rma')} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Plus size={14} /> RMA</button>
+              <button type="button" onClick={() => openQuickAction('remark')} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Plus size={14} /> Remark</button>
+            </div>
+          </div>
+
+          {quickAction && (
+            <form onSubmit={saveQuickAction} className="border border-red-100 bg-red-50/30 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Add {quickAction === 'rma' ? 'RMA' : quickAction === 'onsite' ? 'Onsite Ticket' : quickAction === 'remark' ? 'Remark' : 'Task'} to TID{detail.ticket_id}
+                </h3>
+                <button type="button" onClick={closeQuickAction} className="text-gray-400 hover:text-gray-700"><X size={16} /></button>
+              </div>
+              {quickError && <div className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{quickError}</div>}
+
+              {quickAction === 'task' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Service Type</label>
+                    <select value={quickForm.servicetype || ''} onChange={e => setQuick('servicetype', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">Please Select</option>
+                      {serviceTypes.map(s => <option key={s.id} value={s.type}>{s.type}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To</label>
+                    <select value={quickForm.assigned_to || ''} onChange={e => setQuick('assigned_to', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">Please Select</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Start Date / Time</label>
+                    <div className="flex gap-2">
+                      <input type="date" value={quickForm.startdate || ''} onChange={e => setQuick('startdate', e.target.value)} className="flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                      <input type="time" value={quickForm.starttime || ''} onChange={e => setQuick('starttime', e.target.value)} className="w-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End Date / Time</label>
+                    <div className="flex gap-2">
+                      <input type="date" value={quickForm.enddate || ''} onChange={e => setQuick('enddate', e.target.value)} className="flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                      <input type="time" value={quickForm.endtime || ''} onChange={e => setQuick('endtime', e.target.value)} className="w-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
+                    <select value={quickForm.spare || ''} onChange={e => setQuick('spare', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">None</option>
+                      {spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description *</label>
+                    <textarea required rows={3} value={quickForm.description || ''} onChange={e => setQuick('description', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Action Taken</label>
+                    <textarea rows={2} value={quickForm.action_taken || ''} onChange={e => setQuick('action_taken', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                  </div>
+                </div>
+              )}
+
+              {quickAction === 'onsite' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                    <input type="date" value={quickForm.date || ''} onChange={e => setQuick('date', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To</label>
+                    <select value={quickForm.assigned_to || ''} onChange={e => setQuick('assigned_to', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">Please Select</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Product</label>
+                    <select value={quickForm.product || ''} onChange={e => {
+                      const product = detailProds.find(p => p.sku === e.target.value)
+                      setQuickForm(prev => ({ ...prev, product: e.target.value, serial_number: product?.serial_number || prev.serial_number || '' }))
+                    }} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">Please Select</option>
+                      {detailProds.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Serial Number</label>
+                    <input value={quickForm.serial_number || ''} onChange={e => setQuick('serial_number', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
+                    <input value={quickForm.location || ''} onChange={e => setQuick('location', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
+                    <select value={quickForm.spare || ''} onChange={e => setQuick('spare', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">None</option>
+                      {spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Issue Description</label>
+                    <textarea rows={3} value={quickForm.issue_description || ''} onChange={e => setQuick('issue_description', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Remark</label>
+                    <textarea rows={2} value={quickForm.remark || ''} onChange={e => setQuick('remark', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                  </div>
+                </div>
+              )}
+
+              {quickAction === 'rma' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">RMA Number *</label>
+                    <input required value={quickForm.rma_number || ''} onChange={e => setQuick('rma_number', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Vendor</label>
+                    <select value={quickForm.vendor || ''} onChange={e => setQuick('vendor', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">Please Select</option>
+                      {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Date Sent</label>
+                    <input type="date" value={quickForm.date_sent || ''} onChange={e => setQuick('date_sent', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Mode</label>
+                    <select value={quickForm.mode || ''} onChange={e => setQuick('mode', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                      <option value="">Please Select</option>
+                      {modes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tracking No. Out</label>
+                    <input value={quickForm.traking_number_out || ''} onChange={e => setQuick('traking_number_out', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Date Return</label>
+                    <input type="date" value={quickForm.date_return || ''} onChange={e => setQuick('date_return', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Remark</label>
+                    <textarea rows={2} value={quickForm.remark || ''} onChange={e => setQuick('remark', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                  </div>
+                </div>
+              )}
+
+              {quickAction === 'remark' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Remark *</label>
+                  <textarea required rows={3} value={quickForm.remark || ''} onChange={e => setQuick('remark', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 border-t border-red-100 pt-3">
+                <button type="button" onClick={closeQuickAction} className="px-4 py-2 text-sm border border-gray-200 bg-white hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={quickSaving} className="px-5 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60">
+                  {quickSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="border border-gray-200 p-4">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</p>
