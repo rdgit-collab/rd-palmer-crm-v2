@@ -24,8 +24,21 @@ function statusColor(status) {
   switch (status) {
     case 'Open':      return 'bg-blue-100 text-blue-700'
     case 'Completed': return 'bg-green-100 text-green-700'
+    case 'Pending':   return 'bg-yellow-100 text-yellow-700'
     default:          return 'bg-gray-100 text-gray-600'
   }
+}
+
+function workStatus(item) {
+  return item?.is_completed == 1 || item?.status === 'Completed' ? 'Completed' : (item?.status || 'Open')
+}
+
+function workDone(item) {
+  return workStatus(item) === 'Completed'
+}
+
+function timelineDate(item) {
+  return item?.created_at || item?.date || item?.startdate || item?.date_sent || ''
 }
 
 const emptyForm = {
@@ -836,6 +849,23 @@ export default function Tickets() {
     const category     = categories.find(c => c.id == detail.category)
     const today        = new Date().toISOString().split('T')[0]
     const isOverdue    = detail.due_date && detail.due_date < today
+    const taskDone     = detailTasks.filter(workDone).length
+    const onsiteDone   = detailOnsites.filter(workDone).length
+    const taskOpen     = detailTasks.length - taskDone
+    const onsiteOpen   = detailOnsites.length - onsiteDone
+    const workTotal    = detailTasks.length + detailOnsites.length
+    const workDoneTotal = taskDone + onsiteDone
+    const progress     = workTotal > 0 ? Math.round((workDoneTotal / workTotal) * 100) : (detail.is_completed == 1 ? 100 : 0)
+    const readyToClose = workTotal > 0 && workDoneTotal === workTotal && detail.is_completed == 0
+    const timelineItems = [
+      { type: 'Ticket', label: `Ticket ${detail.status || 'Open'}`, date: detail.created_at || detail.date, owner: detail.assigned_to, text: detail.description },
+      ...detailTasks.map(task => ({ type: 'Task', label: task.servicetype || 'Task', date: timelineDate(task), owner: task.assigned_to, status: workStatus(task), text: task.action_taken || task.description })),
+      ...detailOnsites.map(onsite => ({ type: 'Onsite', label: onsite.product || onsite.issue_description || 'Onsite ticket', date: timelineDate(onsite), owner: onsite.assigned_to, status: workStatus(onsite), text: onsite.workdone || onsite.issue_description || onsite.remark })),
+      ...detailRmas.map(rma => ({ type: 'RMA', label: rma.rma_number || 'RMA', date: rma.date_sent || rma.created_at, owner: null, status: rma.date_return ? 'Returned' : 'Sent', text: [rma.vendor, rma.remark].filter(Boolean).join(' - ') })),
+      ...detailRemarks.map(remark => ({ type: 'Remark', label: 'Remark', date: remark.created_at, owner: remark.user_id, status: '', text: remark.remark })),
+    ]
+      .filter(item => item.date || item.text || item.label)
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
 
     return (
       <div className="p-6 max-w-4xl">
@@ -872,6 +902,32 @@ export default function Tickets() {
         </div>
 
         <div className="bg-white border border-gray-200 p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="border border-gray-200 p-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{progress}%</p>
+              <div className="mt-3 h-2 bg-gray-100 rounded overflow-hidden">
+                <div className="h-full bg-red-600" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+            <div className="border border-gray-200 p-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tasks</p>
+              <p className="mt-2 text-lg font-semibold text-gray-900">{taskDone}/{detailTasks.length} done</p>
+              <p className="mt-1 text-xs text-gray-500">{taskOpen} open</p>
+            </div>
+            <div className="border border-gray-200 p-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Onsite</p>
+              <p className="mt-2 text-lg font-semibold text-gray-900">{onsiteDone}/{detailOnsites.length} done</p>
+              <p className="mt-1 text-xs text-gray-500">{onsiteOpen} open</p>
+            </div>
+            <div className="border border-gray-200 p-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Close Check</p>
+              <p className={`mt-2 text-sm font-semibold ${readyToClose ? 'text-green-700' : 'text-gray-900'}`}>
+                {detail.is_completed == 1 ? 'Ticket closed' : readyToClose ? 'Ready to close' : `${workTotal - workDoneTotal} work item${workTotal - workDoneTotal !== 1 ? 's' : ''} open`}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">Based on linked tasks and onsite tickets.</p>
+            </div>
+          </div>
 
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
@@ -955,6 +1011,35 @@ export default function Tickets() {
             </div>
           )}
 
+          <div className="border-t border-gray-100 pt-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress Timeline</p>
+              <span className="text-xs text-gray-400">{timelineItems.length} update{timelineItems.length !== 1 ? 's' : ''}</span>
+            </div>
+            {timelineItems.length === 0 ? (
+              <p className="text-sm text-gray-400">No progress updates yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {timelineItems.map((item, idx) => (
+                  <div key={`${item.type}-${idx}`} className="border border-gray-200 px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-500 uppercase">{item.type}</span>
+                      <span className="text-sm font-medium text-gray-900">{item.label}</span>
+                      {item.status && (
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(item.status)}`}>{item.status}</span>
+                      )}
+                      <span className="ml-auto text-xs text-gray-400">{fmtDateTime(item.date)}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {item.owner ? `Owner: ${formatUserName(allUsers.length ? allUsers : users, item.owner)}` : 'Owner: —'}
+                    </div>
+                    {item.text && <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{stripHtml(item.text)}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Products */}
           {detailProds.length > 0 && (
             <div className="border-t border-gray-100 pt-5">
@@ -1004,7 +1089,11 @@ export default function Tickets() {
                       <td className="px-3 py-2 font-medium">{task.servicetype || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{[task.startdate, task.starttime].filter(Boolean).join(' ') || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{formatUserName(users, task.assigned_to)}</td>
-                      <td className="px-3 py-2 text-gray-600">{task.is_completed == 1 ? 'Completed' : 'Open'}</td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(workStatus(task))}`}>
+                          {workStatus(task)}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-gray-600">{task.description || task.action_taken || '—'}</td>
                     </tr>
                   ))}
@@ -1036,7 +1125,11 @@ export default function Tickets() {
                       <td className="px-3 py-2 font-medium">{onsite.product || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{onsite.serial_number || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{formatUserName(users, onsite.assigned_to)}</td>
-                      <td className="px-3 py-2 text-gray-600">{onsite.status || (onsite.is_completed == 1 ? 'Completed' : 'Open')}</td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(workStatus(onsite))}`}>
+                          {workStatus(onsite)}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

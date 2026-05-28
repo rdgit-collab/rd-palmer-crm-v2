@@ -34,6 +34,7 @@ export default function Tasks() {
   const { user, profile } = useAuth()
   const [view, setView]           = useState('list')
   const [tab, setTab]             = useState('open')
+  const [scope, setScope]         = useState('all')
   const [tasks, setTasks]         = useState([])
   const [total, setTotal]         = useState(0)
   const [page, setPage]           = useState(1)
@@ -65,12 +66,13 @@ export default function Tasks() {
       .order('id', { ascending: false })
 
     if (search) q = q.or(`servicetype.ilike.%${search}%,description.ilike.%${search}%`)
+    if (scope === 'mine') q = q.eq('assigned_to', getLegacyUserId(profile))
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
     const { data, count, error: err } = await q
     if (!err) { setTasks(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page, tab])
+  }, [search, page, tab, scope, profile])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
@@ -240,7 +242,7 @@ export default function Tasks() {
           ))}
         </div>
 
-        <div className="flex gap-3 mb-4">
+        <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
           <div className="relative flex-1 max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -250,6 +252,17 @@ export default function Tasks() {
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400"
             />
+          </div>
+          <div className="flex border border-gray-200 bg-white text-sm">
+            {[['all', 'All Tasks'], ['mine', 'My Assigned']].map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => { setScope(id); setPage(1) }}
+                className={`px-4 py-2 ${scope === id ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
 

@@ -32,6 +32,7 @@ export default function OnsiteTickets() {
   const { profile } = useAuth()
   const [view, setView]           = useState('list')
   const [tab, setTab]             = useState('open')
+  const [scope, setScope]         = useState('all')
   const [rows, setRows]           = useState([])
   const [total, setTotal]         = useState(0)
   const [page, setPage]           = useState(1)
@@ -55,11 +56,12 @@ export default function OnsiteTickets() {
     let q = supabase.from('onsiteticket').select('*', { count: 'exact' })
       .eq('is_completed', tab === 'open' ? 0 : 1).order('id', { ascending: false })
     if (search) q = q.or(`product.ilike.%${search}%,location.ilike.%${search}%`)
+    if (scope === 'mine') q = q.eq('assigned_to', getLegacyUserId(profile))
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
     if (!err) { setRows(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page, tab])
+  }, [search, page, tab, scope, profile])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -183,10 +185,23 @@ export default function OnsiteTickets() {
           >{label}</button>
         ))}
       </div>
-      <div className="relative flex-1 max-w-sm mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Search issues or location..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+      <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Search issues or location..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+        </div>
+        <div className="flex border border-gray-200 bg-white text-sm">
+          {[['all', 'All Onsite'], ['mine', 'My Assigned']].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => { setScope(id); setPage(1) }}
+              className={`px-4 py-2 ${scope === id ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
