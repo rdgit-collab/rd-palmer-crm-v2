@@ -10,6 +10,7 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 50
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
+const QUOTATION_LIST_COLUMNS = 'id, number, name, date, expiry_date, currency, total, isconvert, created_at'
 const DEFAULT_QUOTATION_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_QUOTATION_TERMS = `Availability:
 Validity: 30 days from quotation date.
@@ -1057,7 +1058,7 @@ export default function Quotations() {
 
   const fetchQuotations = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('quotation').select('*', { count: 'exact' })
+    let q = supabase.from('quotation').select(QUOTATION_LIST_COLUMNS, { count: 'exact' })
     if (search.trim()) {
       const term = search.trim()
       q = q.or(`name.ilike.%${term}%,number.ilike.%${term}%`)
@@ -1100,16 +1101,12 @@ export default function Quotations() {
   const handleSaved = () => { setView('list'); setEditQuotation(null); fetchQuotations() }
 
   const openEdit = async (q) => {
-    if (q) {
-      // Fetch line items too
-      const { data: items } = await supabase.from('quotation_item').select('*').eq('qid', q.id).order('id')
-      setEditQuotation({ ...q, _items: items || [] })
-      setView('form')
-    } else {
-      const { data: q2 } = await supabase.from('quotation').select('*').eq('id', selectedId).single()
-      const { data: items } = await supabase.from('quotation_item').select('*').eq('qid', selectedId).order('id')
-      if (q2) { setEditQuotation({ ...q2, _items: items || [] }); setView('form') }
-    }
+    const quotationId = q?.id || selectedId
+    const [{ data: q2 }, { data: items }] = await Promise.all([
+      supabase.from('quotation').select('*').eq('id', quotationId).single(),
+      supabase.from('quotation_item').select('*').eq('qid', quotationId).order('id'),
+    ])
+    if (q2) { setEditQuotation({ ...q2, _items: items || [] }); setView('form') }
   }
 
   if (view === 'form') {

@@ -10,6 +10,7 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 50
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
+const INVOICE_LIST_COLUMNS = 'id, invoice_number, name, date, due_date, quote_ref_number, currency, total, created_at'
 const DEFAULT_INVOICE_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_INVOICE_TERMS = `Availability:
 Validity: 30 days from invoice date.
@@ -927,7 +928,7 @@ export default function Invoices() {
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('invoice').select('*', { count: 'exact' })
+    let q = supabase.from('invoice').select(INVOICE_LIST_COLUMNS, { count: 'exact' })
     if (search.trim()) {
       const term = search.trim()
       q = q.or(`name.ilike.%${term}%,invoice_number.ilike.%${term}%`)
@@ -970,9 +971,10 @@ export default function Invoices() {
   const handleSaved = () => { setView('list'); setEditInvoice(null); fetchInvoices() }
 
   const openEdit = async (inv) => {
-    const src = inv || await supabase.from('invoice').select('*').eq('id', selectedId).single().then(r => r.data)
+    const invoiceId = inv?.id || selectedId
+    const src = await supabase.from('invoice').select('*').eq('id', invoiceId).single().then(r => r.data)
     if (!src) return
-    const { data: items } = await supabase.from('invoice_item').select('*').eq('invoiceid', src.id).order('id')
+    const { data: items } = await supabase.from('invoice_item').select('*').eq('invoiceid', invoiceId).order('id')
     setEditInvoice({ ...src, _items: items || [] })
     setView('form')
   }
