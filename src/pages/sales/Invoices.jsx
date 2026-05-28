@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline, Copy
@@ -172,8 +173,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
         body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
         .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
         .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
-        .brand { color: #d10000; font-size: 22px; font-weight: 800; line-height: 1; margin-top: 8px; }
-        .brand span { display: block; color: #d10000; font-size: 8px; font-weight: 700; margin-left: 2px; }
+        .brand-logo { display: block; width: 120px; height: auto; margin-top: 8px; }
         .company { text-align: right; line-height: 1.35; font-size: 11px; }
         .company strong { font-size: 12px; }
         .intro { display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: start; margin-bottom: 12px; }
@@ -209,7 +209,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
     <body>
       <div class="sheet">
         <div class="top">
-          <div class="brand">RD-Palmer<span>Underground Utility Solutions</span></div>
+          <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
           <div class="company">
             <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
             63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
