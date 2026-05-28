@@ -2,9 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 
 const PAGE_SIZE = 15
+
+function storageUrl(path) {
+  if (!path) return ''
+  return supabase.storage.from('crm-uploads').getPublicUrl(path).data.publicUrl
+}
 
 function statusColor(s) {
   if (!s) return 'bg-gray-100 text-gray-600'
@@ -20,6 +25,7 @@ const emptyForm = {
   location: '', vandor_order_ref: '', spare: '', remark: '',
   assigned_to: '', status: 'Open', workdone: '',
   date: new Date().toISOString().split('T')[0],
+  file: '',
 }
 
 export default function OnsiteTickets() {
@@ -40,6 +46,9 @@ export default function OnsiteTickets() {
   const [error, setError]         = useState('')
   const [tickets, setTickets]     = useState([])
   const [users, setUsers]         = useState([])
+  const [productOptions, setProductOptions] = useState([])
+  const [spares, setSpares]       = useState([])
+  const [uploadFile, setUploadFile] = useState(null)
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -56,12 +65,14 @@ export default function OnsiteTickets() {
 
   useEffect(() => {
     const run = async () => {
-      const [tickR, usrR] = await Promise.all([
-        supabase.from('ticket').select('id, ticket_id, company_name').eq('is_completed', 0).order('id', { ascending: false }),
+      const [tickR, usrR, spareR] = await Promise.all([
+        supabase.from('ticket').select('id, ticket_id, company_name, description, assigned_to').eq('is_completed', 0).order('id', { ascending: false }),
         fetchAssignableUsers(supabase),
+        supabase.from('goodsservices').select('id, name').order('name').limit(1000),
       ])
       if (!tickR.error) setTickets(tickR.data || [])
       setUsers(usrR || [])
+      if (!spareR.error) setSpares(spareR.data || [])
     }
     run()
   }, [])
@@ -74,21 +85,59 @@ export default function OnsiteTickets() {
     return formatUserName(users, id)
   }
 
-  const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
-  const openEdit = (r) => {
+  const productValues = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
+
+  const stripHtml = (value = '') => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+
+  const loadTicketProducts = async (ticketId, selectedProducts = []) => {
+    if (!ticketId) { setProductOptions([]); return }
+    const [{ data: products }, { data: ticket }] = await Promise.all([
+      supabase.from('ticket_product').select('id, sku, item_description, serial_number').eq('ticket_id', ticketId).order('id'),
+      supabase.from('ticket').select('description, assigned_to').eq('id', ticketId).maybeSingle(),
+    ])
+    const options = products || []
+    const missingSelected = selectedProducts
+      .filter(sku => sku && !options.some(item => item.sku === sku))
+      .map((sku, idx) => ({ id: `selected-${idx}-${sku}`, sku, item_description: '', serial_number: '' }))
+    setProductOptions([...options, ...missingSelected])
+    setForm(f => ({
+      ...f,
+      issue_description: f.issue_description || ticket?.description || '',
+      assigned_to: f.assigned_to || (ticket?.assigned_to ? String(ticket.assigned_to) : ''),
+    }))
+  }
+
+  const openAdd = () => {
+    setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] })
+    setProductOptions([])
+    setUploadFile(null)
+    setEditId(null)
+    setError('')
+    setView('form')
+  }
+  const openEdit = async (r) => {
     setForm({
       ticket_id: String(r.ticket_id || ''), product: r.product || '',
       issue_description: r.issue_description || '', serial_number: r.serial_number || '',
       location: r.location || '', vandor_order_ref: r.vandor_order_ref || '',
       spare: r.spare || '', remark: r.remark || '',
       assigned_to: String(r.assigned_to || ''), status: r.status || 'Open',
-      workdone: r.workdone || '', date: r.date || '',
+      workdone: r.workdone || '', date: r.date || '', file: r.file || '',
     })
+    setUploadFile(null)
+    await loadTicketProducts(r.ticket_id, productValues(r.product))
     setEditId(r.id); setError(''); setView('form')
   }
 
   const handleSave = async (e) => {
     e.preventDefault(); setSaving(true); setError('')
+    let filePath = form.file || null
+    if (uploadFile) {
+      const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      filePath = `onsite/${Date.now()}-${safeName}`
+      const { error: uploadErr } = await supabase.storage.from('crm-uploads').upload(filePath, uploadFile, { upsert: true })
+      if (uploadErr) { setError(uploadErr.message); setSaving(false); return }
+    }
     const payload = {
       ticket_id: form.ticket_id ? parseInt(form.ticket_id) : null,
       product: form.product, issue_description: form.issue_description || null,
@@ -98,12 +147,13 @@ export default function OnsiteTickets() {
       assigned_to: form.assigned_to ? parseInt(form.assigned_to) : null,
       status: form.status, is_completed: form.status === 'Completed' ? 1 : 0,
       workdone: form.workdone || null, date: form.date || null, user_id: getLegacyUserId(profile),
+      file: filePath,
     }
     const { error: err } = editId
       ? await supabase.from('onsiteticket').update(payload).eq('id', editId)
       : await supabase.from('onsiteticket').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
-    setSaving(false); fetchRows(); setView('list')
+    setSaving(false); setUploadFile(null); fetchRows(); setView('list')
   }
 
   const markComplete = async (id) => {
@@ -135,7 +185,7 @@ export default function OnsiteTickets() {
       </div>
       <div className="relative flex-1 max-w-sm mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Search product or location..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+        <input type="text" placeholder="Search issues or location..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
           className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
       </div>
       <div className="bg-white border border-gray-200">
@@ -144,7 +194,7 @@ export default function OnsiteTickets() {
             <tr className="border-b border-gray-200 bg-gray-50">
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Ticket</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Date</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Product</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Issues</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Location</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Assigned To</th>
@@ -158,7 +208,7 @@ export default function OnsiteTickets() {
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(r.ticket_id)}</td>
                 <td className="px-4 py-3 text-gray-600">{r.date || '—'}</td>
-                <td className="px-4 py-3 text-gray-800">{r.product || '—'}</td>
+                <td className="px-4 py-3 text-gray-800 max-w-xs truncate">{r.issue_description || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.location || '—'}</td>
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || 'Open'}</span></td>
                 <td className="px-4 py-3 text-gray-600">{getUserName(r.assigned_to)}</td>
@@ -200,18 +250,42 @@ export default function OnsiteTickets() {
       <form onSubmit={handleSave} className="bg-white border border-gray-200 p-6 space-y-5">
         {[
           ['Date', <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
-          ['Ticket *', <select value={form.ticket_id} onChange={e => setForm(f => ({...f, ticket_id: e.target.value}))} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="">Please Select</option>{tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}</select>],
-          ['Product *', <input type="text" value={form.product} onChange={e => setForm(f => ({...f, product: e.target.value}))} required placeholder="Product name" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
+          ['Ticket *', <select value={form.ticket_id} onChange={async e => {
+            const ticketId = e.target.value
+            setForm(f => ({...f, ticket_id: ticketId, product: ''}))
+            await loadTicketProducts(ticketId)
+          }} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="">Please Select</option>{tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}</select>],
+          ['Product Description *', <select multiple value={productValues(form.product)} onChange={e => {
+            const selected = Array.from(e.target.selectedOptions).map(option => option.value)
+            setForm(f => ({...f, product: selected.join(',')}))
+          }} required className="w-full min-h-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="" disabled>Please Select</option>{productOptions.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.item_description ? ` - ${stripHtml(p.item_description)}` : ''}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}</select>],
           ['Serial Number', <input type="text" value={form.serial_number} onChange={e => setForm(f => ({...f, serial_number: e.target.value}))} placeholder="S/N" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
           ['Location', <input type="text" value={form.location} onChange={e => setForm(f => ({...f, location: e.target.value}))} placeholder="Site location" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
           ['Vendor Order Ref', <input type="text" value={form.vandor_order_ref} onChange={e => setForm(f => ({...f, vandor_order_ref: e.target.value}))} placeholder="Vendor reference" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
-          ['Spare Used', <input type="text" value={form.spare} onChange={e => setForm(f => ({...f, spare: e.target.value}))} placeholder="Spare part" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
+          ['Spare Used', <select value={form.spare} onChange={e => setForm(f => ({...f, spare: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="">Please Select</option>{spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>],
         ].map(([label, el], i) => (
           <div key={i} className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">{label}</label>
             <div className="col-span-2">{el}</div>
           </div>
         ))}
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Document</label>
+          <div className="col-span-2">
+            <input
+              type="file"
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+              onChange={e => setUploadFile(e.target.files?.[0] || null)}
+              className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+            />
+            {form.file && !uploadFile && (
+              <a href={storageUrl(form.file)} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-red-600 hover:underline">
+                <FileText size={13} /> Current document
+              </a>
+            )}
+            {uploadFile && <p className="mt-2 text-xs text-gray-500">{uploadFile.name}</p>}
+          </div>
+        </div>
         {[
           ['Issue Description', 'issue_description', 'Describe the issue...'],
           ['Work Done', 'workdone', 'Work performed...'],
@@ -273,6 +347,14 @@ export default function OnsiteTickets() {
           <div><span className="font-medium text-gray-500">Vendor Ref: </span>{detail.vandor_order_ref || '—'}</div>
           <div><span className="font-medium text-gray-500">Spare: </span>{detail.spare || '—'}</div>
           <div><span className="font-medium text-gray-500">Assigned To: </span>{getUserName(detail.assigned_to)}</div>
+          <div>
+            <span className="font-medium text-gray-500">Document: </span>
+            {detail.file ? (
+              <a href={storageUrl(detail.file)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-red-600 hover:underline">
+                <FileText size={14} /> Open document
+              </a>
+            ) : '—'}
+          </div>
         </div>
         {detail.issue_description && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Issue Description</p><p className="whitespace-pre-wrap">{detail.issue_description}</p></div>}
         {detail.workdone && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Work Done</p><p className="whitespace-pre-wrap">{detail.workdone}</p></div>}
