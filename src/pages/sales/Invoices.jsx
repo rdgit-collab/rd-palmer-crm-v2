@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
-  X, ChevronLeft, ChevronRight, FileText
+  X, ChevronLeft, ChevronRight, FileText, Download
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -10,6 +10,102 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 15
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+}
+
+function sanitizeHtml(value = '') {
+  const raw = String(value || '')
+  if (!raw) return ''
+  if (!/<\/?[a-z][\s\S]*>/i.test(raw)) return escapeHtml(raw).replace(/\n/g, '<br>')
+  if (typeof window === 'undefined') return raw
+  const doc = new DOMParser().parseFromString(raw, 'text/html')
+  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(el => el.remove())
+  doc.body.querySelectorAll('*').forEach(el => {
+    ;[...el.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase()
+      const val = attr.value || ''
+      if (name.startsWith('on') || name === 'style' || (['href', 'src'].includes(name) && val.trim().toLowerCase().startsWith('javascript:'))) {
+        el.removeAttribute(attr.name)
+      }
+    })
+  })
+  return doc.body.innerHTML
+}
+
+function HtmlBlock({ value }) {
+  return <div className="text-sm text-gray-600 leading-6 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2" dangerouslySetInnerHTML={{ __html: sanitizeHtml(value) }} />
+}
+
+function invoiceHtml(invoice, items) {
+  const itemRows = items.map((item, idx) => `
+    <tr>
+      <td>${idx + 1}</td>
+      <td>${escapeHtml(item.item || '')}</td>
+      <td>${sanitizeHtml(item.description || '')}</td>
+      <td>${escapeHtml(item.qty || '')}</td>
+      <td>${fmtMoney(item.rate)}</td>
+      <td>${fmtMoney(item.amount)}</td>
+    </tr>
+  `).join('')
+  return `<!doctype html>
+  <html>
+    <head>
+      <title>${escapeHtml(invoice.invoice_number || 'Invoice')}</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #111827; margin: 32px; font-size: 12px; }
+        h1 { font-size: 22px; margin: 0 0 20px; color: #b91c1c; }
+        .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin-bottom: 24px; }
+        .meta div { border-bottom: 1px solid #e5e7eb; padding: 6px 0; }
+        .label { color: #6b7280; font-weight: 700; display: inline-block; min-width: 120px; }
+        table { width: 100%; border-collapse: collapse; margin: 18px 0; }
+        th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
+        th { background: #f9fafb; color: #4b5563; }
+        .totals { margin-left: auto; width: 280px; }
+        .totals div { display: flex; justify-content: space-between; padding: 5px 0; }
+        .total { border-top: 1px solid #111827; font-weight: 700; font-size: 14px; }
+        .section { margin-top: 20px; }
+        .section h2 { font-size: 13px; color: #4b5563; text-transform: uppercase; }
+        ul { padding-left: 20px; }
+      </style>
+    </head>
+    <body>
+      <h1>Invoice ${escapeHtml(invoice.invoice_number || '')}</h1>
+      <div class="meta">
+        <div><span class="label">Customer</span>${escapeHtml(invoice.name || '')}</div>
+        <div><span class="label">Date</span>${fmt(invoice.date)}</div>
+        <div><span class="label">Order No.</span>${escapeHtml(invoice.order_number || '-')}</div>
+        <div><span class="label">Due Date</span>${fmt(invoice.due_date)}</div>
+        <div><span class="label">Quotation Ref.</span>${escapeHtml(invoice.quote_ref_number || '-')}</div>
+        <div><span class="label">Contact</span>${escapeHtml(invoice.contact_person || '-')}</div>
+      </div>
+      <table>
+        <thead><tr><th>#</th><th>Item</th><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <div class="totals">
+        <div><span>Subtotal</span><span>${escapeHtml(invoice.currency || 'MYR')} ${fmtMoney(invoice.subtotal)}</span></div>
+        <div><span>Discount</span><span>${fmtMoney(invoice.discount)}</span></div>
+        <div><span>Shipping</span><span>${fmtMoney(invoice.shiping_charge)}</span></div>
+        <div><span>Adjustment</span><span>${fmtMoney(invoice.adjustment)}</span></div>
+        <div class="total"><span>Total</span><span>${escapeHtml(invoice.currency || 'MYR')} ${fmtMoney(invoice.total)}</span></div>
+      </div>
+      ${invoice.notes ? `<div class="section"><h2>Notes</h2>${sanitizeHtml(invoice.notes)}</div>` : ''}
+      ${invoice.term_condition ? `<div class="section"><h2>Terms & Conditions</h2>${sanitizeHtml(invoice.term_condition)}</div>` : ''}
+    </body>
+  </html>`
+}
+
+function openPrintable(html, autoPrint = false) {
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+  if (autoPrint) {
+    win.onload = () => { win.focus(); win.print() }
+  }
+}
 
 // ─── Auto-generate next invoice number ────────────────────────────────────────
 async function getNextInvNumber() {
@@ -480,6 +576,8 @@ function InvoiceDetail({ invoiceId, onBack, onEdit }) {
   if (!invoice) return <div className="text-gray-500 text-sm p-4">Invoice not found.</div>
 
   const isOverdue = invoice.due_date && new Date(invoice.due_date) < new Date()
+  const openPreview = () => openPrintable(invoiceHtml(invoice, items))
+  const downloadPdf = () => openPrintable(invoiceHtml(invoice, items), true)
 
   return (
     <div>
@@ -491,10 +589,20 @@ function InvoiceDetail({ invoiceId, onBack, onEdit }) {
           <h1 className="text-xl font-semibold text-gray-900">{invoice.invoice_number}</h1>
           {isOverdue && <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 font-medium">Overdue</span>}
         </div>
-        <button onClick={onEdit}
-          className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
-          <Pencil size={14} /> Edit
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openPreview}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            <FileText size={14} /> Preview PDF
+          </button>
+          <button onClick={downloadPdf}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            <Download size={14} /> Download PDF
+          </button>
+          <button onClick={onEdit}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            <Pencil size={14} /> Edit
+          </button>
+        </div>
       </div>
 
       {/* Header Info */}
@@ -611,13 +719,13 @@ function InvoiceDetail({ invoiceId, onBack, onEdit }) {
             {invoice.notes && (
               <div>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes</h3>
-                <p className="text-sm text-gray-600 whitespace-pre-line">{invoice.notes}</p>
+                <HtmlBlock value={invoice.notes} />
               </div>
             )}
             {invoice.term_condition && (
               <div>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Terms & Conditions</h3>
-                <p className="text-sm text-gray-600 whitespace-pre-line">{invoice.term_condition}</p>
+                <HtmlBlock value={invoice.term_condition} />
               </div>
             )}
           </div>

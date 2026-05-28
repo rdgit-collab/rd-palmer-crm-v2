@@ -329,6 +329,11 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [leadSources, setLeadSources] = useState([])
   const [stages, setStages] = useState([])
   const [users, setUsers] = useState([])
+  const [customers, setCustomers] = useState([])
+  const [contacts, setContacts] = useState([])
+  const [selectedCustomerId, setSelectedCustomerId] = useState('')
+  const [selectedContactId, setSelectedContactId] = useState('')
+  const [contactMode, setContactMode] = useState('existing')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -363,12 +368,79 @@ function LeadForm({ lead, onSave, onCancel }) {
   })
 
   useEffect(() => {
-    supabase.from('lead').select('id, name').order('name').then(({ data }) => setLeadSources(data || []))
-    supabase.from('stage').select('id, name').order('name').then(({ data }) => setStages(data || []))
-    fetchAssignableUsers(supabase).then(setUsers)
+    const run = async () => {
+      const [{ data: sources }, { data: stageRows }, assignableUsers, { data: customerRows }] = await Promise.all([
+        supabase.from('lead').select('id, name').order('name'),
+        supabase.from('stage').select('id, name').order('name'),
+        fetchAssignableUsers(supabase),
+        supabase.from('customer').select('*').order('company_name').limit(5000),
+      ])
+      setLeadSources(sources || [])
+      setStages(stageRows || [])
+      setUsers(assignableUsers || [])
+      setCustomers(customerRows || [])
+    }
+    run()
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const loadContacts = async (companyId) => {
+    if (!companyId) { setContacts([]); return }
+    const { data } = await supabase.from('contact').select('*').eq('company_id', parseInt(companyId)).order('first_name')
+    setContacts(data || [])
+  }
+
+  const applyCustomer = async (companyId) => {
+    setSelectedCustomerId(companyId)
+    setSelectedContactId('')
+    await loadContacts(companyId)
+    const customer = customers.find(c => String(c.id) === String(companyId))
+    if (!customer) return
+    setForm(f => ({
+      ...f,
+      company_name: customer.company_name || '',
+      industry: customer.industry || '',
+      account_type: customer.account_type || '',
+      address1: customer.address1 || '',
+      address2: customer.address2 || '',
+      country: customer.country || '',
+      state: customer.state || '',
+      city: customer.city || '',
+      zipcode: customer.zipcode || '',
+      office_number: customer.office_number || '',
+      mobile_number: customer.mobile_number || '',
+      email: customer.email || '',
+      website: customer.website || '',
+      assigned_to: f.assigned_to || (customer.assignto ? String(customer.assignto) : ''),
+    }))
+  }
+
+  const applyContact = (contactId) => {
+    setSelectedContactId(contactId)
+    const contact = contacts.find(c => String(c.id) === String(contactId))
+    if (!contact) return
+    setForm(f => ({
+      ...f,
+      salutation: contact.Salutation || '',
+      first_name: contact.first_name || '',
+      last_name: contact.last_name || '',
+      position: contact.position || '',
+      department_id: contact.department_id || '',
+      contact_mobile_number: contact.mobile_number || '',
+      contact_email: contact.email || '',
+    }))
+  }
+
+  const setType = (value) => {
+    set('type', value)
+    if (value === '0') {
+      setSelectedCustomerId('')
+      setSelectedContactId('')
+      setContacts([])
+      setContactMode('existing')
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -414,6 +486,23 @@ function LeadForm({ lead, onSave, onCancel }) {
 
     setSaving(false)
     if (result.error) { setError(result.error.message); return }
+
+    if (!isEdit && form.type === '1' && selectedCustomerId && contactMode === 'new' && (form.first_name || form.last_name || form.contact_email || form.contact_mobile_number)) {
+      await supabase.from('contact').insert([{
+        user_id: getLegacyUserId(profile),
+        company_id: parseInt(selectedCustomerId),
+        Salutation: form.salutation || null,
+        first_name: form.first_name || null,
+        last_name: form.last_name || null,
+        position: form.position || null,
+        department_id: form.department_id || null,
+        mobile_number: form.contact_mobile_number || null,
+        email: form.contact_email || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }])
+    }
+
     onSave(result.data)
   }
 
@@ -457,7 +546,7 @@ function LeadForm({ lead, onSave, onCancel }) {
           <div className="flex gap-6">
             {[['0', 'New'], ['1', 'Existing']].map(([val, label]) => (
               <label key={val} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input type="radio" name="type" value={val} checked={form.type === val} onChange={e => set('type', e.target.value)}
+                <input type="radio" name="type" value={val} checked={form.type === val} onChange={e => setType(e.target.value)}
                   className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500" />
                 {label}
               </label>
@@ -468,9 +557,20 @@ function LeadForm({ lead, onSave, onCancel }) {
         {/* Company Information */}
         <p className={sectionCls}>Company Information</p>
 
+        {form.type === '1' && (
+          <div className="mb-4">
+            <label className={labelCls}>Existing Company <span className="text-red-500">*</span></label>
+            <select className={inputCls} value={selectedCustomerId} onChange={e => applyCustomer(e.target.value)} required={!isEdit && form.type === '1'}>
+              <option value="">Please Select</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+            </select>
+          </div>
+        )}
+
         <div className="mb-4">
           <label className={labelCls}>Company Name <span className="text-red-500">*</span></label>
-          <input className={inputCls} value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Company Name" required />
+          <input className={inputCls} value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Company Name" required readOnly={form.type === '1' && !!selectedCustomerId}
+            disabled={form.type === '1' && !!selectedCustomerId} />
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-4">
@@ -538,6 +638,32 @@ function LeadForm({ lead, onSave, onCancel }) {
 
         {/* Contact Information */}
         <p className={sectionCls}>Contact Information</p>
+
+        {form.type === '1' && selectedCustomerId && (
+          <div className="mb-4">
+            <label className={labelCls}>Contact Person</label>
+            <div className="flex gap-6 mb-3">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="contactMode" value="existing" checked={contactMode === 'existing'} onChange={e => setContactMode(e.target.value)}
+                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500" />
+                Select Existing
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="contactMode" value="new" checked={contactMode === 'new'} onChange={e => { setContactMode(e.target.value); setSelectedContactId('') }}
+                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500" />
+                Create New
+              </label>
+            </div>
+            {contactMode === 'existing' && (
+              <select className={inputCls} value={selectedContactId} onChange={e => applyContact(e.target.value)}>
+                <option value="">Please Select</option>
+                {contacts.map(c => (
+                  <option key={c.id} value={c.id}>{[c.Salutation, c.first_name, c.last_name].filter(Boolean).join(' ') || c.email || `Contact #${c.id}`}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
@@ -668,8 +794,13 @@ export default function Leads() {
     fetchLeads()
   }
 
-  const handleSaved = () => {
-    setView('list')
+  const handleSaved = (savedLead) => {
+    if (savedLead?.id) {
+      setSelectedId(savedLead.id)
+      setView('detail')
+    } else {
+      setView('list')
+    }
     setEditLead(null)
     fetchLeads()
   }
