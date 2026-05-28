@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
-  X, ChevronLeft, ChevronRight, Building2, Phone, Mail
+  X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
 } from 'lucide-react'
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -29,34 +30,74 @@ const stageColor = (name = '') => {
   return 'bg-gray-100 text-gray-600'
 }
 
+const activityStatusColor = (name = '') => {
+  const n = name.toLowerCase()
+  if (n.includes('complete')) return 'bg-green-100 text-green-700'
+  if (n.includes('cancel')) return 'bg-gray-100 text-gray-500'
+  if (n.includes('progress')) return 'bg-blue-100 text-blue-700'
+  return 'bg-yellow-100 text-yellow-700'
+}
+
+const activityPriorityColor = (name = '') => {
+  const n = name.toLowerCase()
+  if (n.includes('high')) return 'bg-red-100 text-red-700'
+  if (n.includes('medium')) return 'bg-yellow-100 text-yellow-700'
+  if (n.includes('low')) return 'bg-green-100 text-green-700'
+  return 'bg-gray-100 text-gray-600'
+}
+
+const defaultActivityForm = () => ({
+  type: '',
+  priority: '',
+  status: '',
+  date: new Date().toISOString().split('T')[0],
+  time: '',
+  description: '',
+})
+
 // ─── Lead Detail View ──────────────────────────────────────────────────────────
 function LeadDetail({ leadId, onBack, onEdit }) {
+  const { profile } = useAuth()
   const [lead, setLead] = useState(null)
   const [activities, setActivities] = useState([])
   const [users, setUsers] = useState([])
   const [leadSources, setLeadSources] = useState([])
   const [stages, setStages] = useState([])
+  const [activityTypes, setActivityTypes] = useState([])
+  const [priorities, setPriorities] = useState([])
+  const [activityStatuses, setActivityStatuses] = useState([])
+  const [showActivityForm, setShowActivityForm] = useState(false)
+  const [activityForm, setActivityForm] = useState(defaultActivityForm)
+  const [activitySaving, setActivitySaving] = useState(false)
+  const [activityError, setActivityError] = useState('')
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      const [{ data: l }, { data: act }, legacyUsers, { data: sources }, { data: stageRows }] = await Promise.all([
-        supabase.from('sales_lead').select('*').eq('id', leadId).single(),
-        supabase.from('activity').select('*').eq('lead_id', leadId).order('created_at', { ascending: false }),
-        fetchLegacyUsers(supabase),
-        supabase.from('lead').select('id, name').order('name'),
-        supabase.from('stage').select('id, name').order('name'),
-      ])
-      setLead(l)
-      setActivities(act || [])
-      setUsers(legacyUsers || [])
-      setLeadSources(sources || [])
-      setStages(stageRows || [])
-      setLoading(false)
-    }
-    load()
+  const load = useCallback(async () => {
+    setLoading(true)
+    const [{ data: l }, { data: act }, legacyUsers, { data: sources }, { data: stageRows }, { data: typeRows }, { data: priorityRows }, { data: statusRows }] = await Promise.all([
+      supabase.from('sales_lead').select('*').eq('id', leadId).single(),
+      supabase.from('activity').select('*').eq('lead_id', leadId).order('created_at', { ascending: false }),
+      fetchLegacyUsers(supabase),
+      supabase.from('lead').select('id, name').order('name'),
+      supabase.from('stage').select('id, name').order('name'),
+      supabase.from('activity_type').select('id, type').order('type'),
+      supabase.from('priority').select('id, name').order('name'),
+      supabase.from('activity_status').select('id, name').order('name'),
+    ])
+    setLead(l)
+    setActivities(act || [])
+    setUsers(legacyUsers || [])
+    setLeadSources(sources || [])
+    setStages(stageRows || [])
+    setActivityTypes(typeRows || [])
+    setPriorities(priorityRows || [])
+    setActivityStatuses(statusRows || [])
+    setLoading(false)
   }, [leadId])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   if (loading) return <div className="flex items-center justify-center h-40 text-gray-500 text-sm">Loading...</div>
   if (!lead) return <div className="text-gray-500 text-sm p-4">Lead not found.</div>
@@ -64,6 +105,40 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const phone = lead.mobile_number || lead.office_number || '—'
   const statusName = lookupName(stages, lead.status, 'Status')
   const sourceName = lookupName(leadSources, lead.lead_source, 'Source')
+  const latestActivity = activities[0]
+  const nextContact = latestActivity?.date
+    ? `${fmt(latestActivity.date)}${latestActivity.time ? ` ${latestActivity.time}` : ''}`
+    : '—'
+
+  const setActivity = (k, v) => setActivityForm(f => ({ ...f, [k]: v }))
+
+  const saveActivity = async (e) => {
+    e.preventDefault()
+    if (!activityForm.type) { setActivityError('Activity type is required'); return }
+    if (!activityForm.description.trim()) { setActivityError('Description is required'); return }
+    setActivitySaving(true)
+    setActivityError('')
+    const payload = {
+      user_id: getLegacyUserId(profile),
+      lead_id: lead.id,
+      company_id: null,
+      assigned_to: lead.assigned_to || null,
+      type: activityForm.type,
+      priority: activityForm.priority || null,
+      status: activityForm.status || null,
+      date: activityForm.date || null,
+      time: activityForm.time || null,
+      description: activityForm.description,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('activity').insert([payload])
+    setActivitySaving(false)
+    if (error) { setActivityError(error.message); return }
+    setActivityForm(defaultActivityForm())
+    setShowActivityForm(false)
+    load()
+  }
 
   return (
     <div>
@@ -78,12 +153,84 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           {lead.status && (
             <span className={`px-3 py-1 rounded-full text-xs font-medium ${stageColor(statusName)}`}>{statusName}</span>
           )}
+          <button onClick={() => setShowActivityForm(v => !v)}
+            className="flex items-center gap-2 px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+            <Plus size={14} /> Update Progress
+          </button>
           <button onClick={onEdit}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
             <Pencil size={14} /> Edit
           </button>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Next Contact</p>
+          <p className="mt-1 text-sm font-semibold text-gray-900">{nextContact}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Latest Activity</p>
+          <p className="mt-1 text-sm font-semibold text-gray-900">{latestActivity?.type || '—'}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Activity Status</p>
+          <p className="mt-1 text-sm font-semibold text-gray-900">{latestActivity?.status || '—'}</p>
+        </div>
+      </div>
+
+      {showActivityForm && (
+        <form onSubmit={saveActivity} className="bg-white rounded-lg border border-gray-200 p-5 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Update Lead Progress</h2>
+            <button type="button" onClick={() => setShowActivityForm(false)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+          </div>
+          {activityError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{activityError}</div>}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
+              <select value={activityForm.type} onChange={e => setActivity('type', e.target.value)} required className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+                <option value="">Please Select</option>
+                {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Next Contact Date</label>
+              <input type="date" value={activityForm.date} onChange={e => setActivity('date', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+              <input type="time" value={activityForm.time} onChange={e => setActivity('time', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+              <select value={activityForm.priority} onChange={e => setActivity('priority', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+                <option value="">Please Select</option>
+                {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <select value={activityForm.status} onChange={e => setActivity('status', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+                <option value="">Please Select</option>
+                {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Progress Notes</label>
+            <textarea value={activityForm.description} onChange={e => setActivity('description', e.target.value)} required rows={3} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 resize-none" />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setShowActivityForm(false)} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={activitySaving} className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 disabled:opacity-50">
+              <Save size={14} /> {activitySaving ? 'Saving...' : 'Save Update'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {/* Lead Info */}
       <div className="bg-white rounded-lg border border-gray-200 mb-4">
@@ -138,35 +285,36 @@ function LeadDetail({ leadId, onBack, onEdit }) {
 
       {/* Activity History */}
       <div className="bg-white rounded-lg border border-gray-200">
-        <div className="px-5 py-4 border-b border-gray-100">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Activity History</h2>
+          <span className="text-xs text-gray-400">{activities.length} update{activities.length !== 1 ? 's' : ''}</span>
         </div>
         {activities.length === 0 ? (
           <p className="px-5 py-4 text-sm text-gray-400">No activity history for this lead.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  {['Date', 'Type', 'Priority', 'Status', 'Description'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {activities.map(a => (
-                  <tr key={a.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap text-xs">{fmt(a.created_at)}</td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{a.type || '—'}</td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{a.priority || '—'}</td>
-                    <td className="px-4 py-3 text-xs">
-                      <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{a.status || '—'}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate">{a.description || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-gray-100">
+            {activities.map(a => (
+              <div key={a.id} className="px-5 py-4 hover:bg-gray-50">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0">
+                    <CalendarClock size={15} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="font-semibold text-gray-900 text-sm">{a.type || 'Activity'}</span>
+                      {a.priority && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activityPriorityColor(a.priority)}`}>{a.priority}</span>}
+                      {a.status && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activityStatusColor(a.status)}`}>{a.status}</span>}
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{a.description || '—'}</p>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
+                      <span>Created {fmt(a.created_at)}</span>
+                      <span>Next contact {a.date ? `${fmt(a.date)}${a.time ? ` ${a.time}` : ''}` : '—'}</span>
+                      <span>By {getUserName(users, a.user_id)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -455,6 +603,7 @@ function LeadForm({ lead, onSave, onCancel }) {
 
 // ─── Main Leads Page ───────────────────────────────────────────────────────────
 export default function Leads() {
+  const location = useLocation()
   const [view, setView] = useState('list')
   const [selectedId, setSelectedId] = useState(null)
   const [editLead, setEditLead] = useState(null)
@@ -483,6 +632,13 @@ export default function Leads() {
     }
     run()
   }, [])
+
+  useEffect(() => {
+    if (location.state?.leadId) {
+      setSelectedId(location.state.leadId)
+      setView('detail')
+    }
+  }, [location.state])
 
   const fetchLeads = useCallback(async () => {
     setLoading(true)

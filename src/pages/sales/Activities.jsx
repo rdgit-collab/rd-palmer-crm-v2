@@ -1,33 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
-import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
+import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
 const PAGE_SIZE = 15
-
-// These are loaded from DB — kept as fallbacks for badge colours only
-const PRIORITY_COLORS = { High: 'bg-red-100 text-red-700', Medium: 'bg-yellow-100 text-yellow-700', Low: 'bg-green-100 text-green-700' }
-const STATUS_COLORS   = { Completed: 'bg-green-100 text-green-700', 'In Progress': 'bg-blue-100 text-blue-700', Cancelled: 'bg-gray-100 text-gray-500' }
-
-function priorityColor(p) {
-  if (p === 'High')   return 'bg-red-100 text-red-700'
-  if (p === 'Medium') return 'bg-yellow-100 text-yellow-700'
-  if (p === 'Low')    return 'bg-green-100 text-green-700'
-  return 'bg-gray-100 text-gray-600'
-}
-function statusColor(s) {
-  if (s === 'Completed')  return 'bg-green-100 text-green-700'
-  if (s === 'In Progress') return 'bg-blue-100 text-blue-700'
-  if (s === 'Cancelled')  return 'bg-gray-100 text-gray-500'
-  return 'bg-yellow-100 text-yellow-700'
-}
-function typeColor(t) {
-  const map = { Call: 'bg-blue-100 text-blue-700', Meeting: 'bg-purple-100 text-purple-700',
-    'Follow-Up': 'bg-orange-100 text-orange-700', Email: 'bg-cyan-100 text-cyan-700',
-    Visit: 'bg-indigo-100 text-indigo-700' }
-  return map[t] || 'bg-gray-100 text-gray-600'
-}
 
 const emptyForm = {
   type: '', priority: '', status: '',
@@ -35,17 +13,68 @@ const emptyForm = {
   description: '', lead_id: '', company_id: '', assigned_to: '',
 }
 
+const TABS = [
+  { id: 'open', label: 'Open Follow Ups' },
+  { id: 'today', label: 'Today' },
+  { id: 'tomorrow', label: 'Tomorrow' },
+  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'overdue', label: 'Overdue' },
+  { id: 'completed', label: 'Completed' },
+]
+
+function fmt(d) {
+  return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+}
+
+function todayString(offset = 0) {
+  const d = new Date()
+  d.setDate(d.getDate() + offset)
+  return d.toISOString().split('T')[0]
+}
+
+function isCompleted(status = '') {
+  return status.toLowerCase().includes('complete')
+}
+
+function priorityColor(p = '') {
+  const n = p.toLowerCase()
+  if (n.includes('high')) return 'bg-red-100 text-red-700'
+  if (n.includes('medium')) return 'bg-yellow-100 text-yellow-700'
+  if (n.includes('low')) return 'bg-green-100 text-green-700'
+  return 'bg-gray-100 text-gray-600'
+}
+
+function statusColor(s = '') {
+  const n = s.toLowerCase()
+  if (n.includes('complete')) return 'bg-green-100 text-green-700'
+  if (n.includes('cancel')) return 'bg-gray-100 text-gray-500'
+  if (n.includes('progress')) return 'bg-blue-100 text-blue-700'
+  return 'bg-yellow-100 text-yellow-700'
+}
+
+function typeColor(t = '') {
+  const n = t.toLowerCase()
+  if (n.includes('call')) return 'bg-blue-100 text-blue-700'
+  if (n.includes('meeting')) return 'bg-purple-100 text-purple-700'
+  if (n.includes('follow')) return 'bg-orange-100 text-orange-700'
+  if (n.includes('email')) return 'bg-cyan-100 text-cyan-700'
+  if (n.includes('visit')) return 'bg-indigo-100 text-indigo-700'
+  if (n.includes('quote')) return 'bg-amber-100 text-amber-700'
+  return 'bg-gray-100 text-gray-600'
+}
+
 export default function Activities() {
   const { profile } = useAuth()
+  const navigate = useNavigate()
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
-  const [total, setTotal]       = useState(0)
+  const [rawActivities, setRawActivities] = useState([])
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [typeFilter, setTF]     = useState('')
+  const [tab, setTab]           = useState('open')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
-  const [editId, setEditId]     = useState(null)
   const [detail, setDetail]     = useState(null)
   const [deleteId, setDeleteId] = useState(null)
   const [saving, setSaving]     = useState(false)
@@ -54,161 +83,196 @@ export default function Activities() {
   const [leads, setLeads]           = useState([])
   const [customers, setCustomers]   = useState([])
   const [users, setUsers]           = useState([])
+  const [assignableUsers, setAssignableUsers] = useState([])
   const [activityTypes, setActivityTypes] = useState([])
   const [priorities, setPriorities] = useState([])
   const [activityStatuses, setActivityStatuses] = useState([])
 
+  const leadsById = useMemo(() => Object.fromEntries(leads.map(l => [String(l.id), l])), [leads])
+  const customersById = useMemo(() => Object.fromEntries(customers.map(c => [String(c.id), c])), [customers])
+
+  const enrichActivity = useCallback((activity) => {
+    const lead = activity.lead_id ? leadsById[String(activity.lead_id)] : null
+    const customer = activity.company_id ? customersById[String(activity.company_id)] : null
+    return {
+      ...activity,
+      lead,
+      customer,
+      companyName: lead?.company_name || customer?.company_name || activity.company_id || '-',
+      assignedTo: activity.assigned_to || lead?.assigned_to || '',
+    }
+  }, [leadsById, customersById])
+
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('activity').select('*', { count: 'exact' }).order('date', { ascending: false }).order('id', { ascending: false })
-    if (search)     q = q.or(`description.ilike.%${search}%,type.ilike.%${search}%`)
-    if (typeFilter) q = q.eq('type', typeFilter)
-    q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
-    const { data, count, error: err } = await q
-    if (!err) { setRows(data || []); setTotal(count || 0) }
+    const [actR, leadR, custR, activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
+      supabase.from('activity').select('*').order('id', { ascending: false }).limit(5000),
+      supabase.from('sales_lead').select('id, company_name, first_name, last_name, assigned_to, status').order('company_name').limit(5000),
+      supabase.from('customer').select('id, company_name').order('company_name').limit(5000),
+      fetchAssignableUsers(supabase),
+      fetchLegacyUsers(supabase),
+      supabase.from('activity_type').select('id, type').order('type'),
+      supabase.from('priority').select('id, name').order('name'),
+      supabase.from('activity_status').select('id, name').order('name'),
+    ])
+    if (!leadR.error) setLeads(leadR.data || [])
+    if (!custR.error) setCustomers(custR.data || [])
+    if (!actR.error) setRawActivities(actR.data || [])
+    setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
+    setAssignableUsers(activeUsers || [])
+    if (!atR.error) setActivityTypes(atR.data || [])
+    if (!prioR.error) setPriorities(prioR.data || [])
+    if (!statusR.error) setActivityStatuses(statusR.data || [])
     setLoading(false)
-  }, [search, typeFilter, page])
+  }, [])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
   useEffect(() => {
-    const run = async () => {
-      const [leadR, custR, usrR, atR, prioR, statusR] = await Promise.all([
-        supabase.from('sales_lead').select('id, company_name, first_name, last_name').order('company_name'),
-        supabase.from('customer').select('id, company_name').order('company_name'),
-        fetchAssignableUsers(supabase),
-        supabase.from('activity_type').select('id, type').order('type'),
-        supabase.from('priority').select('id, name').order('name'),
-        supabase.from('activity_status').select('id, name').order('name'),
-      ])
-      if (!leadR.error)   setLeads(leadR.data || [])
-      if (!custR.error)   setCustomers(custR.data || [])
-      setUsers(usrR || [])
-      if (!atR.error)     setActivityTypes(atR.data || [])
-      if (!prioR.error)   setPriorities(prioR.data || [])
-      if (!statusR.error) setActivityStatuses(statusR.data || [])
-    }
-    run()
-  }, [])
-
-  const getCompanyName = (companyId) => {
-    const c = customers.find(c => String(c.id) === String(companyId))
-    return c?.company_name || companyId || '—'
-  }
-  const getUserName = (id) => {
-    return formatUserName(users, id)
-  }
-
-  const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
-  const openEdit = (r) => {
-    setForm({
-      type: r.type || '', priority: r.priority || '', status: r.status || '',
-      date: r.date || '', time: r.time || '', description: r.description || '',
-      lead_id: String(r.lead_id || ''), company_id: String(r.company_id || ''),
-      assigned_to: String(r.assigned_to || ''),
+    const latest = new Map()
+    rawActivities.map(enrichActivity).forEach(activity => {
+      const key = activity.lead_id ? `lead-${activity.lead_id}` : `activity-${activity.id}`
+      if (!latest.has(key)) latest.set(key, activity)
     })
-    setEditId(r.id); setError(''); setView('form')
+    setRows(Array.from(latest.values()))
+  }, [rawActivities, enrichActivity])
+
+  const filteredRows = useMemo(() => {
+    const today = todayString()
+    const tomorrow = todayString(1)
+    const text = search.trim().toLowerCase()
+    return rows
+      .filter(r => {
+        const completed = isCompleted(r.status)
+        if (tab === 'open') return !completed
+        if (tab === 'completed') return completed
+        if (completed) return false
+        if (tab === 'today') return r.date === today
+        if (tab === 'tomorrow') return r.date === tomorrow
+        if (tab === 'overdue') return r.date && r.date < today
+        if (tab === 'upcoming') return r.date && r.date > tomorrow
+        return true
+      })
+      .filter(r => !typeFilter || r.type === typeFilter)
+      .filter(r => !text || [r.companyName, r.type, r.status, r.priority, r.description].some(value => String(value || '').toLowerCase().includes(text)))
+      .sort((a, b) => {
+        const dateA = a.date || ''
+        const dateB = b.date || ''
+        if (tab === 'overdue') return dateA.localeCompare(dateB) || b.id - a.id
+        return dateB.localeCompare(dateA) || b.id - a.id
+      })
+  }, [rows, search, typeFilter, tab])
+
+  const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE)
+
+  const getUserName = (id) => formatUserName(users, id)
+
+  const historyForDetail = (activity) => {
+    if (!activity?.lead_id) return [activity]
+    return rawActivities
+      .filter(item => String(item.lead_id) === String(activity.lead_id))
+      .map(enrichActivity)
+      .sort((a, b) => b.id - a.id)
   }
+
+  const openAdd = () => {
+    setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] })
+    setError('')
+    setView('form')
+  }
+
+  const openUpdate = (activity) => {
+    setForm({
+      ...emptyForm,
+      date: new Date().toISOString().split('T')[0],
+      lead_id: activity.lead_id ? String(activity.lead_id) : '',
+      company_id: activity.company_id ? String(activity.company_id) : '',
+      assigned_to: activity.assignedTo ? String(activity.assignedTo) : '',
+    })
+    setError('')
+    setView('form')
+  }
+
+  const selectedLead = form.lead_id ? leadsById[String(form.lead_id)] : null
 
   const handleSave = async (e) => {
-    e.preventDefault(); setSaving(true); setError('')
+    e.preventDefault()
+    if (!form.type) { setError('Activity type is required'); return }
+    if (!form.description.trim()) { setError('Description is required'); return }
+    setSaving(true)
+    setError('')
     const payload = {
-      type: form.type, priority: form.priority, status: form.status,
-      date: form.date || null, time: form.time || null, description: form.description,
-      lead_id: form.lead_id   ? parseInt(form.lead_id)   : null,
-      company_id: form.company_id || null,
-      assigned_to: form.assigned_to || null,
+      type: form.type,
+      priority: form.priority || null,
+      status: form.status || null,
+      date: form.date || null,
+      time: form.time || null,
+      description: form.description,
+      lead_id: form.lead_id ? parseInt(form.lead_id) : null,
+      company_id: form.lead_id ? null : (form.company_id || null),
+      assigned_to: form.assigned_to || selectedLead?.assigned_to || null,
       user_id: getLegacyUserId(profile),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     }
-    const { error: err } = editId
-      ? await supabase.from('activity').update(payload).eq('id', editId)
-      : await supabase.from('activity').insert([payload])
+    const { error: err } = await supabase.from('activity').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
-    setSaving(false); fetchRows(); setView('list')
+    setSaving(false)
+    await fetchRows()
+    setView('list')
   }
 
   const handleDelete = async (id) => {
     await supabase.from('activity').delete().eq('id', id)
-    setDeleteId(null); fetchRows()
+    setDeleteId(null)
+    fetchRows()
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-
-  if (view === 'list') return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Activities</h1>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Activity</button>
-      </div>
-      <div className="flex gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Search activities..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-            className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
-        </div>
-        <select value={typeFilter} onChange={e => { setTF(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-          <option value="">All Types</option>
-          {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
-        </select>
-      </div>
-      <div className="bg-white border border-gray-200">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Type</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Date</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Company</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Priority</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Assigned To</th>
-              <th className="text-right px-4 py-3 font-semibold text-gray-700">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No activities found.</td></tr>
-            : rows.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${typeColor(r.type)}`}>{r.type}</span></td>
-                <td className="px-4 py-3 text-gray-600">{r.date || '—'} {r.time ? `${r.time}` : ''}</td>
-                <td className="px-4 py-3 text-gray-700 font-medium">{getCompanyName(r.company_id)}</td>
-                <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${priorityColor(r.priority)}`}>{r.priority || '—'}</span></td>
-                <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || '—'}</span></td>
-                <td className="px-4 py-3 text-gray-600">{getUserName(r.assigned_to)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-2">
-                    <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
-                    <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
-                    <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-          <span>{total} activit{total !== 1 ? 'ies' : 'y'}</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="p-1 disabled:opacity-40"><ChevronLeft size={16}/></button>
-            <span>Page {page} of {totalPages}</span>
-            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="p-1 disabled:opacity-40"><ChevronRight size={16}/></button>
-          </div>
-        </div>
-      )}
-      {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Activity?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
-    </div>
-  )
+  const setLeadContext = (leadId) => {
+    const lead = leadsById[String(leadId)]
+    setForm(f => ({
+      ...f,
+      lead_id: leadId,
+      company_id: '',
+      assigned_to: lead?.assigned_to ? String(lead.assigned_to) : f.assigned_to,
+    }))
+  }
 
   if (view === 'form') return (
     <div className="p-6 max-w-3xl">
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
-        <h1 className="text-2xl font-bold text-gray-900">{editId ? 'Edit Activity' : 'New Activity'}</h1>
+        <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"><ArrowLeft size={15} /> Back</button>
+        <h1 className="text-2xl font-bold text-gray-900">New Activity Update</h1>
       </div>
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       <form onSubmit={handleSave} className="bg-white border border-gray-200 p-6 space-y-5">
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Lead</label>
+          <div className="col-span-2">
+            <select value={form.lead_id} onChange={e => setLeadContext(e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">Please Select</option>
+              {leads.map(l => <option key={l.id} value={l.id}>{l.company_name || `${l.first_name || ''} ${l.last_name || ''}`.trim()}</option>)}
+            </select>
+          </div>
+        </div>
+        {!form.lead_id && (
+          <div className="grid grid-cols-3 gap-4 items-center">
+            <label className="text-sm font-medium text-gray-700">Customer</label>
+            <div className="col-span-2">
+              <select value={form.company_id} onChange={e => setForm(f => ({...f, company_id: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                <option value="">Please Select</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+        {selectedLead && (
+          <div className="grid grid-cols-3 gap-4">
+            <span className="text-sm font-medium text-gray-700">Company</span>
+            <div className="col-span-2 text-sm text-gray-800 bg-gray-50 border border-gray-100 px-3 py-2">{selectedLead.company_name || '-'}</div>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Activity Type <span className="text-red-500">*</span></label>
           <div className="col-span-2">
@@ -219,28 +283,10 @@ export default function Activities() {
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
-          <label className="text-sm font-medium text-gray-700">Date & Time</label>
+          <label className="text-sm font-medium text-gray-700">Next Contact</label>
           <div className="col-span-2 flex gap-3">
             <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} className="flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
             <input type="time" value={form.time} onChange={e => setForm(f => ({...f, time: e.target.value}))} className="w-32 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4 items-center">
-          <label className="text-sm font-medium text-gray-700">Customer</label>
-          <div className="col-span-2">
-            <select value={form.company_id} onChange={e => setForm(f => ({...f, company_id: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              <option value="">Please Select</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4 items-center">
-          <label className="text-sm font-medium text-gray-700">Lead</label>
-          <div className="col-span-2">
-            <select value={form.lead_id} onChange={e => setForm(f => ({...f, lead_id: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              <option value="">Please Select</option>
-              {leads.map(l => <option key={l.id} value={l.id}>{l.company_name || `${l.first_name} ${l.last_name}`}</option>)}
-            </select>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
@@ -266,51 +312,171 @@ export default function Activities() {
           <div className="col-span-2">
             <select value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
               <option value="">Please Select</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+              {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
             </select>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
-          <label className="text-sm font-medium text-gray-700 pt-2">Description <span className="text-red-500">*</span></label>
+          <label className="text-sm font-medium text-gray-700 pt-2">Progress Notes <span className="text-red-500">*</span></label>
           <div className="col-span-2">
             <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} required rows={4} placeholder="Activity notes..." className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
           </div>
         </div>
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
           <button type="button" onClick={() => setView('list')} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
-          <button type="submit" disabled={saving} className="px-6 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60">{saving ? 'Saving...' : editId ? 'Update' : 'Save'}</button>
+          <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"><Save size={14} />{saving ? 'Saving...' : 'Save Update'}</button>
         </div>
       </form>
     </div>
   )
 
-  if (view === 'detail' && detail) return (
-    <div className="p-6 max-w-3xl">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
-          <h1 className="text-2xl font-bold text-gray-900">Activity Detail</h1>
-          <span className={`px-2 py-0.5 text-xs font-medium rounded ${typeColor(detail.type)}`}>{detail.type}</span>
-          <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status}</span>
+  if (view === 'detail' && detail) {
+    const history = historyForDetail(detail)
+    return (
+      <div className="p-6 max-w-5xl">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"><ArrowLeft size={15} /> Back</button>
+            <h1 className="text-2xl font-bold text-gray-900">{detail.companyName}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            {detail.lead_id && <button onClick={() => navigate('/leads', { state: { leadId: detail.lead_id } })} className="px-3 py-1.5 text-sm border border-gray-200 hover:bg-gray-50">Open Lead</button>}
+            <button onClick={() => openUpdate(detail)} className="flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 text-sm hover:bg-red-700"><Plus size={14} /> Add Update</button>
+          </div>
         </div>
-        <button onClick={() => openEdit(detail)} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Edit2 size={14}/> Edit</button>
+        <div className="bg-white border border-gray-200">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Activity History</h2>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {history.map(item => (
+              <div key={item.id} className="px-5 py-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 w-8 h-8 bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0"><CalendarClock size={15} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${typeColor(item.type)}`}>{item.type || 'Activity'}</span>
+                      {item.priority && <span className={`px-2 py-0.5 text-xs font-medium rounded ${priorityColor(item.priority)}`}>{item.priority}</span>}
+                      {item.status && <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(item.status)}`}>{item.status}</span>}
+                    </div>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{item.description || '-'}</p>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
+                      <span>Created {fmt(item.created_at)}</span>
+                      <span>Next contact {item.date ? `${fmt(item.date)}${item.time ? ` ${item.time}` : ''}` : '-'}</span>
+                      <span>By {getUserName(item.user_id)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-      <div className="bg-white border border-gray-200 p-6 text-sm space-y-4">
-        <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-          <div><span className="font-medium text-gray-500">Type: </span><span className={`inline-block px-2 py-0.5 text-xs rounded ${typeColor(detail.type)}`}>{detail.type}</span></div>
-          <div><span className="font-medium text-gray-500">Date: </span>{detail.date || '—'} {detail.time || ''}</div>
-          <div><span className="font-medium text-gray-500">Company: </span>{getCompanyName(detail.company_id)}</div>
-          <div><span className="font-medium text-gray-500">Priority: </span><span className={`inline-block px-2 py-0.5 text-xs rounded ${priorityColor(detail.priority)}`}>{detail.priority}</span></div>
-          <div><span className="font-medium text-gray-500">Status: </span><span className={`inline-block px-2 py-0.5 text-xs rounded ${statusColor(detail.status)}`}>{detail.status}</span></div>
-          <div><span className="font-medium text-gray-500">Assigned To: </span>{getUserName(detail.assigned_to)}</div>
+    )
+  }
+
+  return (
+    <div className="p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Activity Follow Ups</h1>
+          <p className="text-sm text-gray-500 mt-1">{filteredRows.length} lead follow up{filteredRows.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="border-t border-gray-100 pt-4">
-          <p className="font-medium text-gray-500 mb-1">Description</p>
-          <p className="whitespace-pre-wrap text-gray-800">{detail.description || '—'}</p>
-        </div>
+        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Update</button>
       </div>
+
+      <div className="flex flex-wrap gap-1 mb-5 border-b border-gray-200">
+        {TABS.map(t => {
+          const today = todayString()
+          const tomorrow = todayString(1)
+          const count = rows.filter(r => {
+            const completed = isCompleted(r.status)
+            if (t.id === 'open') return !completed
+            if (t.id === 'completed') return completed
+            if (completed) return false
+            if (t.id === 'today') return r.date === today
+            if (t.id === 'tomorrow') return r.date === tomorrow
+            if (t.id === 'overdue') return r.date && r.date < today
+            if (t.id === 'upcoming') return r.date && r.date > tomorrow
+            return true
+          }).length
+          return (
+            <button key={t.id} onClick={() => { setTab(t.id); setPage(1) }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {t.label} <span className="text-xs text-gray-400">({count})</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="flex gap-3 mb-4 flex-wrap">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Search company, notes, status..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+        </div>
+        <select value={typeFilter} onChange={e => { setTF(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+          <option value="">All Types</option>
+          {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
+        </select>
+        {(search || typeFilter) && <button onClick={() => { setSearch(''); setTF('') }} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"><X size={14} /> Clear</button>}
+      </div>
+
+      <div className="bg-white border border-gray-200">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Next Contact</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Company / Lead</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Latest Update</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Priority</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Assigned To</th>
+              <th className="text-right px-4 py-3 font-semibold text-gray-700">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
+            : pagedRows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No follow ups found.</td></tr>
+            : pagedRows.map(r => (
+              <tr key={`${r.lead_id || 'activity'}-${r.id}`} className="border-b border-gray-100 hover:bg-gray-50">
+                <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{r.date ? fmt(r.date) : '-'} {r.time || ''}</td>
+                <td className="px-4 py-3">
+                  <button onClick={() => { setDetail(r); setView('detail') }} className="text-left font-semibold text-gray-900 hover:text-red-600">{r.companyName}</button>
+                  {r.lead_id && <div className="text-xs text-gray-400">Lead #{r.lead_id}</div>}
+                </td>
+                <td className="px-4 py-3 max-w-md">
+                  <div className={`inline-block px-2 py-0.5 text-xs font-medium rounded mb-1 ${typeColor(r.type)}`}>{r.type || '-'}</div>
+                  <p className="text-xs text-gray-600 line-clamp-2">{r.description || '-'}</p>
+                </td>
+                <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${priorityColor(r.priority)}`}>{r.priority || '-'}</span></td>
+                <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || '-'}</span></td>
+                <td className="px-4 py-3 text-gray-600">{getUserName(r.assignedTo)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700" title="View history"><Eye size={15} /></button>
+                    <button onClick={() => openUpdate(r)} className="text-red-600 hover:text-red-700 text-xs font-semibold">Update</button>
+                    <button onClick={() => setDeleteId(r.id)} className="text-gray-400 hover:text-red-700" title="Delete latest update"><Trash2 size={15} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
+          <span>{filteredRows.length} follow up{filteredRows.length !== 1 ? 's' : ''}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="p-1 disabled:opacity-40"><ChevronLeft size={16}/></button>
+            <span>Page {page} of {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="p-1 disabled:opacity-40"><ChevronRight size={16}/></button>
+          </div>
+        </div>
+      )}
+
+      {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Latest Update?</h3><p className="text-sm text-gray-600">Only this activity row will be removed. Older lead history stays unchanged.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
     </div>
   )
-
-  return null
 }
