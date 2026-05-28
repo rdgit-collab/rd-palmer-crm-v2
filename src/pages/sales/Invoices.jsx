@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
-  X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline
+  X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline, Copy
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -347,7 +347,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
 // ─── Invoice Form (Add / Edit) ─────────────────────────────────────────────────
 function InvoiceForm({ invoice, onSave, onCancel }) {
-  const isEdit = !!invoice
+  const isEdit = !!invoice?.id
   const [customers, setCustomers] = useState([])
   const [contacts, setContacts] = useState([])
   const [catalogueItems, setCatalogueItems] = useState([])
@@ -406,7 +406,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       setCatalogueItems(cats || [])
       setTaxes(txs || [])
       setPaymentTerms(pts || [])
-      if (!isEdit) {
+      if (!invoice) {
         const [invNum, { data: tplData }] = await Promise.all([
           getNextInvNumber(),
           supabase.from('app_setting').select('key, value').in('key', ['invoice_notes', 'invoice_terms']),
@@ -422,7 +422,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       }
     }
     load()
-  }, [isEdit])
+  }, [isEdit, invoice])
 
   useEffect(() => {
     if (form.companyid) {
@@ -715,7 +715,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 }
 
 // ─── Invoice Detail View ───────────────────────────────────────────────────────
-function InvoiceDetail({ invoiceId, onBack, onEdit }) {
+function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const [invoice, setInvoice] = useState(null)
   const [items, setItems] = useState([])
   const [contact, setContact] = useState(null)
@@ -775,6 +775,10 @@ function InvoiceDetail({ invoiceId, onBack, onEdit }) {
           <button onClick={downloadPdf}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
             <Download size={14} /> Download PDF
+          </button>
+          <button onClick={onClone}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            <Copy size={14} /> Clone
           </button>
           <button onClick={onEdit}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
@@ -979,12 +983,31 @@ export default function Invoices() {
     setView('form')
   }
 
+  const openClone = async (inv) => {
+    const invoiceId = inv?.id || selectedId
+    const [src, { data: items }, nextNumber] = await Promise.all([
+      supabase.from('invoice').select('*').eq('id', invoiceId).single().then(r => r.data),
+      supabase.from('invoice_item').select('*').eq('invoiceid', invoiceId).order('id'),
+      getNextInvNumber(),
+    ])
+    if (!src) return
+    const today = new Date().toISOString().split('T')[0]
+    setEditInvoice({
+      ...src,
+      id: undefined,
+      invoice_number: nextNumber,
+      date: today,
+      _items: (items || []).map(({ id, invoiceid, created_at, updated_at, ...item }) => item),
+    })
+    setView('form')
+  }
+
   if (view === 'form') {
     return <InvoiceForm invoice={editInvoice} onSave={handleSaved} onCancel={() => { setView('list'); setEditInvoice(null) }} />
   }
 
   if (view === 'detail') {
-    return <InvoiceDetail invoiceId={selectedId} onBack={() => setView('list')} onEdit={() => openEdit(null)} />
+    return <InvoiceDetail invoiceId={selectedId} onBack={() => setView('list')} onEdit={() => openEdit(null)} onClone={() => openClone(null)} />
   }
 
   return (
@@ -1074,6 +1097,10 @@ export default function Invoices() {
                           <button onClick={() => openEdit(inv)}
                             className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Edit">
                             <Pencil size={14} />
+                          </button>
+                          <button onClick={() => openClone(inv)}
+                            className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Clone">
+                            <Copy size={14} />
                           </button>
                           <button onClick={() => setDeleteId(inv.id)}
                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">

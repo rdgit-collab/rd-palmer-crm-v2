@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
-  X, ChevronLeft, ChevronRight, FileText, RefreshCw, Download, Bold, Underline
+  X, ChevronLeft, ChevronRight, FileText, RefreshCw, Download, Bold, Underline, Copy
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -373,7 +373,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
 // ─── Quotation Form (Add / Edit) ───────────────────────────────────────────────
 function QuotationForm({ quotation, onSave, onCancel }) {
-  const isEdit = !!quotation
+  const isEdit = !!quotation?.id
 
   const [customers, setCustomers] = useState([])
   const [contacts, setContacts] = useState([])
@@ -437,7 +437,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       setTaxes(txs || [])
       setPaymentTerms(pts || [])
 
-      if (!isEdit) {
+      if (!quotation) {
         const [qnum, { data: tplData }] = await Promise.all([
           getNextQNumber(),
           supabase.from('app_setting').select('key, value').in('key', ['quotation_notes', 'quotation_terms']),
@@ -453,7 +453,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       }
     }
     load()
-  }, [isEdit])
+  }, [isEdit, quotation])
 
   // Load contacts when customer changes
   useEffect(() => {
@@ -770,7 +770,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
 }
 
 // ─── Quotation Detail View ─────────────────────────────────────────────────────
-function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
+function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) {
   const [quotation, setQuotation] = useState(null)
   const [items, setItems] = useState([])
   const [contact, setContact] = useState(null)
@@ -898,6 +898,10 @@ function QuotationDetail({ quotationId, onBack, onEdit, onConverted }) {
           <button onClick={downloadPdf}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
             <Download size={14} /> Download PDF
+          </button>
+          <button onClick={onClone}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            <Copy size={14} /> Clone
           </button>
           {!isConverted && (
             <>
@@ -1109,6 +1113,26 @@ export default function Quotations() {
     if (q2) { setEditQuotation({ ...q2, _items: items || [] }); setView('form') }
   }
 
+  const openClone = async (q) => {
+    const quotationId = q?.id || selectedId
+    const [{ data: source }, { data: items }, nextNumber] = await Promise.all([
+      supabase.from('quotation').select('*').eq('id', quotationId).single(),
+      supabase.from('quotation_item').select('*').eq('qid', quotationId).order('id'),
+      getNextQNumber(),
+    ])
+    if (!source) return
+    const today = new Date().toISOString().split('T')[0]
+    setEditQuotation({
+      ...source,
+      id: undefined,
+      number: nextNumber,
+      date: today,
+      isconvert: 0,
+      _items: (items || []).map(({ id, qid, created_at, updated_at, ...item }) => item),
+    })
+    setView('form')
+  }
+
   if (view === 'form') {
     return <QuotationForm quotation={editQuotation} onSave={handleSaved} onCancel={() => { setView('list'); setEditQuotation(null) }} />
   }
@@ -1119,6 +1143,7 @@ export default function Quotations() {
         quotationId={selectedId}
         onBack={() => setView('list')}
         onEdit={() => openEdit(null)}
+        onClone={() => openClone(null)}
         onConverted={() => { setView('list'); fetchQuotations() }}
       />
     )
@@ -1212,6 +1237,10 @@ export default function Quotations() {
                             <Pencil size={14} />
                           </button>
                         )}
+                        <button onClick={() => openClone(q)}
+                          className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="Clone">
+                          <Copy size={14} />
+                        </button>
                         <button onClick={() => setDeleteId(q.id)}
                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
                           <Trash2 size={14} />
