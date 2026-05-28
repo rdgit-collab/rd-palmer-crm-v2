@@ -41,6 +41,37 @@ function sanitizeHtml(value = '') {
   return doc.body.innerHTML
 }
 
+function htmlToText(value = '') {
+  const raw = String(value || '')
+  if (!raw) return ''
+  if (typeof window === 'undefined' || !/<\/?[a-z][\s\S]*>/i.test(raw)) return raw
+  const doc = new DOMParser().parseFromString(raw, 'text/html')
+  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(el => el.remove())
+  doc.body.querySelectorAll('br').forEach(el => el.replaceWith('\n'))
+  doc.body.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6').forEach(el => el.append('\n'))
+  return doc.body.textContent
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function cleanSalesText(value = '', { dropPolicy = false, dropConfirmation = false } = {}) {
+  let text = htmlToText(value)
+  if (dropPolicy) {
+    const policyIndex = text.search(/RD-?PALMER'?S SALES\s*&\s*SUPPORT POLICY/i)
+    if (policyIndex >= 0) text = text.slice(0, policyIndex)
+  }
+  if (dropConfirmation) {
+    text = text.replace(/Please confirm your agreement to the terms and conditions stated therein by signing at the below\.?/gi, '')
+  }
+  return text.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function printableText(value = '', options = {}) {
+  return sanitizeHtml(cleanSalesText(value, options))
+}
+
 function HtmlBlock({ value }) {
   return <div className="text-sm text-gray-600 leading-6 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2" dangerouslySetInnerHTML={{ __html: sanitizeHtml(value) }} />
 }
@@ -71,10 +102,12 @@ function addressLines(customer) {
 
 function quotationHtml(quotation, items, contactName, customer) {
   const billTo = addressLines(customer)
+  const notes = printableText(quotation.notes, { dropPolicy: true, dropConfirmation: true })
+  const terms = printableText(quotation.terms, { dropPolicy: true, dropConfirmation: true })
   const itemRows = items.map((item, idx) => `
     <tr>
       <td>${idx + 1}</td>
-      <td><strong>${escapeHtml(item.item || '')}</strong><div class="desc">${sanitizeHtml(item.description || '')}</div></td>
+      <td><strong>${escapeHtml(item.item || '')}</strong><div class="desc">${printableText(item.description || '')}</div></td>
       <td>${escapeHtml(item.qty || '')}</td>
       <td>${fmtMoney(item.rate)}</td>
       <td>${escapeHtml(item.taxlbl || '-')}</td>
@@ -86,9 +119,9 @@ function quotationHtml(quotation, items, contactName, customer) {
     <head>
       <title>${escapeHtml(quotation.number || 'Quotation')}</title>
       <style>
-        @page { size: A4; margin: 20mm 15mm; }
+        @page { size: A4; margin: 0; }
         body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
-        .sheet { width: 180mm; min-height: 257mm; margin: 0 auto; background: #fff; padding: 0; box-sizing: border-box; }
+        .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
         .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
         .brand { color: #d10000; font-size: 22px; font-weight: 800; line-height: 1; margin-top: 8px; }
         .brand span { display: block; color: #d10000; font-size: 8px; font-weight: 700; margin-left: 2px; }
@@ -118,8 +151,7 @@ function quotationHtml(quotation, items, contactName, customer) {
         .signatures { display: grid; grid-template-columns: 220px 220px; gap: 32px; margin-top: 38px; }
         .sig-line { border-top: 1px dotted #111; padding-top: 6px; font-style: italic; }
         ul { padding-left: 18px; margin-top: 4px; }
-        @media screen { .sheet { padding: 0; } }
-        @media print { body { background: #fff; } .sheet { width: auto; min-height: auto; margin: 0; } }
+        @media print { body { background: #fff; } .sheet { width: 210mm; min-height: 297mm; margin: 0; } }
       </style>
     </head>
     <body>
@@ -165,13 +197,13 @@ function quotationHtml(quotation, items, contactName, customer) {
             <div class="total"><span>Total</span><span>${escapeHtml(quotation.currency || 'MYR')} ${fmtMoney(quotation.total)}</span></div>
           </div>
         </div>
-        ${quotation.notes ? `<div class="section"><h2>Notes</h2>${sanitizeHtml(quotation.notes)}</div>` : ''}
+        ${notes ? `<div class="section"><h2>Notes</h2>${notes}</div>` : ''}
         <div class="section">
           <div class="policy-title">RD-PALMER'S SALES & SUPPORT POLICY</div>
           <p>RD-Palmer is the sole-distributor for Radiodetection and MALA range of product in Malaysia and Brunei.<br>
           Please note that equipment purchased through other unauthorized supplier will not be supported and will have its warranty void by Manufacturer for violation of its distribution policy.</p>
         </div>
-        ${quotation.terms ? `<div class="section"><h2>Terms & Conditions</h2>${sanitizeHtml(quotation.terms)}</div>` : ''}
+        ${terms ? `<div class="section"><h2>Terms & Conditions</h2>${terms}</div>` : ''}
         <p class="section">Please confirm your agreement to the terms and conditions stated therein by signing at the below.</p>
         <div class="signatures">
           <div class="sig-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
@@ -311,8 +343,8 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     estimat_delivery_date: quotation?.estimat_delivery_date || '',
     payment_term: quotation?.payment_term || '',
     currency: quotation?.currency || 'MYR',
-    notes: quotation?.notes || '',
-    terms: quotation?.terms || '',
+    notes: cleanSalesText(quotation?.notes || '', { dropPolicy: true, dropConfirmation: true }),
+    terms: cleanSalesText(quotation?.terms || '', { dropPolicy: true, dropConfirmation: true }),
     // Totals
     discounttype: quotation?.discouttype || '%',
     discountvalue: quotation?.discountvalue || '0',
@@ -326,7 +358,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
           id: i.id,
           itemid: String(i.itemid || ''),
           item: i.item || '',
-          description: i.description || '',
+          description: cleanSalesText(i.description || ''),
           qty: i.qty || 1,
           rate: i.rate || 0,
           taxid: String(i.taxid || ''),
