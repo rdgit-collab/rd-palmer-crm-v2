@@ -42,7 +42,6 @@ const emptyForm = {
   status: 'Open',
   assigned_to: '',
   remark: '',
-  serial_number: '',
 }
 
 const emptyProduct = { sku: '', item_description: '', serial_number: '', remark: '' }
@@ -179,7 +178,6 @@ export default function Tickets() {
       status:         t.status               || 'Open',
       assigned_to:    String(t.assigned_to   || ''),
       remark:         t.remark               || '',
-      serial_number:  t.serial_number        || '',
     })
     setProducts(
       prods && prods.length > 0
@@ -237,7 +235,6 @@ export default function Tickets() {
       is_completed:   form.status === 'Completed' ? 1 : 0,
       assigned_to:    form.assigned_to ? parseInt(form.assigned_to) : null,
       remark:         form.remark,
-      serial_number:  form.serial_number,
       user_id:        getLegacyUserId(profile),
     }
 
@@ -326,13 +323,12 @@ export default function Tickets() {
       item_description: stripHtml(item?.description || '') || p.item_description || '',
     } : p))
   }
-  const loadSerialOptions = async (idx, term = '', sku = '') => {
+  const loadSerialOptions = async (idx, term = '') => {
     let q = supabase
       .from('serialnumber')
       .select('id, serial_number, sku, customername')
       .order('serial_number')
-      .limit(100)
-    if (sku) q = q.eq('sku', sku)
+      .limit(200)
     if (term) q = q.ilike('serial_number', `%${term}%`)
     const { data, error: err } = await q
     if (!err) setSerialOptions(prev => ({ ...prev, [idx]: data || [] }))
@@ -647,7 +643,6 @@ export default function Tickets() {
                         <select
                           value={prod.sku}
                           onChange={e => applySkuToProd(idx, e.target.value)}
-                          onBlur={() => loadSerialOptions(idx, prod.serial_number, prod.sku)}
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
                         >
                           <option value="">Select SKU</option>
@@ -668,10 +663,13 @@ export default function Tickets() {
                           list={`ticket-serial-${idx}`}
                           type="text"
                           value={prod.serial_number}
-                          onFocus={() => loadSerialOptions(idx, prod.serial_number, prod.sku)}
+                          onFocus={e => {
+                            e.target.select()
+                            loadSerialOptions(idx, '')
+                          }}
                           onChange={e => {
                             applySerialToProd(idx, e.target.value)
-                            loadSerialOptions(idx, e.target.value, prod.sku)
+                            loadSerialOptions(idx, e.target.value)
                           }}
                           placeholder="S/N"
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
@@ -805,20 +803,6 @@ export default function Tickets() {
                 rows={3}
                 placeholder="Additional remarks..."
                 className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none"
-              />
-            </div>
-          </div>
-
-          {/* Serial Number */}
-          <div className="grid grid-cols-3 gap-4 items-center">
-            <label className="text-sm font-medium text-gray-700">Serial Number</label>
-            <div className="col-span-2">
-              <input
-                type="text"
-                value={form.serial_number}
-                onChange={e => setForm(f => ({ ...f, serial_number: e.target.value }))}
-                placeholder="Serial Number"
-                className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
               />
             </div>
           </div>
