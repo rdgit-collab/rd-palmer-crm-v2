@@ -57,6 +57,11 @@ export default function Tickets() {
   const [editId, setEditId]         = useState(null)
   const [detail, setDetail]         = useState(null)
   const [detailProds, setDetailProds] = useState([])
+  const [detailContact, setDetailContact] = useState(null)
+  const [detailTasks, setDetailTasks] = useState([])
+  const [detailOnsites, setDetailOnsites] = useState([])
+  const [detailRmas, setDetailRmas] = useState([])
+  const [detailRemarks, setDetailRemarks] = useState([])
   const [deleteId, setDeleteId]     = useState(null)
   const [completeId, setCompleteId] = useState(null)
   const [saving, setSaving]         = useState(false)
@@ -68,6 +73,7 @@ export default function Tickets() {
   const [contacts, setContacts]     = useState([])
   const [users, setUsers]           = useState([])
   const [skuList, setSkuList]       = useState([])
+  const [serialOptions, setSerialOptions] = useState({})
   const [priorities, setPriorities] = useState([])
 
   // Products rows in form
@@ -132,6 +138,11 @@ export default function Tickets() {
     setContacts(data || [])
   }
 
+  const getContactName = (contact) =>
+    contact ? [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || '—' : '—'
+
+  const stripHtml = (value = '') => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+
   // ── Open add form ─────────────────────────────────────────────────
   const openAdd = async () => {
     const { display } = await getNextTID()
@@ -181,9 +192,21 @@ export default function Tickets() {
 
   // ── Open detail ───────────────────────────────────────────────────
   const openDetail = async (t) => {
-    const { data: prods } = await supabase.from('ticket_product').select('*').eq('ticket_id', t.id)
+    const [prodR, contactR, taskR, onsiteR, rmaR, remarkR] = await Promise.all([
+      supabase.from('ticket_product').select('*').eq('ticket_id', t.id).order('id'),
+      t.contact_person ? supabase.from('contact').select('*').eq('id', t.contact_person).maybeSingle() : Promise.resolve({ data: null }),
+      supabase.from('task').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
+      supabase.from('onsiteticket').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
+      supabase.from('rma').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
+      supabase.from('ticket_remark').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
+    ])
     setDetail(t)
-    setDetailProds(prods || [])
+    setDetailProds(prodR.data || [])
+    setDetailContact(contactR.data || null)
+    setDetailTasks(taskR.data || [])
+    setDetailOnsites(onsiteR.data || [])
+    setDetailRmas(rmaR.data || [])
+    setDetailRemarks(remarkR.data || [])
     setView('detail')
   }
 
@@ -278,6 +301,35 @@ export default function Tickets() {
   // ── Product row helpers ───────────────────────────────────────────
   const updateProd = (idx, field, val) =>
     setProducts(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p))
+  const applySkuToProd = (idx, sku) => {
+    const item = skuList.find(s => s.sku === sku)
+    setProducts(prev => prev.map((p, i) => i === idx ? {
+      ...p,
+      sku,
+      item_description: stripHtml(item?.description || '') || p.item_description || '',
+    } : p))
+  }
+  const applySerialToProd = (idx, serialNumber) => {
+    const serial = (serialOptions[idx] || []).find(s => s.serial_number === serialNumber)
+    const item = serial?.sku ? skuList.find(s => s.sku === serial.sku) : null
+    setProducts(prev => prev.map((p, i) => i === idx ? {
+      ...p,
+      serial_number: serialNumber,
+      sku: serial?.sku || p.sku,
+      item_description: stripHtml(item?.description || '') || p.item_description || '',
+    } : p))
+  }
+  const loadSerialOptions = async (idx, term = '', sku = '') => {
+    let q = supabase
+      .from('serialnumber')
+      .select('id, serial_number, sku, customername')
+      .order('serial_number')
+      .limit(100)
+    if (sku) q = q.eq('sku', sku)
+    if (term) q = q.ilike('serial_number', `%${term}%`)
+    const { data, error: err } = await q
+    if (!err) setSerialOptions(prev => ({ ...prev, [idx]: data || [] }))
+  }
   const addProdRow    = () => setProducts(prev => [...prev, { ...emptyProduct }])
   const removeProdRow = (idx) => setProducts(prev => prev.filter((_, i) => i !== idx))
 
@@ -587,12 +639,8 @@ export default function Tickets() {
                       <td className="px-3 py-2">
                         <select
                           value={prod.sku}
-                          onChange={e => {
-                            const sku  = e.target.value
-                            const item = skuList.find(s => s.sku === sku)
-                            updateProd(idx, 'sku', sku)
-                            if (item) updateProd(idx, 'item_description', item.description || '')
-                          }}
+                          onChange={e => applySkuToProd(idx, e.target.value)}
+                          onBlur={() => loadSerialOptions(idx, prod.serial_number, prod.sku)}
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
                         >
                           <option value="">Select SKU</option>
@@ -610,12 +658,24 @@ export default function Tickets() {
                       </td>
                       <td className="px-3 py-2">
                         <input
+                          list={`ticket-serial-${idx}`}
                           type="text"
                           value={prod.serial_number}
-                          onChange={e => updateProd(idx, 'serial_number', e.target.value)}
+                          onFocus={() => loadSerialOptions(idx, prod.serial_number, prod.sku)}
+                          onChange={e => {
+                            applySerialToProd(idx, e.target.value)
+                            loadSerialOptions(idx, e.target.value, prod.sku)
+                          }}
                           placeholder="S/N"
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
                         />
+                        <datalist id={`ticket-serial-${idx}`}>
+                          {(serialOptions[idx] || []).map(s => (
+                            <option key={s.id} value={s.serial_number}>
+                              {s.sku}{s.customername ? ` - ${s.customername}` : ''}
+                            </option>
+                          ))}
+                        </datalist>
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -837,6 +897,18 @@ export default function Tickets() {
               <span className="font-medium">{detail.company_name || '—'}</span>
             </div>
             <div>
+              <span className="font-medium text-gray-500">Contact Person: </span>
+              {getContactName(detailContact)}
+            </div>
+            <div>
+              <span className="font-medium text-gray-500">Contact Number: </span>
+              {detailContact?.mobile_number || '—'}
+            </div>
+            <div>
+              <span className="font-medium text-gray-500">Contact Email: </span>
+              {detailContact?.email || '—'}
+            </div>
+            <div>
               <span className="font-medium text-gray-500">Category: </span>
               {category?.name || detail.category || '—'}
             </div>
@@ -901,7 +973,7 @@ export default function Tickets() {
                   {detailProds.map(p => (
                     <tr key={p.id} className="border-b border-gray-100">
                       <td className="px-3 py-2 font-medium">{p.sku || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{p.item_description || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{stripHtml(p.item_description || '') || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{p.serial_number || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{p.remark || '—'}</td>
                     </tr>
@@ -910,6 +982,116 @@ export default function Tickets() {
               </table>
             </div>
           )}
+
+          {/* Tasks */}
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Tasks</p>
+            {detailTasks.length === 0 ? (
+              <p className="text-sm text-gray-400">No tasks for this ticket.</p>
+            ) : (
+              <table className="w-full text-sm border border-gray-200">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Service Type</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Start</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Assigned To</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Status</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailTasks.map(task => (
+                    <tr key={task.id} className="border-b border-gray-100">
+                      <td className="px-3 py-2 font-medium">{task.servicetype || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{[task.startdate, task.starttime].filter(Boolean).join(' ') || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatUserName(users, task.assigned_to)}</td>
+                      <td className="px-3 py-2 text-gray-600">{task.is_completed == 1 ? 'Completed' : 'Open'}</td>
+                      <td className="px-3 py-2 text-gray-600">{task.description || task.action_taken || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Onsite Tickets */}
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Onsite Tickets</p>
+            {detailOnsites.length === 0 ? (
+              <p className="text-sm text-gray-400">No onsite tickets for this ticket.</p>
+            ) : (
+              <table className="w-full text-sm border border-gray-200">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Date</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Product</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Serial Number</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Assigned To</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailOnsites.map(onsite => (
+                    <tr key={onsite.id} className="border-b border-gray-100">
+                      <td className="px-3 py-2 text-gray-600">{onsite.date || '—'}</td>
+                      <td className="px-3 py-2 font-medium">{onsite.product || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{onsite.serial_number || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatUserName(users, onsite.assigned_to)}</td>
+                      <td className="px-3 py-2 text-gray-600">{onsite.status || (onsite.is_completed == 1 ? 'Completed' : 'Open')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* RMA */}
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">RMA</p>
+            {detailRmas.length === 0 ? (
+              <p className="text-sm text-gray-400">No RMA records for this ticket.</p>
+            ) : (
+              <table className="w-full text-sm border border-gray-200">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">RMA Number</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Vendor</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Date Sent</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Date Return</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Remark</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailRmas.map(rma => (
+                    <tr key={rma.id} className="border-b border-gray-100">
+                      <td className="px-3 py-2 font-medium">{rma.rma_number || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{rma.vendor || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{rma.date_sent || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{rma.date_return || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{rma.remark || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Ticket Remarks */}
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Ticket Remarks</p>
+            {detailRemarks.length === 0 ? (
+              <p className="text-sm text-gray-400">No additional remarks for this ticket.</p>
+            ) : (
+              <div className="space-y-3">
+                {detailRemarks.map(remark => (
+                  <div key={remark.id} className="border border-gray-200 px-3 py-2 text-sm">
+                    <div className="text-xs text-gray-400 mb-1">{remark.created_at || '—'}</div>
+                    <div className="text-gray-700 whitespace-pre-wrap">{remark.remark || '—'}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Mark Complete Modal */}
