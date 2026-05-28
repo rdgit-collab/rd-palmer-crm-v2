@@ -2,10 +2,19 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
-import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 
 const PAGE_SIZE = 15
+
+function storageUrl(path) {
+  if (!path) return ''
+  return supabase.storage.from('crm-uploads').getPublicUrl(path).data.publicUrl
+}
+
+function fmtDateTime(value) {
+  return value ? new Date(value).toLocaleString('en-GB') : '—'
+}
 
 const emptyForm = {
   ticket_id: '',
@@ -18,6 +27,7 @@ const emptyForm = {
   description: '',
   action_taken: '',
   assigned_to: '',
+  file: '',
 }
 
 export default function Tasks() {
@@ -36,10 +46,12 @@ export default function Tasks() {
   const [completeId, setCompleteId] = useState(null)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
+  const [uploadFile, setUploadFile] = useState(null)
 
   const [tickets, setTickets]         = useState([])
   const [serviceTypes, setServiceTypes] = useState([])
   const [users, setUsers]             = useState([])
+  const [allUsers, setAllUsers]       = useState([])
   const [spares, setSpares]           = useState([])
   const origAssignedTo                = useRef(null)
 
@@ -65,16 +77,24 @@ export default function Tasks() {
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
     const run = async () => {
-      const [tickR, stR, usrR, sprR] = await Promise.all([
+      const [tickR, stR, usrR, allUsrR, sprR, taskSpareR] = await Promise.all([
         supabase.from('ticket').select('id, ticket_id, company_name').eq('is_completed', 0).order('id', { ascending: false }),
         supabase.from('service_type').select('id, type').order('type'),
         fetchAssignableUsers(supabase),
+        fetchLegacyUsers(supabase),
         supabase.from('spare').select('id, name').order('name'),
+        supabase.from('task').select('spare').not('spare', 'is', null).neq('spare', '').limit(1000),
       ])
       if (!tickR.error) setTickets(tickR.data || [])
       if (!stR.error)   setServiceTypes(stR.data || [])
       setUsers(usrR || [])
-      if (!sprR.error)  setSpares(sprR.data || [])
+      setAllUsers(allUsrR || [])
+      if (!sprR.error && sprR.data?.length) {
+        setSpares(sprR.data || [])
+      } else if (!taskSpareR.error) {
+        const names = [...new Set((taskSpareR.data || []).map(row => row.spare).filter(Boolean))]
+        setSpares(names.map((name, idx) => ({ id: idx + 1, name })))
+      }
     }
     run()
   }, [])
@@ -82,6 +102,7 @@ export default function Tasks() {
   // ── Open add ─────────────────────────────────────────────────────
   const openAdd = () => {
     setForm({ ...emptyForm, startdate: new Date().toISOString().split('T')[0] })
+    setUploadFile(null)
     setEditId(null)
     setError('')
     setView('form')
@@ -100,7 +121,9 @@ export default function Tasks() {
       description: t.description        || '',
       action_taken: t.action_taken      || '',
       assigned_to: String(t.assigned_to || ''),
+      file:        t.file               || '',
     })
+    setUploadFile(null)
     origAssignedTo.current = t.assigned_to || ''
     setEditId(t.id)
     setError('')
@@ -112,6 +135,14 @@ export default function Tasks() {
     e.preventDefault()
     setSaving(true)
     setError('')
+
+    let filePath = form.file || null
+    if (uploadFile) {
+      const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      filePath = `task/${Date.now()}-${safeName}`
+      const { error: uploadErr } = await supabase.storage.from('crm-uploads').upload(filePath, uploadFile, { upsert: true })
+      if (uploadErr) { setError(uploadErr.message); setSaving(false); return }
+    }
 
     const payload = {
       ticket_id:    form.ticket_id   ? parseInt(form.ticket_id)   : null,
@@ -127,6 +158,7 @@ export default function Tasks() {
       is_completed: 0,
       is_archived:  0,
       user_id:      getLegacyUserId(profile),
+      file:         filePath,
     }
 
     if (editId) {
@@ -154,6 +186,7 @@ export default function Tasks() {
     }
 
     setSaving(false)
+    setUploadFile(null)
     fetchTasks()
     setView('list')
   }
@@ -180,7 +213,7 @@ export default function Tasks() {
     return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : ticketId ? `TID${ticketId}` : '—'
   }
   const getUserName = (id) => {
-    return formatUserName(users, id)
+    return formatUserName(allUsers.length ? allUsers : users, id)
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -356,6 +389,24 @@ export default function Tasks() {
             </div>
           </div>
 
+          <div className="grid grid-cols-3 gap-4 items-center">
+            <label className="text-sm font-medium text-gray-700">Document</label>
+            <div className="col-span-2">
+              <input
+                type="file"
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                onChange={e => setUploadFile(e.target.files?.[0] || null)}
+                className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+              />
+              {form.file && !uploadFile && (
+                <a href={storageUrl(form.file)} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-red-600 hover:underline">
+                  <FileText size={13} /> Current document
+                </a>
+              )}
+              {uploadFile && <p className="mt-2 text-xs text-gray-500">{uploadFile.name}</p>}
+            </div>
+          </div>
+
           <div className="grid grid-cols-3 gap-4">
             <label className="text-sm font-medium text-gray-700 pt-2">Description <span className="text-red-500">*</span></label>
             <div className="col-span-2">
@@ -417,6 +468,16 @@ export default function Tasks() {
             <div><span className="font-medium text-gray-500">End: </span>{detail.enddate || '—'} {detail.endtime || ''}</div>
             <div><span className="font-medium text-gray-500">Spare Used: </span>{detail.spare || '—'}</div>
             <div><span className="font-medium text-gray-500">Assigned To: </span>{getUserName(detail.assigned_to)}</div>
+            <div><span className="font-medium text-gray-500">Created By: </span>{getUserName(detail.user_id)}</div>
+            <div><span className="font-medium text-gray-500">Date Created: </span>{fmtDateTime(detail.created_at)}</div>
+            <div>
+              <span className="font-medium text-gray-500">Document: </span>
+              {detail.file ? (
+                <a href={storageUrl(detail.file)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-red-600 hover:underline">
+                  <FileText size={14} /> Open document
+                </a>
+              ) : '—'}
+            </div>
           </div>
           <div className="border-t border-gray-100 pt-4">
             <p className="font-medium text-gray-500 mb-1">Description</p>

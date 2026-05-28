@@ -2,10 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
-import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
+import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
+
+function fmtDateTime(value) {
+  return value ? new Date(value).toLocaleString('en-GB') : '—'
+}
 
 function priorityColor(priority) {
   switch (priority) {
@@ -72,6 +76,7 @@ export default function Tickets() {
   const [customers, setCustomers]   = useState([])
   const [contacts, setContacts]     = useState([])
   const [users, setUsers]           = useState([])
+  const [allUsers, setAllUsers]     = useState([])
   const [skuList, setSkuList]       = useState([])
   const [serialOptions, setSerialOptions] = useState({})
   const [priorities, setPriorities] = useState([])
@@ -105,16 +110,18 @@ export default function Tickets() {
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
     const run = async () => {
-      const [catR, custR, usrR, skuR, prioR] = await Promise.all([
+      const [catR, custR, usrR, allUsrR, skuR, prioR] = await Promise.all([
         supabase.from('category').select('id, name').order('name'),
         supabase.from('customer').select('id, company_name').order('company_name'),
         fetchAssignableUsers(supabase),
+        fetchLegacyUsers(supabase),
         supabase.from('goodsservices').select('id, sku, description').order('sku'),
         supabase.from('priority').select('id, name').order('name'),
       ])
       if (!catR.error)  setCategories(catR.data  || [])
       if (!custR.error) setCustomers(custR.data  || [])
       setUsers(usrR || [])
+      setAllUsers(allUsrR || [])
       if (!skuR.error)  setSkuList(skuR.data     || [])
       if (!prioR.error) setPriorities(prioR.data || [])
     }
@@ -891,6 +898,14 @@ export default function Tickets() {
             <div>
               <span className="font-medium text-gray-500">Date: </span>
               {detail.date || '—'}
+            </div>
+            <div>
+              <span className="font-medium text-gray-500">Created By: </span>
+              {formatUserName(allUsers.length ? allUsers : users, detail.user_id)}
+            </div>
+            <div>
+              <span className="font-medium text-gray-500">Date Created: </span>
+              {fmtDateTime(detail.created_at)}
             </div>
             <div>
               <span className="font-medium text-gray-500">Company: </span>
