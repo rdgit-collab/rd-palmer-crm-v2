@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
-import { Plus, Edit2, Trash2, Check, X, Save } from 'lucide-react'
+import { Plus, Edit2, Trash2, Check, X, Save, Bold, Underline } from 'lucide-react'
 
 // Generic CRUD panel for simple name/type lookup tables
 // hasUserIdInt = true  → table has a user_id INTEGER column (old Lovable tables); send 1
@@ -358,6 +358,58 @@ function LocationsPanel() {
 }
 
 // ── Document Templates Panel ──────────────────────────────────────
+function escapeTemplateHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+}
+
+function toEditorHtml(value = '') {
+  const raw = String(value || '')
+  if (!raw) return ''
+  if (/<\/?[a-z][\s\S]*>/i.test(raw)) return raw
+  return escapeTemplateHtml(raw).replace(/\n/g, '<br>')
+}
+
+function RichTemplateEditor({ value, onChange, placeholder }) {
+  const editorRef = useRef(null)
+
+  useEffect(() => {
+    const nextHtml = toEditorHtml(value)
+    if (editorRef.current && editorRef.current.innerHTML !== nextHtml) {
+      editorRef.current.innerHTML = nextHtml
+    }
+  }, [value])
+
+  const applyFormat = (command) => {
+    editorRef.current?.focus()
+    document.execCommand(command, false, null)
+    onChange(editorRef.current?.innerHTML || '')
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 border-b border-gray-200 bg-gray-50 px-3 py-2">
+        <button type="button" title="Bold" onMouseDown={e => e.preventDefault()} onClick={() => applyFormat('bold')}
+          className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-white border border-transparent hover:border-gray-200 rounded">
+          <Bold size={15} />
+        </button>
+        <button type="button" title="Underline" onMouseDown={e => e.preventDefault()} onClick={() => applyFormat('underline')}
+          className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-white border border-transparent hover:border-gray-200 rounded">
+          <Underline size={15} />
+        </button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        role="textbox"
+        aria-multiline="true"
+        data-placeholder={placeholder}
+        onInput={e => onChange(e.currentTarget.innerHTML)}
+        className="min-h-[145px] w-full px-4 py-3 text-sm text-gray-800 focus:outline-none leading-6 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 [&_u]:underline [&_b]:font-bold [&_strong]:font-bold"
+      />
+    </div>
+  )
+}
+
 function TemplatesPanel() {
   const [vals, setVals] = useState({
     quotation_notes: '',
@@ -400,12 +452,10 @@ function TemplatesPanel() {
         <h3 className="font-semibold text-gray-800 text-sm">{label}</h3>
         <p className="text-xs text-gray-400 mt-0.5">Pre-filled when staff create a new document — they can still edit before saving.</p>
       </div>
-      <textarea
-        rows={6}
+      <RichTemplateEditor
         value={vals[fieldKey]}
-        onChange={e => setVals(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+        onChange={value => setVals(prev => ({ ...prev, [fieldKey]: value }))}
         placeholder={placeholder}
-        className="w-full px-4 py-3 text-sm text-gray-800 focus:outline-none resize-none"
       />
     </div>
   )

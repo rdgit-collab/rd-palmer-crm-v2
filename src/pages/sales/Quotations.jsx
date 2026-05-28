@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
-  X, ChevronLeft, ChevronRight, FileText, RefreshCw, Download
+  X, ChevronLeft, ChevronRight, FileText, RefreshCw, Download, Bold, Underline
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -72,8 +72,56 @@ function printableText(value = '', options = {}) {
   return sanitizeHtml(cleanSalesText(value, options))
 }
 
+function toEditorHtml(value = '') {
+  const raw = String(value || '')
+  if (!raw) return ''
+  if (/<\/?[a-z][\s\S]*>/i.test(raw)) return raw
+  return escapeHtml(raw).replace(/\n/g, '<br>')
+}
+
 function HtmlBlock({ value }) {
   return <div className="text-sm text-gray-600 leading-6 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2" dangerouslySetInnerHTML={{ __html: sanitizeHtml(value) }} />
+}
+
+function RichTextEditor({ value, onChange, placeholder }) {
+  const editorRef = useRef(null)
+
+  useEffect(() => {
+    const nextHtml = toEditorHtml(value)
+    if (editorRef.current && editorRef.current.innerHTML !== nextHtml) {
+      editorRef.current.innerHTML = nextHtml
+    }
+  }, [value])
+
+  const applyFormat = (command) => {
+    editorRef.current?.focus()
+    document.execCommand(command, false, null)
+    onChange(editorRef.current?.innerHTML || '')
+  }
+
+  return (
+    <div className="border border-gray-200 rounded overflow-hidden focus-within:ring-1 focus-within:ring-red-400">
+      <div className="flex items-center gap-1 border-b border-gray-200 bg-gray-50 px-2 py-1">
+        <button type="button" title="Bold" onMouseDown={e => e.preventDefault()} onClick={() => applyFormat('bold')}
+          className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-white border border-transparent hover:border-gray-200 rounded">
+          <Bold size={14} />
+        </button>
+        <button type="button" title="Underline" onMouseDown={e => e.preventDefault()} onClick={() => applyFormat('underline')}
+          className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-white border border-transparent hover:border-gray-200 rounded">
+          <Underline size={14} />
+        </button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        role="textbox"
+        aria-multiline="true"
+        data-placeholder={placeholder}
+        onInput={e => onChange(e.currentTarget.innerHTML)}
+        className="min-h-[96px] w-full px-3 py-2 text-sm text-gray-800 focus:outline-none leading-6 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 [&_u]:underline [&_b]:font-bold [&_strong]:font-bold"
+      />
+    </div>
+  )
 }
 
 function contactDisplayName(contact) {
@@ -102,8 +150,8 @@ function addressLines(customer) {
 
 function quotationHtml(quotation, items, contactName, customer) {
   const billTo = addressLines(customer)
-  const notes = printableText(quotation.notes, { dropPolicy: true, dropConfirmation: true })
-  const terms = printableText(quotation.terms, { dropPolicy: true, dropConfirmation: true })
+  const notes = sanitizeHtml(quotation.notes)
+  const terms = sanitizeHtml(quotation.terms)
   const itemRows = items.map((item, idx) => `
     <tr>
       <td>${idx + 1}</td>
@@ -148,6 +196,8 @@ function quotationHtml(quotation, items, contactName, customer) {
         .section { margin-top: 10px; line-height: 1.35; }
         .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin-bottom: 6px; }
         .below-table .section { margin-top: 4px; }
+        .document-signature { display: grid; grid-template-columns: 220px 220px; gap: 32px; margin-top: 18px; }
+        .signature-line { border-top: 1px dotted #111; padding-top: 6px; font-style: italic; min-height: 42px; }
         ul { padding-left: 18px; margin-top: 4px; }
         @media print { body { background: #fff; } .sheet { width: 210mm; min-height: 297mm; margin: 0; } }
       </style>
@@ -196,6 +246,10 @@ function quotationHtml(quotation, items, contactName, customer) {
           </div>
         </div>
         ${terms ? `<div class="section"><h2>Terms & Conditions</h2>${terms}</div>` : ''}
+        <div class="document-signature">
+          <div class="signature-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
+          <div class="signature-line">(Co. Stamp)</div>
+        </div>
       </div>
     </body>
   </html>`
@@ -330,8 +384,8 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     estimat_delivery_date: quotation?.estimat_delivery_date || '',
     payment_term: quotation?.payment_term || '',
     currency: quotation?.currency || 'MYR',
-    notes: cleanSalesText(quotation?.notes || '', { dropPolicy: true, dropConfirmation: true }),
-    terms: cleanSalesText(quotation?.terms || '', { dropPolicy: true, dropConfirmation: true }),
+    notes: quotation?.notes || '',
+    terms: quotation?.terms || '',
     // Totals
     discounttype: quotation?.discouttype || '%',
     discountvalue: quotation?.discountvalue || '0',
@@ -679,13 +733,11 @@ function QuotationForm({ quotation, onSave, onCancel }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Notes</label>
-              <textarea rows={4} className={`${inputCls} resize-none`} placeholder="Notes to customer..."
-                value={form.notes} onChange={e => setF('notes', e.target.value)} />
+              <RichTextEditor value={form.notes} onChange={value => setF('notes', value)} placeholder="Notes to customer..." />
             </div>
             <div>
               <label className={labelCls}>Terms & Conditions</label>
-              <textarea rows={4} className={`${inputCls} resize-none`} placeholder="Terms and conditions..."
-                value={form.terms} onChange={e => setF('terms', e.target.value)} />
+              <RichTextEditor value={form.terms} onChange={value => setF('terms', value)} placeholder="Terms and conditions..." />
             </div>
           </div>
         </div>
