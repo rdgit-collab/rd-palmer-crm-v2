@@ -28,6 +28,7 @@ export default function RMA() {
   const [error, setError]       = useState('')
   const [tickets, setTickets]   = useState([])
   const [vendors, setVendors]   = useState([])
+  const [modes, setModes]       = useState([])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -43,12 +44,14 @@ export default function RMA() {
 
   useEffect(() => {
     const run = async () => {
-      const [tickR, venR] = await Promise.all([
+      const [tickR, venR, modeR] = await Promise.all([
         supabase.from('ticket').select('id, ticket_id, company_name').order('id', { ascending: false }),
         supabase.from('vendor').select('id, name').order('name'),
+        supabase.from('mode').select('id, name').order('name'),
       ])
       if (!tickR.error) setTickets(tickR.data || [])
       if (!venR.error)  setVendors(venR.data || [])
+      if (!modeR.error) setModes(modeR.data || [])
     }
     run()
   }, [])
@@ -56,6 +59,10 @@ export default function RMA() {
   const getTicketLabel = (tid) => {
     const t = tickets.find(t => t.id == tid)
     return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : tid ? `#${tid}` : '—'
+  }
+  const getVendorName = (vendor) => {
+    const found = vendors.find(v => String(v.id) === String(vendor) || v.name === vendor)
+    return found?.name || vendor || '—'
   }
 
   const openAdd = () => { setForm(emptyForm); setEditId(null); setError(''); setView('form') }
@@ -125,7 +132,7 @@ export default function RMA() {
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-semibold text-red-600">{r.rma_number || '—'}</td>
                 <td className="px-4 py-3 text-gray-700">{getTicketLabel(r.ticket_id)}</td>
-                <td className="px-4 py-3 text-gray-700">{r.vendor || '—'}</td>
+                <td className="px-4 py-3 text-gray-700">{getVendorName(r.vendor)}</td>
                 <td className="px-4 py-3 text-gray-600">{r.date_sent || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.mode || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.date_return || '—'}</td>
@@ -174,7 +181,10 @@ export default function RMA() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Vendor</label>
           <div className="col-span-2">
-            <input type="text" value={form.vendor} onChange={e => setForm(f => ({...f, vendor: e.target.value}))} placeholder="Vendor name" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            <select value={form.vendor} onChange={e => setForm(f => ({...f, vendor: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">Please Select</option>
+              {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
@@ -183,7 +193,12 @@ export default function RMA() {
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Mode</label>
-          <div className="col-span-2"><input type="text" value={form.mode} onChange={e => setForm(f => ({...f, mode: e.target.value}))} placeholder="e.g. Courier, Walk-in" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+          <div className="col-span-2">
+            <select value={form.mode} onChange={e => setForm(f => ({...f, mode: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">Please Select</option>
+              {modes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+            </select>
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Tracking No. (Out)</label>
@@ -222,7 +237,7 @@ export default function RMA() {
         <div className="grid grid-cols-2 gap-x-8 gap-y-3">
           <div><span className="font-medium text-gray-500">RMA Number: </span><span className="font-semibold text-red-600">{detail.rma_number}</span></div>
           <div><span className="font-medium text-gray-500">Ticket: </span>{getTicketLabel(detail.ticket_id)}</div>
-          <div><span className="font-medium text-gray-500">Vendor: </span>{detail.vendor || '—'}</div>
+          <div><span className="font-medium text-gray-500">Vendor: </span>{getVendorName(detail.vendor)}</div>
           <div><span className="font-medium text-gray-500">Mode: </span>{detail.mode || '—'}</div>
           <div><span className="font-medium text-gray-500">Date Sent: </span>{detail.date_sent || '—'}</div>
           <div><span className="font-medium text-gray-500">Tracking Out: </span>{detail.traking_number_out || '—'}</div>

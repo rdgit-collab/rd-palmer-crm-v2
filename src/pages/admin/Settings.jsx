@@ -562,6 +562,7 @@ export default function Settings() {
           <LookupPanel title="Service Types"     tableName="service_type" valueField="type" hasUserIdInt />
           <LookupPanel title="Spare Parts"       tableName="spare"        valueField="name" hasUserIdInt />
           <LookupPanel title="Vendors"           tableName="vendor"       valueField="name" hasUserIdInt />
+          <LookupPanel title="RMA Modes"         tableName="mode"         valueField="name" hasUserIdInt />
         </div>
       )}
 

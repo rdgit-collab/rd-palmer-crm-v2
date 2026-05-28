@@ -262,7 +262,10 @@ export default function OnsiteTickets() {
           ['Serial Number', <input type="text" value={form.serial_number} onChange={e => setForm(f => ({...f, serial_number: e.target.value}))} placeholder="S/N" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
           ['Location', <input type="text" value={form.location} onChange={e => setForm(f => ({...f, location: e.target.value}))} placeholder="Site location" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
           ['Vendor Order Ref', <input type="text" value={form.vandor_order_ref} onChange={e => setForm(f => ({...f, vandor_order_ref: e.target.value}))} placeholder="Vendor reference" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
-          ['Spare Used', <select value={form.spare} onChange={e => setForm(f => ({...f, spare: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="">Please Select</option>{spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>],
+          ['Spare Used', <select multiple value={productValues(form.spare)} onChange={e => {
+            const selected = Array.from(e.target.selectedOptions).map(option => option.value)
+            setForm(f => ({...f, spare: selected.join(',')}))
+          }} className="w-full min-h-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="" disabled>Please Select</option>{spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>],
         ].map(([label, el], i) => (
           <div key={i} className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">{label}</label>
