@@ -58,7 +58,19 @@ function resolvedContactName(value, contact) {
   return isNumericId(value) ? (contactDisplayName(contact) || value || '-') : (value || '-')
 }
 
-function invoiceHtml(invoice, items, contactName) {
+function addressLines(customer) {
+  if (!customer) return []
+  return [
+    customer.company_name,
+    customer.address1,
+    customer.address2,
+    [customer.city, customer.state].filter(Boolean).join(', '),
+    [customer.zipcode, customer.country].filter(Boolean).join(' '),
+  ].filter(Boolean)
+}
+
+function invoiceHtml(invoice, items, contactName, customer) {
+  const billTo = addressLines(customer)
   const itemRows = items.map((item, idx) => `
     <tr>
       <td>${idx + 1}</td>
@@ -75,54 +87,97 @@ function invoiceHtml(invoice, items, contactName) {
       <title>${escapeHtml(invoice.invoice_number || 'Invoice')}</title>
       <style>
         @page { size: A4; margin: 20mm 15mm; }
-        body { font-family: Arial, sans-serif; color: #111; margin: 0; font-size: 11px; }
-        .brand { color: #d10000; font-size: 22px; font-weight: 800; margin: 18px 0 72px; line-height: 1; }
+        body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
+        .sheet { width: 180mm; min-height: 257mm; margin: 0 auto; background: #fff; padding: 0; box-sizing: border-box; }
+        .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
+        .brand { color: #d10000; font-size: 22px; font-weight: 800; line-height: 1; margin-top: 8px; }
         .brand span { display: block; color: #d10000; font-size: 8px; font-weight: 700; margin-left: 2px; }
-        .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin-top: -92px; margin-bottom: 46px; }
-        .meta { display: grid; grid-template-columns: 1.1fr .9fr; gap: 4px 36px; margin-bottom: 18px; }
-        .meta div { padding: 3px 0; }
-        .label { color: #555; font-weight: 700; display: inline-block; min-width: 92px; }
-        table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 28px 0 18px; border: 1px solid #222; border-radius: 3px; overflow: hidden; }
-        th, td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #222; }
+        .company { text-align: right; line-height: 1.35; font-size: 11px; }
+        .company strong { font-size: 12px; }
+        .intro { display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: start; margin-bottom: 12px; }
+        .bill-title { font-weight: 700; margin-bottom: 4px; }
+        .bill-lines { line-height: 1.35; white-space: pre-line; }
+        .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin: 8px 0 10px; }
+        .meta { margin-left: auto; width: 230px; }
+        .meta-row { display: grid; grid-template-columns: 90px 1fr; gap: 8px; line-height: 1.35; }
+        .meta-row .value { text-align: right; font-weight: 600; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 18px 0 0; border: 1px solid #222; border-radius: 3px; overflow: hidden; }
+        th, td { padding: 7px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #e5e5e5; }
         th { background: #d4d4d4; color: #111; font-weight: 700; }
         td:nth-child(1), th:nth-child(1) { width: 28px; text-align: center; }
         td:nth-child(3), th:nth-child(3), td:nth-child(4), th:nth-child(4), td:nth-child(5), th:nth-child(5), td:nth-child(6), th:nth-child(6) { text-align: right; width: 82px; }
         tr:last-child td { border-bottom: 0; }
         .desc { margin-top: 4px; line-height: 1.4; }
-        .totals { margin: 34px 0 0 auto; width: 260px; border-top: 1px solid #aaa; padding-top: 10px; }
+        .below-table { display: grid; grid-template-columns: 1fr 250px; gap: 28px; align-items: start; margin-top: 6px; }
+        .totals { width: 250px; margin-left: auto; border-top: 1px solid #aaa; padding-top: 8px; }
         .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
         .total { border-top: 1px solid #111; margin-top: 4px; font-weight: 700; font-size: 13px; }
-        .section { margin-top: 22px; line-height: 1.5; }
+        .section { margin-top: 10px; line-height: 1.35; }
         .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin-bottom: 6px; }
-        .signature { margin-top: 48px; margin-left: auto; width: 190px; border-top: 1px solid #999; text-align: center; padding-top: 8px; }
+        .policy-title { font-weight: 700; text-decoration: underline; margin-top: 10px; }
+        .signatures { display: grid; grid-template-columns: 220px 220px; gap: 32px; margin-top: 38px; }
+        .sig-line { border-top: 1px dotted #111; padding-top: 6px; font-style: italic; }
         ul { padding-left: 18px; margin-top: 4px; }
+        @media screen { .sheet { padding: 0; } }
+        @media print { body { background: #fff; } .sheet { width: auto; min-height: auto; margin: 0; } }
       </style>
     </head>
     <body>
-      <div class="brand">RD-Palmer<span>Underground Utility Solution</span></div>
-      <div class="doc-title">INVOICE</div>
-      <div class="meta">
-        <div><span class="label">Customer</span>${escapeHtml(invoice.name || '')}</div>
-        <div><span class="label">Invoice No.</span>${escapeHtml(invoice.invoice_number || '')}</div>
-        <div><span class="label">Contact</span>${escapeHtml(contactName || '-')}</div>
-        <div><span class="label">Date</span>${fmt(invoice.date)}</div>
-        <div><span class="label">Order No.</span>${escapeHtml(invoice.order_number || '-')}</div>
-        <div><span class="label">Due Date</span>${fmt(invoice.due_date)}</div>
+      <div class="sheet">
+        <div class="top">
+          <div class="brand">RD-Palmer<span>Underground Utility Solutions</span></div>
+          <div class="company">
+            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
+            63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
+            Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
+            Website: www.rd-palmer.com
+          </div>
+        </div>
+        <div class="intro">
+          <div>
+            <div class="bill-title">Bill To</div>
+            <div class="bill-lines">${billTo.map(escapeHtml).join('<br>') || escapeHtml(invoice.name || '-')}</div>
+            <div style="margin-top:12px;">Attn: ${escapeHtml(contactName || '-')}</div>
+          </div>
+          <div>
+            <div class="doc-title">Invoice</div>
+            <div class="meta">
+              <div class="meta-row"><span>Invoice No.:</span><span class="value">${escapeHtml(invoice.invoice_number || '-')}</span></div>
+              <div class="meta-row"><span>Date:</span><span class="value">${fmt(invoice.date)}</span></div>
+              <div class="meta-row"><span>Order No.:</span><span class="value">${escapeHtml(invoice.order_number || '-')}</span></div>
+              <div class="meta-row"><span>Payment Term:</span><span class="value">${escapeHtml(invoice.terms || '-')}</span></div>
+              <div class="meta-row"><span>Currency:</span><span class="value">${escapeHtml(invoice.currency || 'MYR')}</span></div>
+              <div class="meta-row"><span>Due Date:</span><span class="value">${fmt(invoice.due_date)}</span></div>
+            </div>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>#</th><th>Item & Description</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Amount</th></tr></thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+        <div class="below-table">
+          <div></div>
+          <div class="totals">
+            <div><span>Sub Total</span><span>${fmtMoney(invoice.subtotal)}</span></div>
+            <div><span>Discount</span><span>${fmtMoney(invoice.discount)}</span></div>
+            <div><span>Shipping charge</span><span>${fmtMoney(invoice.shiping_charge)}</span></div>
+            <div><span>Adjustment</span><span>${fmtMoney(invoice.adjustment)}</span></div>
+            <div class="total"><span>Total</span><span>${escapeHtml(invoice.currency || 'MYR')} ${fmtMoney(invoice.total)}</span></div>
+          </div>
+        </div>
+        ${invoice.notes ? `<div class="section"><h2>Notes</h2>${sanitizeHtml(invoice.notes)}</div>` : ''}
+        <div class="section">
+          <div class="policy-title">RD-PALMER'S SALES & SUPPORT POLICY</div>
+          <p>RD-Palmer is the sole-distributor for Radiodetection and MALA range of product in Malaysia and Brunei.<br>
+          Please note that equipment purchased through other unauthorized supplier will not be supported and will have its warranty void by Manufacturer for violation of its distribution policy.</p>
+        </div>
+        ${invoice.term_condition ? `<div class="section"><h2>Terms & Conditions</h2>${sanitizeHtml(invoice.term_condition)}</div>` : ''}
+        <p class="section">Please confirm your agreement to the terms and conditions stated therein by signing at the below.</p>
+        <div class="signatures">
+          <div class="sig-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
+          <div class="sig-line">(Co. Stamp)</div>
+        </div>
       </div>
-      <table>
-        <thead><tr><th>#</th><th>Item & Description</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Amount</th></tr></thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-      <div class="totals">
-        <div><span>Subtotal</span><span>${escapeHtml(invoice.currency || 'MYR')} ${fmtMoney(invoice.subtotal)}</span></div>
-        <div><span>Discount</span><span>${fmtMoney(invoice.discount)}</span></div>
-        <div><span>Shipping</span><span>${fmtMoney(invoice.shiping_charge)}</span></div>
-        <div><span>Adjustment</span><span>${fmtMoney(invoice.adjustment)}</span></div>
-        <div class="total"><span>Total</span><span>${escapeHtml(invoice.currency || 'MYR')} ${fmtMoney(invoice.total)}</span></div>
-      </div>
-      ${invoice.notes ? `<div class="section"><h2>Notes</h2>${sanitizeHtml(invoice.notes)}</div>` : ''}
-      ${invoice.term_condition ? `<div class="section"><h2>Terms & Conditions</h2>${sanitizeHtml(invoice.term_condition)}</div>` : ''}
-      <div class="signature">Authorised Signature</div>
     </body>
   </html>`
 }
@@ -587,6 +642,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit }) {
   const [invoice, setInvoice] = useState(null)
   const [items, setItems] = useState([])
   const [contact, setContact] = useState(null)
+  const [customer, setCustomer] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -601,9 +657,15 @@ function InvoiceDetail({ invoiceId, onBack, onEdit }) {
         const { data } = await supabase.from('contact').select('*').eq('id', parseInt(inv.contact_person)).maybeSingle()
         contactRow = data || null
       }
+      let customerRow = null
+      if (inv?.companyid) {
+        const { data } = await supabase.from('customer').select('*').eq('id', inv.companyid).maybeSingle()
+        customerRow = data || null
+      }
       setInvoice(inv)
       setItems(ii || [])
       setContact(contactRow)
+      setCustomer(customerRow)
       setLoading(false)
     }
     load()
@@ -614,8 +676,9 @@ function InvoiceDetail({ invoiceId, onBack, onEdit }) {
 
   const isOverdue = invoice.due_date && new Date(invoice.due_date) < new Date()
   const contactName = resolvedContactName(invoice.contact_person, contact)
-  const openPreview = () => openPrintable(invoiceHtml(invoice, items, contactName))
-  const downloadPdf = () => openPrintable(invoiceHtml(invoice, items, contactName), true)
+  const printableHtml = () => invoiceHtml(invoice, items, contactName, customer)
+  const openPreview = () => openPrintable(printableHtml())
+  const downloadPdf = () => openPrintable(printableHtml(), true)
 
   return (
     <div>
