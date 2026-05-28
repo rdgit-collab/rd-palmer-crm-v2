@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { fetchAssignableUsers } from '../../lib/legacyUsers'
+import { useAuth } from '../../contexts/AuthContext'
+import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail
@@ -8,6 +9,12 @@ import {
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const PAGE_SIZE = 15
+
+const lookupName = (items, id, fallbackPrefix) => {
+  if (!id) return '—'
+  const item = items.find((row) => String(row.id) === String(id))
+  return item?.name || `${fallbackPrefix} #${id}`
+}
 
 // Stage badge colours by name
 const stageColor = (name = '') => {
@@ -26,17 +33,26 @@ const stageColor = (name = '') => {
 function LeadDetail({ leadId, onBack, onEdit }) {
   const [lead, setLead] = useState(null)
   const [activities, setActivities] = useState([])
+  const [users, setUsers] = useState([])
+  const [leadSources, setLeadSources] = useState([])
+  const [stages, setStages] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const [{ data: l }, { data: act }] = await Promise.all([
+      const [{ data: l }, { data: act }, legacyUsers, { data: sources }, { data: stageRows }] = await Promise.all([
         supabase.from('sales_lead').select('*').eq('id', leadId).single(),
         supabase.from('activity').select('*').eq('lead_id', leadId).order('created_at', { ascending: false }),
+        fetchLegacyUsers(supabase),
+        supabase.from('lead').select('id, name').order('name'),
+        supabase.from('stage').select('id, name').order('name'),
       ])
       setLead(l)
       setActivities(act || [])
+      setUsers(legacyUsers || [])
+      setLeadSources(sources || [])
+      setStages(stageRows || [])
       setLoading(false)
     }
     load()
@@ -46,6 +62,8 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   if (!lead) return <div className="text-gray-500 text-sm p-4">Lead not found.</div>
 
   const phone = lead.mobile_number || lead.office_number || '—'
+  const statusName = lookupName(stages, lead.status, 'Status')
+  const sourceName = lookupName(leadSources, lead.lead_source, 'Source')
 
   return (
     <div>
@@ -58,7 +76,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
         </div>
         <div className="flex items-center gap-2">
           {lead.status && (
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${stageColor(lead.status)}`}>{lead.status}</span>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${stageColor(statusName)}`}>{statusName}</span>
           )}
           <button onClick={onEdit}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
@@ -96,12 +114,13 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           <table className="text-sm w-full">
             <tbody>
               {[
-                ['Lead Source', lead.lead_source || '—'],
-                ['Status', lead.status || '—'],
+                ['Lead Source', sourceName],
+                ['Status', statusName],
                 ['Type', lead.type === 1 ? 'Existing' : 'New'],
                 ['Industry', lead.industry || '—'],
                 ['Account Type', lead.account_type || '—'],
-                ['Assigned To', lead.assigned_to || '—'],
+                ['Assigned To', getUserName(users, lead.assigned_to)],
+                ['Created By', getUserName(users, lead.user_id)],
                 ['Contact Name', [lead.salutation, lead.first_name, lead.last_name].filter(Boolean).join(' ') || '—'],
                 ['Contact Mobile', lead.contact_mobile_number || '—'],
                 ['Contact Email', lead.contact_email || '—'],
@@ -157,6 +176,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
 
 // ─── Lead Form (Add / Edit) ────────────────────────────────────────────────────
 function LeadForm({ lead, onSave, onCancel }) {
+  const { profile } = useAuth()
   const isEdit = !!lead
   const [leadSources, setLeadSources] = useState([])
   const [stages, setStages] = useState([])
@@ -165,8 +185,8 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [error, setError] = useState('')
 
   const [form, setForm] = useState({
-    lead_source: lead?.lead_source || '',
-    status: lead?.status || '',
+    lead_source: lead?.lead_source ? String(lead.lead_source) : '',
+    status: lead?.status ? String(lead.status) : '',
     type: lead?.type !== undefined ? String(lead.type) : '0',
     // Company info
     company_name: lead?.company_name || '',
@@ -207,8 +227,6 @@ function LeadForm({ lead, onSave, onCancel }) {
     if (!form.company_name.trim()) { setError('Company name is required'); return }
     setSaving(true); setError('')
 
-    const assignedUser = users.find(u => String(u.id) === String(form.assigned_to))
-
     const payload = {
       lead_source: form.lead_source,
       status: form.status,
@@ -234,7 +252,7 @@ function LeadForm({ lead, onSave, onCancel }) {
       contact_mobile_number: form.contact_mobile_number,
       contact_email: form.contact_email,
       assigned_to: form.assigned_to ? parseInt(form.assigned_to) : null,
-      user_id: 1,
+      user_id: getLegacyUserId(profile),
       updated_at: new Date().toISOString(),
     }
 
@@ -273,14 +291,14 @@ function LeadForm({ lead, onSave, onCancel }) {
             <label className={labelCls}>Lead Source <span className="text-red-500">*</span></label>
             <select className={inputCls} value={form.lead_source} onChange={e => set('lead_source', e.target.value)}>
               <option value="">Please Select</option>
-              {leadSources.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              {leadSources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>
             <label className={labelCls}>Status <span className="text-red-500">*</span></label>
             <select className={inputCls} value={form.status} onChange={e => set('status', e.target.value)}>
               <option value="">Please Select</option>
-              {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         </div>
@@ -447,12 +465,23 @@ export default function Leads() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [stages, setStages] = useState([])
+  const [leadSources, setLeadSources] = useState([])
+  const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
 
-  // Load stages for filter dropdown
   useEffect(() => {
-    supabase.from('stage').select('id, name').order('name').then(({ data }) => setStages(data || []))
+    const run = async () => {
+      const [{ data: stageRows }, { data: sourceRows }, legacyUsers] = await Promise.all([
+        supabase.from('stage').select('id, name').order('name'),
+        supabase.from('lead').select('id, name').order('name'),
+        fetchLegacyUsers(supabase),
+      ])
+      setStages(stageRows || [])
+      setLeadSources(sourceRows || [])
+      setUsers(legacyUsers || [])
+    }
+    run()
   }, [])
 
   const fetchLeads = useCallback(async () => {
@@ -536,7 +565,7 @@ export default function Leads() {
           value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
         >
           <option value="">All Stages</option>
-          {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+          {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         {(search || filterStatus) && (
           <button onClick={() => { setSearch(''); setFilterStatus('') }}
@@ -575,6 +604,7 @@ export default function Leads() {
                 leads.map((l, idx) => {
                   const phone = l.mobile_number || l.office_number || ''
                   const addrParts = [l.address1, l.city, l.state].filter(Boolean)
+                  const statusName = lookupName(stages, l.status, 'Status')
                   return (
                     <tr key={l.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-500 text-xs">{page * PAGE_SIZE + idx + 1}</td>
@@ -589,10 +619,10 @@ export default function Leads() {
                           )}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{l.lead_source || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{lookupName(leadSources, l.lead_source, 'Source')}</td>
                       <td className="px-4 py-3">
                         {l.status ? (
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${stageColor(l.status)}`}>{l.status}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${stageColor(statusName)}`}>{statusName}</span>
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3">
@@ -600,7 +630,7 @@ export default function Leads() {
                         {l.email && <div className="flex items-center gap-1 text-gray-500 text-xs mt-0.5"><Mail size={11} className="text-gray-400" />{l.email}</div>}
                         {!phone && !l.email && <span className="text-gray-400">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">{l.assigned_to || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{getUserName(users, l.assigned_to)}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{fmt(l.created_at)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
