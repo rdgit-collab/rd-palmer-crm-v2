@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom'
 import {
   Building2, Ticket, FileText, Receipt,
   ClipboardList, Users, AlertTriangle, Activity,
-  TrendingUp, MapPin, RotateCcw, Gauge,
+  TrendingUp, MapPin, RotateCcw, Gauge, CheckCircle2,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { fetchAssignableUsers, getUserName as formatUserName } from '../lib/legacyUsers'
 
 // ── Shared stat card ──────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color, bg, to }) {
@@ -40,6 +41,28 @@ function priorityColor(p) {
   if (p === 'Medium') return 'bg-yellow-100 text-yellow-700'
   if (p === 'Low')    return 'bg-green-100 text-green-700'
   return 'bg-gray-100 text-gray-600'
+}
+
+function fmtDate(value) {
+  return value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'
+}
+
+function addStaffMetric(map, users, assignee, updates) {
+  const key = assignee ? String(assignee) : 'unassigned'
+  if (!map[key]) {
+    map[key] = {
+      id: key,
+      name: key === 'unassigned' ? 'Unassigned' : formatUserName(users, assignee),
+      openTickets: 0,
+      openTasks: 0,
+      openOnsites: 0,
+      completed: 0,
+      overdue: 0,
+    }
+  }
+  Object.entries(updates).forEach(([field, value]) => {
+    map[key][field] += value
+  })
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -264,6 +287,8 @@ function ServiceDashboard({ firstName }) {
   const [stats, setStats] = useState({})
   const [recentTickets, setRecentTickets] = useState([])
   const [recentTasks, setRecentTasks] = useState([])
+  const [staffRows, setStaffRows] = useState([])
+  const [attentionItems, setAttentionItems] = useState([])
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
@@ -275,16 +300,82 @@ function ServiceDashboard({ firstName }) {
       supabase.from('rma').select('*', { count: 'exact', head: true }),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
       supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
-    ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask]) => {
+      supabase.from('ticket').select('id, ticket_id, company_name, assigned_to, due_date, priority, is_completed, status').limit(2000),
+      supabase.from('task').select('id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed').limit(2000),
+      supabase.from('onsiteticket').select('id, ticket_id, issue_description, product, assigned_to, date, is_completed, status').limit(2000),
+      fetchAssignableUsers(supabase),
+    ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users]) => {
+      const tickets = allTickets.data || []
+      const tasks = allTasks.data || []
+      const onsites = allOnsites.data || []
+      const ticketNumberById = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticket_id]))
+      const completedWork = tasks.filter(t => t.is_completed == 1).length + onsites.filter(o => o.is_completed == 1 || o.status === 'Completed').length
+      const pendingWork = tasks.filter(t => t.is_completed != 1).length + onsites.filter(o => o.is_completed != 1 && o.status !== 'Completed').length
+      const dueToday = tasks.filter(t => t.is_completed != 1 && t.enddate === today).length
+        + tickets.filter(t => t.is_completed != 1 && t.due_date === today).length
+
+      const staffMap = {}
+      tickets.forEach(ticket => {
+        if (ticket.is_completed == 1) return
+        addStaffMetric(staffMap, users, ticket.assigned_to, {
+          openTickets: 1,
+          overdue: ticket.due_date && ticket.due_date < today ? 1 : 0,
+        })
+      })
+      tasks.forEach(task => {
+        addStaffMetric(staffMap, users, task.assigned_to, task.is_completed == 1
+          ? { completed: 1 }
+          : { openTasks: 1, overdue: task.enddate && task.enddate < today ? 1 : 0 })
+      })
+      onsites.forEach(onsiteRow => {
+        addStaffMetric(staffMap, users, onsiteRow.assigned_to, onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed'
+          ? { completed: 1 }
+          : { openOnsites: 1 })
+      })
+
+      const attention = [
+        ...tickets
+          .filter(ticket => ticket.is_completed != 1 && ticket.due_date && ticket.due_date < today)
+          .map(ticket => ({
+            key: `ticket-${ticket.id}`,
+            type: 'Ticket',
+            label: `TID${ticket.ticket_id}`,
+            text: ticket.company_name || ticket.status || 'Open ticket',
+            date: ticket.due_date,
+            owner: formatUserName(users, ticket.assigned_to),
+            to: '/tickets',
+          })),
+        ...tasks
+          .filter(task => task.is_completed != 1 && task.enddate && task.enddate < today)
+          .map(task => ({
+            key: `task-${task.id}`,
+            type: 'Task',
+            label: task.servicetype || `Task #${task.id}`,
+            text: task.ticket_id ? `TID${ticketNumberById[task.ticket_id] || task.ticket_id}` : 'Open task',
+            date: task.enddate,
+            owner: formatUserName(users, task.assigned_to),
+            to: '/tasks',
+          })),
+      ].sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(0, 8)
+
       setStats({
         openTickets:    tick.count   || 0,
         openTasks:      tsk.count    || 0,
         onsiteTickets:  onsite.count || 0,
         overdueTickets: overdue.count || 0,
         rmaCount:       rma.count    || 0,
+        completedWork,
+        pendingWork,
+        dueToday,
+        completionRate: completedWork + pendingWork > 0 ? Math.round((completedWork / (completedWork + pendingWork)) * 100) : 0,
       })
       setRecentTickets(rTick.data || [])
       setRecentTasks(rTask.data || [])
+      setStaffRows(Object.values(staffMap)
+        .map(row => ({ ...row, pending: row.openTickets + row.openTasks + row.openOnsites }))
+        .sort((a, b) => (b.pending + b.overdue) - (a.pending + a.overdue))
+        .slice(0, 8))
+      setAttentionItems(attention)
     })
   }, [])
 
@@ -302,7 +393,49 @@ function ServiceDashboard({ firstName }) {
         <StatCard label="Open Tasks"       value={stats.openTasks}      icon={ClipboardList} color="#0891B2" bg="#ECFEFF" to="/tasks" />
         <StatCard label="Onsite Tickets"   value={stats.onsiteTickets}  icon={MapPin}        color="#7C3AED" bg="#F5F3FF" to="/onsite-tickets" />
         <StatCard label="Overdue Tickets"  value={stats.overdueTickets} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/tickets" />
+        <StatCard label="Due Today"        value={stats.dueToday}       icon={Gauge}         color="#2563EB" bg="#EFF6FF" to="/tasks" />
+        <StatCard label="Work Completion"  value={`${stats.completionRate ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" />
         <StatCard label="RMA Records"      value={stats.rmaCount}       icon={RotateCcw}     color="#059669" bg="#ECFDF5" to="/rma" />
+      </div>
+
+      <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-[#111111] text-sm">Staff Workload & Performance</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Open work, completed work, and overdue items by assigned staff.</p>
+          </div>
+          <Link to="/tasks" className="text-xs text-red-600 hover:underline">Review work</Link>
+        </div>
+        {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No assigned service work yet.</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Staff</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Tickets</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Tasks</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Onsite</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Pending</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Completed</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Overdue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staffRows.map(row => (
+                  <tr key={row.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-3 py-2 font-medium text-gray-900">{row.name || '—'}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{row.openTickets}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{row.openTasks}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{row.openOnsites}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-gray-900">{row.pending}</td>
+                    <td className="px-3 py-2 text-right text-green-700">{row.completed}</td>
+                    <td className={`px-3 py-2 text-right font-semibold ${row.overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{row.overdue}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -324,6 +457,31 @@ function ServiceDashboard({ firstName }) {
                     {t.due_date && t.due_date < today && <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">Overdue</span>}
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-[#111111] text-sm">Attention Needed</h3>
+            <span className="text-xs text-gray-400">{attentionItems.length} overdue</span>
+          </div>
+          {attentionItems.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No overdue service work.</p> : (
+            <div className="space-y-2">
+              {attentionItems.map(item => (
+                <Link key={item.key} to={item.to} className="block py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">{item.type}</span>
+                        <span className="text-sm font-semibold text-gray-900 truncate">{item.label}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 truncate">{item.text} · {item.owner}</p>
+                    </div>
+                    <span className="text-xs font-medium text-red-600 shrink-0">{fmtDate(item.date)}</span>
+                  </div>
+                </Link>
               ))}
             </div>
           )}
