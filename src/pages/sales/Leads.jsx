@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
+import { fetchAssignableUsers } from '../../lib/legacyUsers'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail
@@ -196,7 +197,7 @@ function LeadForm({ lead, onSave, onCancel }) {
   useEffect(() => {
     supabase.from('lead').select('id, name').order('name').then(({ data }) => setLeadSources(data || []))
     supabase.from('stage').select('id, name').order('name').then(({ data }) => setStages(data || []))
-    supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name').then(({ data }) => setUsers(data || []))
+    fetchAssignableUsers(supabase).then(setUsers)
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))

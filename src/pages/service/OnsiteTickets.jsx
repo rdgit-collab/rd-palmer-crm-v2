@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -22,7 +23,7 @@ const emptyForm = {
 }
 
 export default function OnsiteTickets() {
-  const { user } = useAuth()
+  const { profile } = useAuth()
   const [view, setView]           = useState('list')
   const [tab, setTab]             = useState('open')
   const [rows, setRows]           = useState([])
@@ -57,10 +58,10 @@ export default function OnsiteTickets() {
     const run = async () => {
       const [tickR, usrR] = await Promise.all([
         supabase.from('ticket').select('id, ticket_id, company_name').eq('is_completed', 0).order('id', { ascending: false }),
-        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
+        fetchAssignableUsers(supabase),
       ])
       if (!tickR.error) setTickets(tickR.data || [])
-      if (!usrR.error)  setUsers(usrR.data || [])
+      setUsers(usrR || [])
     }
     run()
   }, [])
@@ -70,8 +71,7 @@ export default function OnsiteTickets() {
     return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : tid ? `#${tid}` : '—'
   }
   const getUserName = (id) => {
-    const u = users.find(u => u.id == id)
-    return u ? `${u.first_name} ${u.last_name}` : '—'
+    return formatUserName(users, id)
   }
 
   const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
@@ -97,7 +97,7 @@ export default function OnsiteTickets() {
       remark: form.remark || null,
       assigned_to: form.assigned_to ? parseInt(form.assigned_to) : null,
       status: form.status, is_completed: form.status === 'Completed' ? 1 : 0,
-      workdone: form.workdone || null, date: form.date || null, user_id: user?.id,
+      workdone: form.workdone || null, date: form.date || null, user_id: getLegacyUserId(profile),
     }
     const { error: err } = editId
       ? await supabase.from('onsiteticket').update(payload).eq('id', editId)

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -35,7 +36,7 @@ const emptyForm = {
 }
 
 export default function Activities() {
-  const { user } = useAuth()
+  const { profile } = useAuth()
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
   const [total, setTotal]       = useState(0)
@@ -75,14 +76,14 @@ export default function Activities() {
       const [leadR, custR, usrR, atR, prioR, statusR] = await Promise.all([
         supabase.from('sales_lead').select('id, company_name, first_name, last_name').order('company_name'),
         supabase.from('customer').select('id, company_name').order('company_name'),
-        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
+        fetchAssignableUsers(supabase),
         supabase.from('activity_type').select('id, type').order('type'),
         supabase.from('priority').select('id, name').order('name'),
         supabase.from('activity_status').select('id, name').order('name'),
       ])
       if (!leadR.error)   setLeads(leadR.data || [])
       if (!custR.error)   setCustomers(custR.data || [])
-      if (!usrR.error)    setUsers(usrR.data || [])
+      setUsers(usrR || [])
       if (!atR.error)     setActivityTypes(atR.data || [])
       if (!prioR.error)   setPriorities(prioR.data || [])
       if (!statusR.error) setActivityStatuses(statusR.data || [])
@@ -95,8 +96,7 @@ export default function Activities() {
     return c?.company_name || companyId || '—'
   }
   const getUserName = (id) => {
-    const u = users.find(u => u.id == id)
-    return u ? `${u.first_name} ${u.last_name}` : '—'
+    return formatUserName(users, id)
   }
 
   const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
@@ -118,7 +118,7 @@ export default function Activities() {
       lead_id: form.lead_id   ? parseInt(form.lead_id)   : null,
       company_id: form.company_id || null,
       assigned_to: form.assigned_to || null,
-      user_id: user?.id,
+      user_id: getLegacyUserId(profile),
     }
     const { error: err } = editId
       ? await supabase.from('activity').update(payload).eq('id', editId)

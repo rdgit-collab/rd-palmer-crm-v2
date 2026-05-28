@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
+import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -20,7 +21,7 @@ const emptyForm = {
 }
 
 export default function Tasks() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [view, setView]           = useState('list')
   const [tab, setTab]             = useState('open')
   const [tasks, setTasks]         = useState([])
@@ -67,12 +68,12 @@ export default function Tasks() {
       const [tickR, stR, usrR, sprR] = await Promise.all([
         supabase.from('ticket').select('id, ticket_id, company_name').eq('is_completed', 0).order('id', { ascending: false }),
         supabase.from('service_type').select('id, type').order('type'),
-        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
+        fetchAssignableUsers(supabase),
         supabase.from('spare').select('id, name').order('name'),
       ])
       if (!tickR.error) setTickets(tickR.data || [])
       if (!stR.error)   setServiceTypes(stR.data || [])
-      if (!usrR.error)  setUsers(usrR.data || [])
+      setUsers(usrR || [])
       if (!sprR.error)  setSpares(sprR.data || [])
     }
     run()
@@ -125,7 +126,7 @@ export default function Tasks() {
       assigned_to:  form.assigned_to ? parseInt(form.assigned_to) : null,
       is_completed: 0,
       is_archived:  0,
-      user_id:      user?.id,
+      user_id:      getLegacyUserId(profile),
     }
 
     if (editId) {
@@ -139,7 +140,7 @@ export default function Tasks() {
     // ── Notify assigned user ──────────────────────────────────────
     const newAssignee = form.assigned_to || ''
     const oldAssignee = editId ? (origAssignedTo.current || '') : ''
-    const isNewAssignment = newAssignee && newAssignee !== user?.id &&
+    const isNewAssignment = isUuid(newAssignee) && newAssignee !== user?.id &&
       (!editId || newAssignee !== oldAssignee)
 
     if (isNewAssignment) {
@@ -179,8 +180,7 @@ export default function Tasks() {
     return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : ticketId ? `TID${ticketId}` : '—'
   }
   const getUserName = (id) => {
-    const u = users.find(u => u.id == id)
-    return u ? `${u.first_name} ${u.last_name}` : '—'
+    return formatUserName(users, id)
   }
 
   // ══════════════════════════════════════════════════════════════════

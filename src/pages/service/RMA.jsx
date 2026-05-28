@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -12,7 +13,7 @@ const emptyForm = {
 }
 
 export default function RMA() {
-  const { user } = useAuth()
+  const { profile } = useAuth()
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
   const [total, setTotal]       = useState(0)
@@ -77,7 +78,7 @@ export default function RMA() {
       traking_number_out: form.traking_number_out || null,
       date_return: form.date_return || null,
       traking_number_in: form.traking_number_in || null,
-      remark: form.remark || null, user_id: user?.id,
+      remark: form.remark || null, user_id: getLegacyUserId(profile),
     }
     const { error: err } = editId
       ? await supabase.from('rma').update(payload).eq('id', editId)

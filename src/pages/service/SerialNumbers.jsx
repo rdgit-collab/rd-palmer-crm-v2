@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -12,7 +13,7 @@ const emptyForm = {
 }
 
 export default function SerialNumbers() {
-  const { user } = useAuth()
+  const { profile } = useAuth()
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
   const [total, setTotal]       = useState(0)
@@ -59,7 +60,7 @@ export default function SerialNumbers() {
       date: form.date || null, ref_number: form.ref_number || null,
       customername: form.customername || null, sku: form.sku || null,
       serial_number: form.serial_number, warranty_period: form.warranty_period || null,
-      user_id: user?.id,
+      user_id: getLegacyUserId(profile),
     }
     const { error: err } = editId
       ? await supabase.from('serialnumber').update(payload).eq('id', editId)

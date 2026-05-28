@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -25,7 +26,7 @@ function storageUrl(path) {
 }
 
 export default function Calibration() {
-  const { user } = useAuth()
+  const { profile } = useAuth()
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
   const [total, setTotal]       = useState(0)
@@ -82,7 +83,7 @@ export default function Calibration() {
       conduct_by: form.conduct_by || null,
       status: form.status || null,
       remark: form.remark || null,
-      user_id: user?.id,
+      user_id: getLegacyUserId(profile),
     }
     const { error: err } = editId
       ? await supabase.from('calibration').update(payload).eq('id', editId)

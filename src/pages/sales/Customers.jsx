@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { fetchAssignableUsers } from '../../lib/legacyUsers'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail
@@ -43,7 +44,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
   useEffect(() => {
     supabase.from('industries').select('id, name').order('name').then(({ data }) => setIndustries(data || []))
     supabase.from('account_type').select('id, type').order('type').then(({ data }) => setAccountTypes(data || []))
-    supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name').then(({ data }) => setUsers(data || []))
+    fetchAssignableUsers(supabase).then(setUsers)
     supabase.from('country').select('id, name').order('name').then(({ data }) => setCountries(data || []))
   }, [])
 

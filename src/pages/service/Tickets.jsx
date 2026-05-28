@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
+import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -43,7 +44,7 @@ const emptyForm = {
 const emptyProduct = { sku: '', item_description: '', serial_number: '', remark: '' }
 
 export default function Tickets() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [view, setView]             = useState('list')
   const [tab, setTab]               = useState('open')
   const [tickets, setTickets]       = useState([])
@@ -101,13 +102,13 @@ export default function Tickets() {
       const [catR, custR, usrR, skuR, prioR] = await Promise.all([
         supabase.from('category').select('id, name').order('name'),
         supabase.from('customer').select('id, company_name').order('company_name'),
-        supabase.from('users').select('id, first_name, last_name').eq('status', 'Active').order('first_name'),
+        fetchAssignableUsers(supabase),
         supabase.from('goodsservices').select('id, sku, description').order('sku'),
         supabase.from('priority').select('id, name').order('name'),
       ])
       if (!catR.error)  setCategories(catR.data  || [])
       if (!custR.error) setCustomers(custR.data  || [])
-      if (!usrR.error)  setUsers(usrR.data       || [])
+      setUsers(usrR || [])
       if (!skuR.error)  setSkuList(skuR.data     || [])
       if (!prioR.error) setPriorities(prioR.data || [])
     }
@@ -207,7 +208,7 @@ export default function Tickets() {
       assigned_to:    form.assigned_to ? parseInt(form.assigned_to) : null,
       remark:         form.remark,
       serial_number:  form.serial_number,
-      user_id:        user?.id,
+      user_id:        getLegacyUserId(profile),
     }
 
     let ticketId = editId
@@ -229,7 +230,7 @@ export default function Tickets() {
     if (validProds.length > 0) {
       await supabase.from('ticket_product').insert(
         validProds.map(p => ({
-          user_id:          user?.id,
+          user_id:          getLegacyUserId(profile),
           ticket_id:        ticketId,
           sku:              p.sku,
           item_description: p.item_description,
@@ -240,10 +241,9 @@ export default function Tickets() {
     }
 
     // ── Notify assigned user ──────────────────────────────────────
-    // form.assigned_to holds the UUID directly (from users dropdown)
     const newAssignee = form.assigned_to || ''
     const oldAssignee = editId ? (origAssignedTo.current || '') : ''
-    const isNewAssignment = newAssignee && newAssignee !== user?.id &&
+    const isNewAssignment = isUuid(newAssignee) && newAssignee !== user?.id &&
       (!editId || newAssignee !== oldAssignee)
 
     if (isNewAssignment) {
@@ -352,7 +352,6 @@ export default function Tickets() {
               ) : tickets.length === 0 ? (
                 <tr><td colSpan={8} className="text-center py-12 text-gray-400">No {tab} tickets found.</td></tr>
               ) : tickets.map(t => {
-                const assignedUser = users.find(u => u.id == t.assigned_to)
                 const today = new Date().toISOString().split('T')[0]
                 const isOverdue = t.due_date && t.due_date < today
                 return (
@@ -377,7 +376,7 @@ export default function Tickets() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{t.due_date || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">
-                      {assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}` : '—'}
+                      {formatUserName(users, t.assigned_to)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
@@ -783,7 +782,6 @@ export default function Tickets() {
   // DETAIL VIEW
   // ══════════════════════════════════════════════════════════════════
   if (view === 'detail' && detail) {
-    const assignedUser = users.find(u => u.id == detail.assigned_to)
     const category     = categories.find(c => c.id == detail.category)
     const today        = new Date().toISOString().split('T')[0]
     const isOverdue    = detail.due_date && detail.due_date < today
@@ -864,7 +862,7 @@ export default function Tickets() {
             </div>
             <div>
               <span className="font-medium text-gray-500">Assigned To: </span>
-              {assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}` : '—'}
+              {formatUserName(users, detail.assigned_to)}
             </div>
             <div>
               <span className="font-medium text-gray-500">Serial Number: </span>
