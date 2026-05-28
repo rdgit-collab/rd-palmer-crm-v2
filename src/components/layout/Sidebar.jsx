@@ -14,6 +14,7 @@ const salesItems = [
   { name: 'Activities',   href: '/activities',       icon: Activity,    module: 'activities' },
   { name: 'Quotations',   href: '/quotations',       icon: FileText,    module: 'quotations' },
   { name: 'Invoices',     href: '/invoices',         icon: Receipt,     module: 'invoices' },
+  { name: 'Tickets',      href: '/tickets',          icon: Ticket,      module: 'tickets' },
 ]
 
 const serviceItems = [

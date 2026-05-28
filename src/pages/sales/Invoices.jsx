@@ -58,7 +58,7 @@ function htmlToText(value = '') {
     .trim()
 }
 
-function cleanSalesText(value = '', { dropPolicy = false, dropConfirmation = false } = {}) {
+function cleanSalesText(value = '', { dropPolicy = false, dropConfirmation = false, dropSignature = false } = {}) {
   let text = htmlToText(value)
   if (dropPolicy) {
     const policyIndex = text.search(/RD-?PALMER'?S SALES\s*&\s*SUPPORT POLICY/i)
@@ -66,6 +66,11 @@ function cleanSalesText(value = '', { dropPolicy = false, dropConfirmation = fal
   }
   if (dropConfirmation) {
     text = text.replace(/Please confirm your agreement to the terms and conditions stated therein by signing at the below\.?/gi, '')
+  }
+  if (dropSignature) {
+    text = text
+      .replace(/[\s.\-_]{8,}\s*[\s\S]*$/i, '')
+      .replace(/\(?Signature\)?[\s\S]*$/i, '')
   }
   return text.replace(/\n{3,}/g, '\n\n').trim()
 }
@@ -153,7 +158,7 @@ function addressLines(customer) {
 function invoiceHtml(invoice, items, contactName, customer) {
   const billTo = addressLines(customer)
   const notes = sanitizeHtml(invoice.notes)
-  const terms = sanitizeHtml(invoice.term_condition)
+  const terms = printableText(invoice.term_condition, { dropConfirmation: true, dropSignature: true })
   const itemRows = items.map((item, idx) => `
     <tr>
       <td>${idx + 1}</td>
