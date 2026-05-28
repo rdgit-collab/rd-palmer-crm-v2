@@ -147,9 +147,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
         .total { border-top: 1px solid #111; margin-top: 4px; font-weight: 700; font-size: 13px; }
         .section { margin-top: 10px; line-height: 1.35; }
         .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin-bottom: 6px; }
-        .policy-title { font-weight: 700; text-decoration: underline; margin-top: 10px; }
-        .signatures { display: grid; grid-template-columns: 220px 220px; gap: 32px; margin-top: 38px; }
-        .sig-line { border-top: 1px dotted #111; padding-top: 6px; font-style: italic; }
+        .below-table .section { margin-top: 4px; }
         ul { padding-left: 18px; margin-top: 4px; }
         @media print { body { background: #fff; } .sheet { width: 210mm; min-height: 297mm; margin: 0; } }
       </style>
@@ -188,7 +186,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
           <tbody>${itemRows}</tbody>
         </table>
         <div class="below-table">
-          <div></div>
+          <div>${notes ? `<div class="section"><h2>Notes</h2>${notes}</div>` : ''}</div>
           <div class="totals">
             <div><span>Sub Total</span><span>${fmtMoney(invoice.subtotal)}</span></div>
             <div><span>Discount</span><span>${fmtMoney(invoice.discount)}</span></div>
@@ -197,18 +195,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
             <div class="total"><span>Total</span><span>${escapeHtml(invoice.currency || 'MYR')} ${fmtMoney(invoice.total)}</span></div>
           </div>
         </div>
-        ${notes ? `<div class="section"><h2>Notes</h2>${notes}</div>` : ''}
-        <div class="section">
-          <div class="policy-title">RD-PALMER'S SALES & SUPPORT POLICY</div>
-          <p>RD-Palmer is the sole-distributor for Radiodetection and MALA range of product in Malaysia and Brunei.<br>
-          Please note that equipment purchased through other unauthorized supplier will not be supported and will have its warranty void by Manufacturer for violation of its distribution policy.</p>
-        </div>
         ${terms ? `<div class="section"><h2>Terms & Conditions</h2>${terms}</div>` : ''}
-        <p class="section">Please confirm your agreement to the terms and conditions stated therein by signing at the below.</p>
-        <div class="signatures">
-          <div class="sig-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
-          <div class="sig-line">(Co. Stamp)</div>
-        </div>
       </div>
     </body>
   </html>`
