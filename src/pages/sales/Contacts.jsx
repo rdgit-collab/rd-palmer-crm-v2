@@ -167,10 +167,9 @@ export default function Contacts() {
 
   const fetchContacts = useCallback(async () => {
     setLoading(true)
-    // Join with customer to get company_name
     let q = supabase
       .from('contact')
-      .select('*, customer:company_id(company_name)', { count: 'exact' })
+      .select('*', { count: 'exact' })
 
     if (search.trim()) {
       q = q.or(
@@ -180,7 +179,23 @@ export default function Contacts() {
 
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q
-    if (!error) { setContacts(data || []); setTotal(count || 0) }
+    if (!error) {
+      const contactRows = data || []
+      const companyIds = [...new Set(contactRows.map(c => c.company_id).filter(Boolean))]
+      let customersById = {}
+      if (companyIds.length) {
+        const { data: customerRows } = await supabase
+          .from('customer')
+          .select('id, company_name')
+          .in('id', companyIds)
+        customersById = Object.fromEntries((customerRows || []).map(c => [String(c.id), c]))
+      }
+      setContacts(contactRows.map(c => ({
+        ...c,
+        customer: customersById[String(c.company_id)] || null,
+      })))
+      setTotal(count || 0)
+    }
     setLoading(false)
   }, [search, page])
 
