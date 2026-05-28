@@ -62,7 +62,7 @@ function isThisMonth(value, start = monthStartIso()) {
 
 function isClosedLeadStatus(status) {
   const value = String(status || '').toLowerCase()
-  return ['won', 'lost', 'closed', 'complete', 'completed'].includes(value)
+  return value.includes('closed') || ['won', 'lost', 'complete', 'completed'].includes(value)
 }
 
 function addStaffMetric(map, users, assignee, updates) {
@@ -83,17 +83,18 @@ function addStaffMetric(map, users, assignee, updates) {
   })
 }
 
-function salesOwnerKey(users, value) {
+function salesOwnerDisplayName(users, value) {
   const raw = String(value || '').trim()
-  if (!raw) return 'unassigned'
+  if (!raw) return 'Unassigned'
   const userName = formatUserName(users, raw)
-  return userName !== '—' ? raw : `name:${raw}`
+  return userName !== '—' ? userName : raw
 }
 
-function salesOwnerName(users, key) {
-  if (key === 'unassigned') return 'Unassigned'
-  if (String(key).startsWith('name:')) return String(key).slice(5)
-  return formatUserName(users, key)
+function salesOwnerKey(users, value) {
+  return salesOwnerDisplayName(users, value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim() || 'unassigned'
 }
 
 function addSalesMetric(map, users, owner, updates) {
@@ -101,7 +102,7 @@ function addSalesMetric(map, users, owner, updates) {
   if (!map[key]) {
     map[key] = {
       id: key,
-      name: salesOwnerName(users, key),
+      name: salesOwnerDisplayName(users, owner),
       openLeads: 0,
       wonLeads: 0,
       lostLeads: 0,
@@ -249,13 +250,16 @@ function SalesDashboard({ firstName }) {
       supabase.from('activity').select('id, lead_id, assigned_to, type, status, date, description, created_at').limit(2000),
       supabase.from('quotation').select('id, number, date, sales_person, total, isconvert').limit(2000),
       supabase.from('invoice').select('id, invoice_number, date, sales_person, total').limit(2000),
+      supabase.from('stage').select('id, name').order('name'),
       fetchAssignableUsers(supabase),
-    ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads, allLeads, allActivities, allQuotations, allInvoices, users]) => {
+    ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads, allLeads, allActivities, allQuotations, allInvoices, stageRows, users]) => {
       const leadRows = allLeads.data || []
       const activityRows = allActivities.data || []
       const quotationRows = allQuotations.data || []
       const invoiceRows = allInvoices.data || []
-      const openLeads = leadRows.filter(lead => !isClosedLeadStatus(lead.status))
+      const stageLookup = Object.fromEntries((stageRows.data || []).map(stage => [String(stage.id), stage.name]))
+      const getLeadStatusName = (status) => status ? (stageLookup[String(status)] || String(status)) : 'Open'
+      const openLeads = leadRows.filter(lead => !isClosedLeadStatus(getLeadStatusName(lead.status)))
       const newLeadsThisMonth = leadRows.filter(lead => isThisMonth(lead.created_at, monthStart)).length
       const quoteValueThisMonth = quotationRows
         .filter(row => isThisMonth(row.date, monthStart))
@@ -267,11 +271,11 @@ function SalesDashboard({ firstName }) {
       const salesMap = {}
 
       leadRows.forEach(lead => {
-        const status = String(lead.status || '').toLowerCase()
+        const status = getLeadStatusName(lead.status).toLowerCase()
         addSalesMetric(salesMap, users, lead.assigned_to, {
-          openLeads: isClosedLeadStatus(lead.status) ? 0 : 1,
-          wonLeads: status === 'won' ? 1 : 0,
-          lostLeads: status === 'lost' ? 1 : 0,
+          openLeads: isClosedLeadStatus(status) ? 0 : 1,
+          wonLeads: status.includes('won') ? 1 : 0,
+          lostLeads: status.includes('lost') ? 1 : 0,
         })
       })
       activityRows
@@ -310,7 +314,7 @@ function SalesDashboard({ firstName }) {
             name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed lead',
             company: lead.company_name || '—',
             owner: formatUserName(users, lead.assigned_to),
-            status: lead.status || 'Open',
+            status: getLeadStatusName(lead.status),
             lastActivity,
           }
         })
@@ -330,7 +334,7 @@ function SalesDashboard({ firstName }) {
         quoteConversion: quotationRows.length > 0 ? Math.round((convertedQuotes / quotationRows.length) * 100) : 0,
       })
       setRecentActivities(acts.data || [])
-      setRecentLeads(rLeads.data || [])
+      setRecentLeads((rLeads.data || []).map(lead => ({ ...lead, status_name: getLeadStatusName(lead.status) })))
       setSalesRows(Object.values(salesMap)
         .sort((a, b) => (b.invoiceValue + b.quotationValue + b.openLeads) - (a.invoiceValue + a.quotationValue + a.openLeads))
         .slice(0, 8))
@@ -422,7 +426,7 @@ function SalesDashboard({ firstName }) {
                     <p className="text-sm font-medium text-gray-900">{[l.first_name, l.last_name].filter(Boolean).join(' ') || '—'}</p>
                     <p className="text-xs text-gray-500">{l.company_name || ''}</p>
                   </div>
-                  {l.status && <span className={`text-xs px-2 py-0.5 rounded ${leadStatusColor(l.status)}`}>{l.status}</span>}
+                  {l.status_name && <span className={`text-xs px-2 py-0.5 rounded ${leadStatusColor(l.status_name)}`}>{l.status_name}</span>}
                 </div>
               ))}
             </div>
