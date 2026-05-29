@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
-import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
 
@@ -23,6 +23,7 @@ export default function Catalogue() {
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
+  const [detail, setDetail]     = useState(null)
   const [deleteId, setDeleteId] = useState(null)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
@@ -52,6 +53,11 @@ export default function Catalogue() {
   useEffect(() => { fetchRows() }, [fetchRows])
 
   const openAdd = () => { setForm(emptyForm); setEditId(null); setError(''); setView('form') }
+  const openView = (r) => {
+    setDetail(r)
+    setError('')
+    setView('detail')
+  }
   const openEdit = (r) => {
     setForm({
       type: r.type || 'Goods', name: r.name || '', sku: r.sku || '',
@@ -130,6 +136,7 @@ export default function Catalogue() {
                 <td className="px-4 py-3 text-gray-600">{r.category || '—'}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => openView(r)} className="text-gray-500 hover:text-blue-600" title="View"><Eye size={15} /></button>
                     <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                     <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
                   </div>
@@ -150,6 +157,49 @@ export default function Catalogue() {
         </div>
       )}
       {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Item?</h3><p className="text-sm text-gray-600 mb-4">This cannot be undone.</p><div className="flex justify-end gap-3"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
+    </div>
+  )
+
+  if (view === 'detail' && detail) return (
+    <div className="p-6 max-w-3xl">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <button onClick={() => { setDetail(null); setView('list') }} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
+          <h1 className="text-2xl font-bold text-gray-900">Catalogue Item</h1>
+          <span className={`inline-block px-2 py-0.5 text-xs rounded ${detail.type === 'Services' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{detail.type || '—'}</span>
+        </div>
+        <button onClick={() => openEdit(detail)} className="flex items-center gap-2 border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50">
+          <Edit2 size={14} /> Edit
+        </button>
+      </div>
+
+      <div className="bg-white border border-gray-200 p-6 space-y-5">
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Item Name</p>
+          <p className="mt-1 text-lg font-semibold text-gray-900">{detail.name || '—'}</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+          {[
+            ['SKU', detail.sku],
+            ['Price', detail.price ? `MYR ${parseFloat(detail.price).toFixed(2)}` : '—'],
+            ['Quantity', detail.qty],
+            ['Category', detail.category],
+            ['Model', detail.model],
+            ['Manufacturer', detail.manufacture],
+            ['Item Type', detail.item_type],
+            ['Tax', detail.tax],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <p className="text-xs font-medium text-gray-500">{label}</p>
+              <p className="mt-1 text-gray-900">{value || '—'}</p>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-medium text-gray-500 mb-1">Description</p>
+          <p className="text-sm text-gray-800 whitespace-pre-wrap">{detail.description || '—'}</p>
+        </div>
+      </div>
     </div>
   )
 
