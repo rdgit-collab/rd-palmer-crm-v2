@@ -6,7 +6,7 @@ import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 30
 
 function statusColor(s) {
   if (!s) return 'bg-gray-100 text-gray-600'

@@ -7,7 +7,7 @@ import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 30
 
 function fmtDateTime(value) {
   return value ? new Date(value).toLocaleString('en-GB') : '—'

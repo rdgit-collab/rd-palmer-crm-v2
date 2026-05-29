@@ -6,7 +6,7 @@ import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 30
 
 const emptyForm = {
   type: '', priority: '', status: '',

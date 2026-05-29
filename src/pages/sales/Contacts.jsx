@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const PAGE_SIZE = 50
+const PAGE_SIZE = 30
 
 // ─── Contact Form (Add / Edit) ─────────────────────────────────────────────────
 function ContactForm({ contact, onSave, onCancel }) {

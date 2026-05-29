@@ -5,7 +5,7 @@ import { getLegacyUserId } from '../../lib/legacyUsers'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 30
 
 const emptyForm = {
   ticket_id: '', rma_number: '', vendor: '', date_sent: '',
