@@ -37,7 +37,7 @@ export async function notifyUser(supabase, { userId, title, body, link }) {
                 <h2 style="margin:0 0 8px;font-size:18px;color:#111;">${title}</h2>
                 <p style="margin:0;color:#555;font-size:14px;line-height:1.6;">${body}</p>
                 <div style="margin-top:24px;">
-                  <a href="${import.meta.env.VITE_APP_URL || 'https://rd-palmer-crm-v2.vercel.app'}${link || ''}"
+                  <a href="${import.meta.env.VITE_APP_URL || 'https://crm.rd-palmer.my'}${link || ''}"
                      style="background:#CC0000;color:#fff;padding:10px 20px;text-decoration:none;font-size:14px;border-radius:4px;">
                     View in CRM
                   </a>
