@@ -32,12 +32,28 @@ export default function Catalogue() {
   const [categories, setCategories]       = useState([])
   const [models, setModels]               = useState([])
   const [manufacturers, setManufacturers] = useState([])
+  const [itemTypes, setItemTypes]         = useState([])
+  const [taxes, setTaxes]                 = useState([])
 
   useEffect(() => {
     supabase.from('product_category').select('id, name').order('name').then(({ data }) => setCategories(data || []))
     supabase.from('product_model').select('id, name').order('name').then(({ data }) => setModels(data || []))
     supabase.from('product_manufacturer').select('id, name').order('name').then(({ data }) => setManufacturers(data || []))
+    supabase.from('item_type').select('id, name').order('id').then(({ data }) => setItemTypes(data || []))
+    supabase.from('tax').select('id, name').order('id').then(({ data }) => setTaxes(data || []))
   }, [])
+
+  const lookupLabel = (items, value) => {
+    if (value === null || value === undefined || value === '') return '—'
+    const match = items.find(item => String(item.id) === String(value) || item.name === value)
+    return match?.name || value
+  }
+
+  const hasLookupValue = (items, value) => (
+    value !== null && value !== undefined && value !== ''
+      ? items.some(item => String(item.id) === String(value) || item.name === value)
+      : true
+  )
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -133,7 +149,7 @@ export default function Catalogue() {
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs rounded ${r.type === 'Services' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{r.type}</span></td>
                 <td className="px-4 py-3 text-gray-700">{r.price ? `MYR ${parseFloat(r.price).toFixed(2)}` : '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.qty || '—'}</td>
-                <td className="px-4 py-3 text-gray-600">{r.category || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{lookupLabel(categories, r.category)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => openView(r)} className="text-gray-500 hover:text-blue-600" title="View"><Eye size={15} /></button>
@@ -183,11 +199,11 @@ export default function Catalogue() {
             ['SKU', detail.sku],
             ['Price', detail.price ? `MYR ${parseFloat(detail.price).toFixed(2)}` : '—'],
             ['Quantity', detail.qty],
-            ['Category', detail.category],
-            ['Model', detail.model],
-            ['Manufacturer', detail.manufacture],
-            ['Item Type', detail.item_type],
-            ['Tax', detail.tax],
+            ['Category', lookupLabel(categories, detail.category)],
+            ['Model', lookupLabel(models, detail.model)],
+            ['Manufacturer', lookupLabel(manufacturers, detail.manufacture)],
+            ['Item Type', lookupLabel(itemTypes, detail.item_type)],
+            ['Tax', lookupLabel(taxes, detail.tax)],
           ].map(([label, value]) => (
             <div key={label}>
               <p className="text-xs font-medium text-gray-500">{label}</p>
@@ -240,7 +256,8 @@ export default function Catalogue() {
           <div className="col-span-2">
             <select value={form.category} onChange={e => setForm(f => ({...f, category: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
               <option value="">— Select Category —</option>
-              {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              {!hasLookupValue(categories, form.category) && <option value={form.category}>{form.category}</option>}
+              {categories.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
             </select>
             {categories.length === 0 && <p className="text-xs text-gray-400 mt-1">No categories yet — add them in Settings → Catalogue.</p>}
           </div>
@@ -250,7 +267,8 @@ export default function Catalogue() {
           <div className="col-span-2">
             <select value={form.model} onChange={e => setForm(f => ({...f, model: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
               <option value="">— Select Model —</option>
-              {models.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+              {!hasLookupValue(models, form.model) && <option value={form.model}>{form.model}</option>}
+              {models.map(m => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
             </select>
             {models.length === 0 && <p className="text-xs text-gray-400 mt-1">No models yet — add them in Settings → Catalogue.</p>}
           </div>
@@ -260,14 +278,31 @@ export default function Catalogue() {
           <div className="col-span-2">
             <select value={form.manufacture} onChange={e => setForm(f => ({...f, manufacture: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
               <option value="">— Select Manufacturer —</option>
-              {manufacturers.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+              {!hasLookupValue(manufacturers, form.manufacture) && <option value={form.manufacture}>{form.manufacture}</option>}
+              {manufacturers.map(m => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
             </select>
             {manufacturers.length === 0 && <p className="text-xs text-gray-400 mt-1">No manufacturers yet — add them in Settings → Catalogue.</p>}
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Item Type</label>
-          <div className="col-span-2"><input type="text" value={form.item_type} onChange={e => setForm(f => ({...f, item_type: e.target.value}))} placeholder="Item type" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+          <div className="col-span-2">
+            <select value={form.item_type} onChange={e => setForm(f => ({...f, item_type: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">— Select Item Type —</option>
+              {!hasLookupValue(itemTypes, form.item_type) && <option value={form.item_type}>{form.item_type}</option>}
+              {itemTypes.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Tax</label>
+          <div className="col-span-2">
+            <select value={form.tax} onChange={e => setForm(f => ({...f, tax: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">— Select Tax —</option>
+              {!hasLookupValue(taxes, form.tax) && <option value={form.tax}>{form.tax}</option>}
+              {taxes.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+            </select>
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
           <label className="text-sm font-medium text-gray-700 pt-2">Description</label>
