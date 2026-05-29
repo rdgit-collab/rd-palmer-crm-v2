@@ -9,7 +9,7 @@ const PAGE_SIZE = 15
 
 const emptyForm = {
   type: 'Goods', name: '', sku: '', price: '',
-  qty: '', description: '', category: '',
+  qty: '', remark: '', description: '', category: '',
   model: '', manufacture: '', item_type: '', tax: '',
 }
 
@@ -78,7 +78,7 @@ export default function Catalogue() {
   const openEdit = (r) => {
     setForm({
       type: r.type || 'Goods', name: r.name || '', sku: r.sku || '',
-      price: r.price || '', qty: r.qty || '', description: r.description || '',
+      price: r.price || '', qty: r.qty || '', remark: r.remark || '', description: r.description || '',
       category: r.category || '', model: r.model || '',
       manufacture: r.manufacture || '', item_type: r.item_type || '', tax: r.tax || '',
     })
@@ -90,7 +90,7 @@ export default function Catalogue() {
     const payload = {
       type: form.type, name: form.name, sku: form.sku || null,
       price: form.price || null, qty: form.qty || null,
-      description: form.description || null, category: form.category || null,
+      remark: form.remark || null, description: form.description || null, category: form.category || null,
       model: form.model || null, manufacture: form.manufacture || null,
       item_type: form.item_type || null, tax: form.tax || null,
       user_id: getLegacyUserId(profile),
@@ -191,6 +191,7 @@ export default function Catalogue() {
             ['SKU', detail.sku],
             ['Price', detail.price ? `MYR ${parseFloat(detail.price).toFixed(2)}` : '—'],
             ['Quantity', detail.qty],
+            ['Remark', detail.remark],
             ['Category', lookupLabel(categories, detail.category)],
             ['Model', lookupLabel(models, detail.model)],
             ['Manufacturer', lookupLabel(manufacturers, detail.manufacture)],
@@ -242,6 +243,10 @@ export default function Catalogue() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Quantity</label>
           <div className="col-span-2"><input type="text" value={form.qty} onChange={e => setForm(f => ({...f, qty: e.target.value}))} placeholder="Stock quantity" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <label className="text-sm font-medium text-gray-700 pt-2">Remark</label>
+          <div className="col-span-2"><textarea value={form.remark} onChange={e => setForm(f => ({...f, remark: e.target.value}))} rows={2} placeholder="Remark..." className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" /></div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Category</label>
