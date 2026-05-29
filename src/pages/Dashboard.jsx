@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Building2, Ticket, FileText, Receipt,
@@ -51,13 +51,45 @@ function fmtCurrency(value) {
   return `MYR ${Number(value || 0).toLocaleString('en-MY', { maximumFractionDigits: 0 })}`
 }
 
+function dateOnly(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 function monthStartIso() {
   const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+  return dateOnly(new Date(now.getFullYear(), now.getMonth(), 1))
 }
 
 function isThisMonth(value, start = monthStartIso()) {
   return String(value || '').slice(0, 10) >= start
+}
+
+function monthValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthOptions(count = 12) {
+  const now = new Date()
+  return Array.from({ length: count }, (_, idx) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - idx, 1)
+    return {
+      value: monthValue(date),
+      label: date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+    }
+  })
+}
+
+function monthRange(value) {
+  const [year, month] = String(value || monthValue()).split('-').map(Number)
+  return {
+    start: dateOnly(new Date(year, month - 1, 1)),
+    end: dateOnly(new Date(year, month, 1)),
+  }
+}
+
+function isInMonth(value, range) {
+  const date = String(value || '').slice(0, 10)
+  return date >= range.start && date < range.end
 }
 
 function isClosedLeadStatus(status) {
@@ -83,26 +115,41 @@ function addStaffMetric(map, users, assignee, updates) {
   })
 }
 
-function salesOwnerDisplayName(users, value) {
-  const raw = String(value || '').trim()
-  if (!raw) return 'Unassigned'
-  const userName = formatUserName(users, raw)
-  return userName !== '—' ? userName : raw
-}
-
-function salesOwnerKey(users, value) {
-  return salesOwnerDisplayName(users, value)
+function normalizePersonName(value) {
+  return String(value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
-    .trim() || 'unassigned'
+    .trim()
 }
 
-function addSalesMetric(map, users, owner, updates) {
-  const key = salesOwnerKey(users, owner)
+function buildSalesUserIndex(users) {
+  const byId = new Map()
+  const byName = new Map()
+  users.forEach(user => {
+    const name = `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim()
+    const commaName = `${user.first_name || ''}, ${user.last_name || ''}`.replace(/\s+/g, ' ').trim()
+    const record = { ...user, name }
+    byId.set(String(user.id), record)
+    if (normalizePersonName(name)) byName.set(normalizePersonName(name), record)
+    if (normalizePersonName(commaName)) byName.set(normalizePersonName(commaName), record)
+  })
+  return { byId, byName }
+}
+
+function resolveSalesUser(index, owner) {
+  const raw = String(owner || '').trim()
+  if (!raw) return null
+  return index.byId.get(raw) || index.byName.get(normalizePersonName(raw)) || null
+}
+
+function addSalesMetric(map, salesIndex, owner, updates) {
+  const salesUser = resolveSalesUser(salesIndex, owner)
+  if (!salesUser) return
+  const key = String(salesUser.id)
   if (!map[key]) {
     map[key] = {
       id: key,
-      name: salesOwnerDisplayName(users, owner),
+      name: salesUser.name,
       openLeads: 0,
       wonLeads: 0,
       lostLeads: 0,
@@ -231,10 +278,13 @@ function SalesDashboard({ firstName }) {
   const [recentLeads, setRecentLeads] = useState([])
   const [salesRows, setSalesRows] = useState([])
   const [followUpItems, setFollowUpItems] = useState([])
+  const [performanceMonth, setPerformanceMonth] = useState(monthValue())
+  const performanceMonths = useMemo(() => monthOptions(12), [])
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
     const monthStart = monthStartIso()
+    const selectedRange = monthRange(performanceMonth)
     const staleDate = new Date()
     staleDate.setDate(staleDate.getDate() - 7)
     const staleIso = staleDate.toISOString().split('T')[0]
@@ -248,11 +298,19 @@ function SalesDashboard({ firstName }) {
       supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').order('id', { ascending: false }).limit(5),
       supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').limit(2000),
       supabase.from('activity').select('id, lead_id, assigned_to, type, status, date, description, created_at').limit(2000),
-      supabase.from('quotation').select('id, number, date, sales_person, total, isconvert').limit(2000),
-      supabase.from('invoice').select('id, invoice_number, date, sales_person, total').limit(2000),
+      supabase.from('quotation').select('id, user_id, number, date, sales_person, total, isconvert').limit(2000),
+      supabase.from('invoice').select('id, user_id, invoice_number, date, sales_person, total').limit(2000),
       supabase.from('stage').select('id, name').order('name'),
       fetchAssignableUsers(supabase),
-    ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads, allLeads, allActivities, allQuotations, allInvoices, stageRows, users]) => {
+      supabase.from('users').select('old_user_id, first_name, last_name').eq('role_id', 2).neq('status', 'Inactive').order('first_name'),
+    ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads, allLeads, allActivities, allQuotations, allInvoices, stageRows, users, salesUsersResult]) => {
+      const usersList = users || []
+      const salesUsers = (salesUsersResult.data || []).map(user => ({
+        id: user.old_user_id,
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+      }))
+      const salesIndex = buildSalesUserIndex(salesUsers)
       const leadRows = allLeads.data || []
       const activityRows = allActivities.data || []
       const quotationRows = allQuotations.data || []
@@ -272,30 +330,30 @@ function SalesDashboard({ firstName }) {
 
       leadRows.forEach(lead => {
         const status = getLeadStatusName(lead.status).toLowerCase()
-        addSalesMetric(salesMap, users, lead.assigned_to, {
+        addSalesMetric(salesMap, salesIndex, lead.assigned_to, {
           openLeads: isClosedLeadStatus(status) ? 0 : 1,
           wonLeads: status.includes('won') ? 1 : 0,
           lostLeads: status.includes('lost') ? 1 : 0,
         })
       })
       activityRows
-        .filter(activity => isThisMonth(activity.date || activity.created_at, monthStart))
+        .filter(activity => isInMonth(activity.date || activity.created_at, selectedRange))
         .forEach(activity => {
-          addSalesMetric(salesMap, users, activity.assigned_to, { activities: 1 })
+          addSalesMetric(salesMap, salesIndex, activity.assigned_to, { activities: 1 })
         })
       quotationRows
-        .filter(row => isThisMonth(row.date, monthStart))
+        .filter(row => isInMonth(row.date, selectedRange))
         .forEach(row => {
-          addSalesMetric(salesMap, users, row.sales_person, {
+          addSalesMetric(salesMap, salesIndex, row.sales_person || row.user_id, {
             quotations: 1,
             quotationValue: Number(row.total || 0),
             converted: row.isconvert === 1 ? 1 : 0,
           })
         })
       invoiceRows
-        .filter(row => isThisMonth(row.date, monthStart))
+        .filter(row => isInMonth(row.date, selectedRange))
         .forEach(row => {
-          addSalesMetric(salesMap, users, row.sales_person, { invoiceValue: Number(row.total || 0) })
+          addSalesMetric(salesMap, salesIndex, row.sales_person || row.user_id, { invoiceValue: Number(row.total || 0) })
         })
 
       const lastActivityByLead = {}
@@ -313,7 +371,7 @@ function SalesDashboard({ firstName }) {
             id: lead.id,
             name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed lead',
             company: lead.company_name || '—',
-            owner: formatUserName(users, lead.assigned_to),
+            owner: formatUserName(usersList, lead.assigned_to),
             status: getLeadStatusName(lead.status),
             lastActivity,
           }
@@ -340,7 +398,7 @@ function SalesDashboard({ firstName }) {
         .slice(0, 8))
       setFollowUpItems(followUps)
     })
-  }, [])
+  }, [performanceMonth])
 
   function leadStatusColor(s) {
     if (!s) return 'bg-gray-100 text-gray-600'
@@ -376,9 +434,18 @@ function SalesDashboard({ firstName }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-semibold text-[#111111] text-sm">Salesperson Performance</h3>
-            <p className="text-xs text-gray-400 mt-0.5">This month’s activities, quotation value, invoice value, and open pipeline ownership.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Monthly activity, quotation value, invoice value, and open pipeline ownership for sales users only.</p>
           </div>
-          <Link to="/quotations" className="text-xs text-red-600 hover:underline">Review sales docs</Link>
+          <div className="flex items-center gap-3">
+            <select
+              value={performanceMonth}
+              onChange={e => setPerformanceMonth(e.target.value)}
+              className="border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-red-400"
+            >
+              {performanceMonths.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <Link to="/quotations" className="text-xs text-red-600 hover:underline">Review sales docs</Link>
+          </div>
         </div>
         {salesRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No sales performance data yet.</p> : (
           <div className="overflow-x-auto">

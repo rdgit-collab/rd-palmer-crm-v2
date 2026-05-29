@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -12,7 +14,7 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 50
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
-const INVOICE_LIST_COLUMNS = 'id, invoice_number, name, date, due_date, quote_ref_number, currency, total, created_at'
+const INVOICE_LIST_COLUMNS = 'id, user_id, invoice_number, name, date, due_date, quote_ref_number, currency, total, created_at'
 const DEFAULT_INVOICE_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_INVOICE_TERMS = `Availability:
 Validity: 30 days from invoice date.
@@ -364,6 +366,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
 // ─── Invoice Form (Add / Edit) ─────────────────────────────────────────────────
 function InvoiceForm({ invoice, onSave, onCancel }) {
+  const { profile } = useAuth()
   const isEdit = !!invoice?.id
   const [customers, setCustomers] = useState([])
   const [contacts, setContacts] = useState([])
@@ -471,7 +474,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     setSaving(true); setError('')
 
     const payload = {
-      user_id: 1,
+      user_id: invoice?.user_id || getLegacyUserId(profile),
       companyid: parseInt(form.companyid),
       name: form.name,
       invoice_number: form.invoice_number,
@@ -513,7 +516,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     const validItems = lineItems.filter(i => i.item.trim())
     if (validItems.length > 0) {
       const itemPayload = validItems.map(i => ({
-        user_id: 1,
+        user_id: invResult.data.user_id || getLegacyUserId(profile),
         invoiceid,
         item: i.item,
         description: i.description,
@@ -936,6 +939,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
 
 // ─── Main Invoices Page ────────────────────────────────────────────────────────
 export default function Invoices() {
+  const { profile } = useAuth()
   const [view, setView] = useState('list')
   const [selectedId, setSelectedId] = useState(null)
   const [editInvoice, setEditInvoice] = useState(null)
@@ -950,6 +954,7 @@ export default function Invoices() {
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('invoice').select(INVOICE_LIST_COLUMNS, { count: 'exact' })
+    if (profile?.role_id === 2) q = q.eq('user_id', getLegacyUserId(profile))
     if (search.trim()) {
       const term = search.trim()
       q = q.or(`name.ilike.%${term}%,invoice_number.ilike.%${term}%`)
@@ -975,7 +980,7 @@ export default function Invoices() {
       setTotal(count || 0)
     }
     setLoading(false)
-  }, [search, page])
+  }, [search, page, profile])
 
   useEffect(() => { fetchInvoices() }, [fetchInvoices])
   useEffect(() => { setPage(0) }, [search])

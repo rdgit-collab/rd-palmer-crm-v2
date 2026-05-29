@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -12,7 +14,7 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 50
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
-const QUOTATION_LIST_COLUMNS = 'id, number, name, date, expiry_date, currency, total, isconvert, created_at'
+const QUOTATION_LIST_COLUMNS = 'id, user_id, number, name, date, expiry_date, currency, total, isconvert, created_at'
 const DEFAULT_QUOTATION_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_QUOTATION_TERMS = `Availability:
 Validity: 30 days from quotation date.
@@ -390,6 +392,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
 // ─── Quotation Form (Add / Edit) ───────────────────────────────────────────────
 function QuotationForm({ quotation, onSave, onCancel }) {
+  const { profile } = useAuth()
   const isEdit = !!quotation?.id
 
   const [customers, setCustomers] = useState([])
@@ -507,7 +510,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     setSaving(true); setError('')
 
     const payload = {
-      user_id: 1,
+      user_id: quotation?.user_id || getLegacyUserId(profile),
       name: form.name,
       number: form.number,
       reference: form.reference,
@@ -551,7 +554,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     const validItems = lineItems.filter(i => i.item.trim())
     if (validItems.length > 0) {
       const itemPayload = validItems.map(i => ({
-        user_id: 1,
+        user_id: qResult.data.user_id || getLegacyUserId(profile),
         qid,
         item: i.item,
         description: i.description,
@@ -1066,6 +1069,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
 
 // ─── Main Quotations Page ──────────────────────────────────────────────────────
 export default function Quotations() {
+  const { profile } = useAuth()
   const [view, setView] = useState('list')
   const [selectedId, setSelectedId] = useState(null)
   const [editQuotation, setEditQuotation] = useState(null)
@@ -1080,6 +1084,7 @@ export default function Quotations() {
   const fetchQuotations = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('quotation').select(QUOTATION_LIST_COLUMNS, { count: 'exact' })
+    if (profile?.role_id === 2) q = q.eq('user_id', getLegacyUserId(profile))
     if (search.trim()) {
       const term = search.trim()
       q = q.or(`name.ilike.%${term}%,number.ilike.%${term}%`)
@@ -1105,7 +1110,7 @@ export default function Quotations() {
       setTotal(count || 0)
     }
     setLoading(false)
-  }, [search, page])
+  }, [search, page, profile])
 
   useEffect(() => { fetchQuotations() }, [fetchQuotations])
   useEffect(() => { setPage(0) }, [search])
