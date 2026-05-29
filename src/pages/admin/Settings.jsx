@@ -144,12 +144,25 @@ function LocationsPanel() {
   }
   const loadStates = async (countryId) => {
     if (!countryId) { setStates([]); return }
-    const { data } = await supabase.from('state').select('*').eq('country_id', countryId).order('name')
-    setStates(data || [])
+    const [{ data: linkedStates }, { data: countryCities, error: cityErr }] = await Promise.all([
+      supabase.from('state').select('*').eq('country_id', countryId).order('name'),
+      supabase.from('city').select('state_id').eq('country_id', countryId).not('state_id', 'is', null),
+    ])
+    const cityStateIds = [...new Set((countryCities || []).map(row => row.state_id).filter(Boolean))]
+    const { data: cityStates } = !cityErr && cityStateIds.length > 0
+      ? await supabase.from('state').select('*').in('id', cityStateIds)
+      : { data: [] }
+    const merged = [...(linkedStates || []), ...cityStates].reduce((acc, state) => {
+      if (!acc.some(item => String(item.id) === String(state.id))) acc.push(state)
+      return acc
+    }, [])
+    setStates(merged.sort((a, b) => (a.name || '').localeCompare(b.name || '')))
   }
   const loadCities = async (stateId) => {
     if (!stateId) { setCities([]); return }
-    const { data } = await supabase.from('city').select('*').eq('state_id', stateId).order('name')
+    let q = supabase.from('city').select('*').eq('state_id', stateId).order('name')
+    if (selCountry) q = q.eq('country_id', selCountry)
+    const { data } = await q
     setCities(data || [])
   }
 
@@ -192,7 +205,7 @@ function LocationsPanel() {
   // City CRUD
   const addCity = async () => {
     if (!newCity.trim() || !selState) return
-    await supabase.from('city').insert([{ name: newCity.trim(), state_id: selState }])
+    await supabase.from('city').insert([{ name: newCity.trim(), state_id: selState, country_id: selCountry || null }])
     setNewCity(''); setAddingCity(false); loadCities(selState)
   }
   const updateCity = async (id) => {
