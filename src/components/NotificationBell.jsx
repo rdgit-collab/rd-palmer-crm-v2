@@ -13,6 +13,14 @@ function timeAgo(ts) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
+function notificationLink(item) {
+  const ref = String(item.reference || '')
+  if (/lead/i.test(ref)) return '/leads'
+  if (/task/i.test(ref)) return '/tasks'
+  if (/ticket/i.test(ref)) return '/tickets'
+  return ''
+}
+
 export default function NotificationBell() {
   const { user, profile } = useAuth()
   const notificationUserId = profile?.old_user_id
@@ -28,7 +36,7 @@ export default function NotificationBell() {
     const { data } = await supabase
       .from('notification')
       .select('*')
-      .eq('user_id', notificationUserId)
+      .or(`assigned_to.eq.${notificationUserId},user_id.eq.${notificationUserId}`)
       .order('created_at', { ascending: false })
       .limit(20)
     const list = data || []
@@ -47,7 +55,7 @@ export default function NotificationBell() {
       .channel(`notif-${notificationUserId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notification', filter: `user_id=eq.${notificationUserId}` },
+        { event: 'INSERT', schema: 'public', table: 'notification', filter: `assigned_to=eq.${notificationUserId}` },
         (payload) => {
           setItems(prev => [payload.new, ...prev.slice(0, 19)])
           setUnread(n => n + 1)
@@ -55,7 +63,7 @@ export default function NotificationBell() {
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'notification', filter: `user_id=eq.${notificationUserId}` },
+        { event: 'UPDATE', schema: 'public', table: 'notification', filter: `assigned_to=eq.${notificationUserId}` },
         () => { fetchNotifications() }
       )
       .subscribe()
@@ -80,13 +88,14 @@ export default function NotificationBell() {
       setItems(prev => prev.map(n => n.id === item.id ? { ...n, is_read: true } : n))
       setUnread(n => Math.max(0, n - 1))
     }
-    if (item.link) { navigate(item.link); setOpen(false) }
+    const link = item.link || notificationLink(item)
+    if (link) { navigate(link); setOpen(false) }
   }
 
   // ── Mark all read ─────────────────────────────────────────────────
   const markAllRead = async () => {
     if (!user || !notificationUserId) return
-    await supabase.from('notification').update({ is_read: true }).eq('user_id', notificationUserId).eq('is_read', false)
+    await supabase.from('notification').update({ is_read: true }).eq('assigned_to', notificationUserId).eq('is_read', false)
     setItems(prev => prev.map(n => ({ ...n, is_read: true })))
     setUnread(0)
   }
@@ -124,7 +133,10 @@ export default function NotificationBell() {
           <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
             {items.length === 0 ? (
               <div className="px-4 py-8 text-sm text-gray-400 text-center">No notifications yet.</div>
-            ) : items.map(item => (
+            ) : items.map(item => {
+              const title = item.reference || item.company_name || 'Notification'
+              const body = item.description || item.status || ''
+              return (
               <button
                 key={item.id}
                 onClick={() => markRead(item)}
@@ -134,15 +146,18 @@ export default function NotificationBell() {
                 <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${!item.is_read ? 'bg-[#CC0000]' : 'bg-transparent'}`} />
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm leading-snug ${!item.is_read ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
-                    {item.title}
+                    {title}
                   </p>
-                  {item.body && (
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.body}</p>
+                  {body && (
+                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{body}</p>
+                  )}
+                  {item.company_name && item.reference && (
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{item.company_name}</p>
                   )}
                   <p className="text-xs text-gray-400 mt-1">{timeAgo(item.created_at)}</p>
                 </div>
               </button>
-            ))}
+            )})}
           </div>
         </div>
       )}

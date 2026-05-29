@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
+import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
 const PAGE_SIZE = 50
@@ -72,6 +73,7 @@ export default function Activities() {
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [typeFilter, setTF]     = useState('')
+  const [assignedFilter, setAssignedFilter] = useState('')
   const [tab, setTab]           = useState('open')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
@@ -154,6 +156,7 @@ export default function Activities() {
         return true
       })
       .filter(r => !typeFilter || r.type === typeFilter)
+      .filter(r => !assignedFilter || String(r.assignedTo || '') === String(assignedFilter))
       .filter(r => !text || [r.companyName, r.type, r.status, r.priority, r.description].some(value => String(value || '').toLowerCase().includes(text)))
       .sort((a, b) => {
         const dateA = a.date || ''
@@ -161,7 +164,7 @@ export default function Activities() {
         if (tab === 'overdue') return dateA.localeCompare(dateB) || b.id - a.id
         return dateB.localeCompare(dateA) || b.id - a.id
       })
-  }, [rows, search, typeFilter, tab])
+  }, [rows, search, typeFilter, assignedFilter, tab])
 
   const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE)
@@ -419,7 +422,11 @@ export default function Activities() {
           <option value="">All Types</option>
           {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
         </select>
-        {(search || typeFilter) && <button onClick={() => { setSearch(''); setTF('') }} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"><X size={14} /> Clear</button>}
+        <select value={assignedFilter} onChange={e => { setAssignedFilter(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+          <option value="">All Assigned Users</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+        </select>
+        {(search || typeFilter || assignedFilter) && <button onClick={() => { setSearch(''); setTF(''); setAssignedFilter('') }} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"><X size={14} /> Clear</button>}
       </div>
 
       <div className="bg-white border border-gray-200">
@@ -465,16 +472,7 @@ export default function Activities() {
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-          <span>{filteredRows.length} follow up{filteredRows.length !== 1 ? 's' : ''}</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="p-1 disabled:opacity-40"><ChevronLeft size={16}/></button>
-            <span>Page {page} of {totalPages}</span>
-            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="p-1 disabled:opacity-40"><ChevronRight size={16}/></button>
-          </div>
-        </div>
-      )}
+      <PaginationControls page={page} totalPages={totalPages} total={filteredRows.length} label="follow up" onPageChange={setPage} />
 
       {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Latest Update?</h3><p className="text-sm text-gray-600">Only this activity row will be removed. Older lead history stays unchanged.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
     </div>

@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
+import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 50
@@ -110,6 +112,7 @@ const emptyProduct = { sku: '', item_description: '', serial_number: '', remark:
 
 export default function Tickets() {
   const { user, profile } = useAuth()
+  const location = useLocation()
   const [view, setView]             = useState('list')
   const [tab, setTab]               = useState('open')
   const [tickets, setTickets]       = useState([])
@@ -181,6 +184,16 @@ export default function Tickets() {
   }, [search, priorityFilter, page, tab])
 
   useEffect(() => { fetchTickets() }, [fetchTickets])
+
+  useEffect(() => {
+    const ticketId = location.state?.ticketId
+    if (!ticketId) return
+    const load = async () => {
+      const { data } = await supabase.from('ticket').select('*').eq('id', ticketId).maybeSingle()
+      if (data) openDetail(data)
+    }
+    load()
+  }, [location.state])
 
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
@@ -670,21 +683,7 @@ export default function Tickets() {
           </table>
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-            <span>{total} ticket{total !== 1 ? 's' : ''}</span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1 disabled:opacity-40 hover:text-gray-900">
-                <ChevronLeft size={16} />
-              </button>
-              <span>Page {page} of {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1 disabled:opacity-40 hover:text-gray-900">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
+        <PaginationControls page={page} totalPages={totalPages} total={total} label="ticket" onPageChange={setPage} />
 
         {/* Mark Complete Modal */}
         {completeId && (

@@ -421,13 +421,13 @@ function SalesDashboard({ firstName }) {
           {recentLeads.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No leads yet.</p> : (
             <div className="space-y-2">
               {recentLeads.map(l => (
-                <div key={l.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <Link key={l.id} to="/leads" state={{ leadId: l.id }} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{[l.first_name, l.last_name].filter(Boolean).join(' ') || '—'}</p>
                     <p className="text-xs text-gray-500">{l.company_name || ''}</p>
                   </div>
                   {l.status_name && <span className={`text-xs px-2 py-0.5 rounded ${leadStatusColor(l.status_name)}`}>{l.status_name}</span>}
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -441,7 +441,7 @@ function SalesDashboard({ firstName }) {
           {followUpItems.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No stale open leads.</p> : (
             <div className="space-y-2">
               {followUpItems.map(lead => (
-                <Link key={lead.id} to="/leads" className="block py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <Link key={lead.id} to="/leads" state={{ leadId: lead.id }} className="block py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -555,6 +555,7 @@ function ServiceDashboard({ firstName }) {
             date: ticket.due_date,
             owner: formatUserName(users, ticket.assigned_to),
             to: '/tickets',
+            state: { ticketId: ticket.id },
           })),
         ...tasks
           .filter(task => task.is_completed != 1 && task.enddate && task.enddate < today)
@@ -658,7 +659,7 @@ function ServiceDashboard({ firstName }) {
           {recentTickets.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No open tickets.</p> : (
             <div className="space-y-2">
               {recentTickets.map(t => (
-                <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <Link key={t.id} to="/tickets" state={{ ticketId: t.id }} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <div>
                     <span className="text-sm font-semibold text-red-600 mr-2">TID{t.ticket_id}</span>
                     <span className="text-sm text-gray-800">{t.company_name || '—'}</span>
@@ -667,7 +668,7 @@ function ServiceDashboard({ firstName }) {
                     {t.priority && <span className={`text-xs px-2 py-0.5 rounded ${priorityColor(t.priority)}`}>{t.priority}</span>}
                     {t.due_date && t.due_date < today && <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">Overdue</span>}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -681,7 +682,7 @@ function ServiceDashboard({ firstName }) {
           {attentionItems.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No overdue service work.</p> : (
             <div className="space-y-2">
               {attentionItems.map(item => (
-                <Link key={item.key} to={item.to} className="block py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <Link key={item.key} to={item.to} state={item.state} className="block py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">

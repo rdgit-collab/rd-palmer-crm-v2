@@ -12,7 +12,15 @@ export async function notifyUser(supabase, { userId, title, body, link }) {
   if (!userId) return
 
   // 1. Insert in-app notification
-  await supabase.from('notification').insert([{ user_id: userId, title, body, link }])
+  await supabase.from('notification').insert([{
+    user_id: userId,
+    assigned_to: userId,
+    company_name: body || title || '',
+    description: body || title || '',
+    reference: title || link || '',
+    date: new Date().toISOString().split('T')[0],
+    time: new Date().toTimeString().slice(0, 5),
+  }])
 
   // 2. Try to send email (fails silently if Edge Function / API key not configured)
   try {

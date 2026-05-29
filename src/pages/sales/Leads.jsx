@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
+import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -739,6 +740,7 @@ export default function Leads() {
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterAssigned, setFilterAssigned] = useState('')
   const [stages, setStages] = useState([])
   const [leadSources, setLeadSources] = useState([])
   const [users, setUsers] = useState([])
@@ -776,15 +778,18 @@ export default function Leads() {
     if (filterStatus) {
       q = q.eq('status', filterStatus)
     }
+    if (filterAssigned) {
+      q = q.eq('assigned_to', parseInt(filterAssigned))
+    }
 
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q
     if (!error) { setLeads(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, filterStatus, page])
+  }, [search, filterStatus, filterAssigned, page])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
-  useEffect(() => { setPage(0) }, [search, filterStatus])
+  useEffect(() => { setPage(0) }, [search, filterStatus, filterAssigned])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -854,8 +859,15 @@ export default function Leads() {
           <option value="">All Stages</option>
           {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        {(search || filterStatus) && (
-          <button onClick={() => { setSearch(''); setFilterStatus('') }}
+        <select
+          className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+          value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
+        >
+          <option value="">All Assigned Users</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+        </select>
+        {(search || filterStatus || filterAssigned) && (
+          <button onClick={() => { setSearch(''); setFilterStatus(''); setFilterAssigned('') }}
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
             <X size={14} /> Clear
           </button>
@@ -943,24 +955,15 @@ export default function Leads() {
           </table>
         </div>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
-            <p className="text-xs text-gray-500">
-              Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
-            </p>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                className="p-1.5 text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed">
-                <ChevronLeft size={16} />
-              </button>
-              <span className="text-xs text-gray-600 px-2">Page {page + 1} of {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-                className="p-1.5 text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
+        <PaginationControls
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          label="lead"
+          zeroBased
+          onPageChange={setPage}
+          className="px-4 py-3 border-t border-gray-200 bg-gray-50"
+        />
       </div>
 
       {/* Delete Confirm */}

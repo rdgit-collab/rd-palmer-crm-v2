@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Edit2, UserX, UserCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
@@ -209,16 +210,7 @@ export default function Users() {
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-          <span>{total} user{total !== 1 ? 's' : ''}</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="p-1 disabled:opacity-40"><ChevronLeft size={16}/></button>
-            <span>Page {page} of {totalPages}</span>
-            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="p-1 disabled:opacity-40"><ChevronRight size={16}/></button>
-          </div>
-        </div>
-      )}
+      <PaginationControls page={page} totalPages={totalPages} total={total} label="user" onPageChange={setPage} />
 
       {/* Deactivate / Reactivate confirmation modal */}
       {confirmToggle && (
