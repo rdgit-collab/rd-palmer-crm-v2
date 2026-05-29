@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
-import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, FileText, X } from 'lucide-react'
+import SignedFileLink from '../../components/SignedFileLink'
+import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 const PAGE_SIZE = 50
 
@@ -19,11 +20,6 @@ const emptyForm = {
   ticket_id: '', certificate_number: '', serial_number: '',
   snumber: '', conduct_by: '', status: '', remark: '',
   termid: '', file: '',
-}
-
-function storageUrl(path) {
-  if (!path) return null
-  return supabase.storage.from('crm-uploads').getPublicUrl(path).data.publicUrl
 }
 
 function checklistResult(value) {
@@ -267,7 +263,7 @@ export default function Calibration() {
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || '-'}</span></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
-                    {r.file && <a href={storageUrl(r.file)} target="_blank" rel="noreferrer" className="text-gray-500 hover:text-red-600" title="Open certificate"><FileText size={15} /></a>}
+                    {r.file && <SignedFileLink path={r.file} label="" className="text-gray-500 hover:text-red-600" />}
                     <button onClick={() => openDetail(r)} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                     <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                     <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
@@ -400,7 +396,7 @@ export default function Calibration() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Certificate / Document</label>
             <input type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onChange={e => setUploadFile(e.target.files?.[0] || null)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-            {form.file && !uploadFile && <a href={storageUrl(form.file)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-red-600 font-semibold hover:underline"><FileText size={13} /> Existing document</a>}
+            {form.file && !uploadFile && <SignedFileLink path={form.file} label="Existing document" className="mt-2 text-xs text-red-600 font-semibold hover:underline" />}
           </div>
         </div>
 
@@ -430,7 +426,7 @@ export default function Calibration() {
           <div><span className="font-medium text-gray-500">Std. Number: </span>{detail.snumber || '-'}</div>
           <div><span className="font-medium text-gray-500">Conducted By: </span>{getUserName(detail.conduct_by)}</div>
           <div><span className="font-medium text-gray-500">Status: </span><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status || '-'}</span></div>
-          <div><span className="font-medium text-gray-500">Certificate / Document: </span>{detail.file ? <a href={storageUrl(detail.file)} target="_blank" rel="noreferrer" className="text-red-600 font-semibold hover:underline">Open File</a> : '-'}</div>
+          <div><span className="font-medium text-gray-500">Certificate / Document: </span>{detail.file ? <SignedFileLink path={detail.file} label="Open file" className="text-red-600 font-semibold hover:underline" /> : '-'}</div>
         </div>
 
         <div className="border-t border-gray-100 pt-4">

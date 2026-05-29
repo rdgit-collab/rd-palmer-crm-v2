@@ -14,7 +14,8 @@ function timeAgo(ts) {
 }
 
 export default function NotificationBell() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const notificationUserId = profile?.old_user_id
   const navigate  = useNavigate()
   const [open, setOpen]         = useState(false)
   const [items, setItems]       = useState([])
@@ -23,11 +24,11 @@ export default function NotificationBell() {
 
   // ── Initial fetch ─────────────────────────────────────────────────
   const fetchNotifications = async () => {
-    if (!user) return
+    if (!user || !notificationUserId) return
     const { data } = await supabase
       .from('notification')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', notificationUserId)
       .order('created_at', { ascending: false })
       .limit(20)
     const list = data || []
@@ -37,16 +38,16 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications()
-  }, [user])
+  }, [user, notificationUserId])
 
   // ── Realtime subscription ─────────────────────────────────────────
   useEffect(() => {
-    if (!user) return
+    if (!user || !notificationUserId) return
     const channel = supabase
-      .channel(`notif-${user.id}`)
+      .channel(`notif-${notificationUserId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notification', filter: `user_id=eq.${user.id}` },
+        { event: 'INSERT', schema: 'public', table: 'notification', filter: `user_id=eq.${notificationUserId}` },
         (payload) => {
           setItems(prev => [payload.new, ...prev.slice(0, 19)])
           setUnread(n => n + 1)
@@ -54,13 +55,13 @@ export default function NotificationBell() {
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'notification', filter: `user_id=eq.${user.id}` },
+        { event: 'UPDATE', schema: 'public', table: 'notification', filter: `user_id=eq.${notificationUserId}` },
         () => { fetchNotifications() }
       )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [user])
+  }, [user, notificationUserId])
 
   // ── Close on outside click ────────────────────────────────────────
   useEffect(() => {
@@ -84,8 +85,8 @@ export default function NotificationBell() {
 
   // ── Mark all read ─────────────────────────────────────────────────
   const markAllRead = async () => {
-    if (!user) return
-    await supabase.from('notification').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false)
+    if (!user || !notificationUserId) return
+    await supabase.from('notification').update({ is_read: true }).eq('user_id', notificationUserId).eq('is_read', false)
     setItems(prev => prev.map(n => ({ ...n, is_read: true })))
     setUnread(0)
   }

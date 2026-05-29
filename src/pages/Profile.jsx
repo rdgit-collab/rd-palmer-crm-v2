@@ -83,8 +83,6 @@ export default function Profile() {
     if (error) {
       setPwError(error.message)
     } else {
-      // Also update plaintext field for legacy consistency
-      await supabase.from('users').update({ plaintext: pwForm.newPw }).eq('id', user.id)
       setPwMsg('Password changed successfully.')
       setPwForm({ current: '', newPw: '', confirm: '' })
     }

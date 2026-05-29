@@ -97,9 +97,6 @@ export default function Users() {
       }
       const { error: err } = await supabase.from('users').update(payload).eq('id', editId)
       if (err) { setError(err.message); setSaving(false); return }
-      if (form.password) {
-        await supabase.from('users').update({ plaintext: form.password }).eq('id', editId)
-      }
     } else {
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email: form.email,
@@ -112,7 +109,7 @@ export default function Users() {
           first_name: form.first_name, last_name: form.last_name,
           role_id: parseInt(form.role_id), position: form.position || null,
           department: form.department || null, phone: form.phone || null,
-          status: 'Active', plaintext: form.password,
+          status: 'Active',
         }).eq('id', authData.user.id)
       }
     }
@@ -294,14 +291,17 @@ export default function Users() {
             {editId && <p className="text-xs text-gray-400 mt-1">Email cannot be changed after creation.</p>}
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4 items-center">
-          <label className="text-sm font-medium text-gray-700">{editId ? 'New Password' : 'Password *'}</label>
-          <div className="col-span-2">
-            <input type="password" value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))}
-              required={!editId} placeholder={editId ? 'Leave blank to keep current' : 'Min 8 characters'}
-              className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+        {!editId && (
+          <div className="grid grid-cols-3 gap-4 items-center">
+            <label className="text-sm font-medium text-gray-700">Password <span className="text-red-500">*</span></label>
+            <div className="col-span-2">
+              <input type="password" value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))}
+                required placeholder="Min 8 characters"
+                className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+              <p className="text-xs text-gray-400 mt-1">Stored in Supabase Auth only. Users can change it from their profile.</p>
+            </div>
           </div>
-        </div>
+        )}
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Role <span className="text-red-500">*</span></label>
           <div className="col-span-2">

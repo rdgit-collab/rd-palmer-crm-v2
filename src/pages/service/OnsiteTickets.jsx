@@ -2,16 +2,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
+import SignedFileLink from '../../components/SignedFileLink'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 50
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
-
-function storageUrl(path) {
-  if (!path) return ''
-  return supabase.storage.from('crm-uploads').getPublicUrl(path).data.publicUrl
-}
 
 function statusColor(s) {
   if (!s) return 'bg-gray-100 text-gray-600'
@@ -343,9 +339,7 @@ export default function OnsiteTickets() {
               className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
             />
             {form.file && !uploadFile && (
-              <a href={storageUrl(form.file)} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-red-600 hover:underline">
-                <FileText size={13} /> Current document
-              </a>
+              <SignedFileLink path={form.file} label="Current document" className="mt-2 text-xs text-red-600 hover:underline" />
             )}
             {uploadFile && <p className="mt-2 text-xs text-gray-500">{uploadFile.name}</p>}
           </div>
@@ -414,9 +408,7 @@ export default function OnsiteTickets() {
           <div>
             <span className="font-medium text-gray-500">Document: </span>
             {detail.file ? (
-              <a href={storageUrl(detail.file)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-red-600 hover:underline">
-                <FileText size={14} /> Open document
-              </a>
+              <SignedFileLink path={detail.file} className="text-red-600 hover:underline" />
             ) : '—'}
           </div>
         </div>

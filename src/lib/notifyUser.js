@@ -3,7 +3,7 @@
  *
  * @param {object} supabase  - Supabase client
  * @param {object} opts
- * @param {string} opts.userId   - UUID of the recipient (from users table)
+ * @param {number|string} opts.userId   - Legacy integer user id of the recipient
  * @param {string} opts.title    - Short notification title
  * @param {string} opts.body     - Longer description
  * @param {string} opts.link     - Route to navigate to (e.g. '/tickets')
@@ -19,7 +19,7 @@ export async function notifyUser(supabase, { userId, title, body, link }) {
     const { data: userRow } = await supabase
       .from('users')
       .select('email, first_name')
-      .eq('id', userId)
+      .eq('old_user_id', userId)
       .single()
 
     if (userRow?.email) {
