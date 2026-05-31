@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { isSalesManagerRole, isSalesRole } from '../../lib/roles'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
@@ -68,8 +69,12 @@ function typeColor(t = '') {
 export default function Activities() {
   const { profile } = useAuth()
   const navigate = useNavigate()
-  const isSalesRestricted = profile?.role_id === 2
+  const isSalesRestricted = isSalesRole(profile?.role_id)
+  const isSalesManager = isSalesManagerRole(profile?.role_id)
   const currentLegacyUserId = getLegacyUserId(profile)
+  const visibleTabs = useMemo(() => (
+    isSalesManager ? [...TABS, { id: 'all', label: 'All Activity' }] : TABS
+  ), [isSalesManager])
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
   const [rawActivities, setRawActivities] = useState([])
@@ -115,7 +120,7 @@ export default function Activities() {
         'sales_lead',
         'id, company_name, first_name, last_name, assigned_to, status',
         'company_name',
-        isSalesRestricted ? { eq: { assigned_to: currentLegacyUserId } } : {}
+        isSalesRestricted && !isSalesManager ? { eq: { assigned_to: currentLegacyUserId } } : {}
       ),
       fetchAllRows('customer', 'id, company_name', 'company_name'),
       fetchAssignableUsers(supabase),
@@ -126,7 +131,7 @@ export default function Activities() {
     ])
 
     let activityQuery = supabase.from('activity').select('*').order('id', { ascending: false }).limit(5000)
-    if (isSalesRestricted) {
+    if (isSalesRestricted && !isSalesManager) {
       const ownedLeadIds = (leadR || []).map(lead => lead.id).filter(Boolean)
       const ownershipFilters = [
         `assigned_to.eq.${currentLegacyUserId}`,
@@ -146,7 +151,7 @@ export default function Activities() {
     if (!prioR.error) setPriorities(prioR.data || [])
     if (!statusR.error) setActivityStatuses(statusR.data || [])
     setLoading(false)
-  }, [currentLegacyUserId, isSalesRestricted])
+  }, [currentLegacyUserId, isSalesRestricted, isSalesManager])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -163,9 +168,16 @@ export default function Activities() {
     const today = todayString()
     const tomorrow = todayString(1)
     const text = search.trim().toLowerCase()
+    const isOwnActivity = (row) => (
+      String(row.assignedTo || '') === String(currentLegacyUserId) ||
+      String(row.user_id || '') === String(currentLegacyUserId) ||
+      String(row.lead?.assigned_to || '') === String(currentLegacyUserId)
+    )
     return rows
       .filter(r => {
+        if (isSalesRestricted && (!isSalesManager || tab !== 'all') && !isOwnActivity(r)) return false
         const completed = isCompleted(r.status)
+        if (tab === 'all') return true
         if (tab === 'open') return !completed
         if (tab === 'completed') return completed
         if (completed) return false
@@ -184,7 +196,7 @@ export default function Activities() {
         if (tab === 'overdue') return dateA.localeCompare(dateB) || b.id - a.id
         return dateB.localeCompare(dateA) || b.id - a.id
       })
-  }, [rows, search, typeFilter, assignedFilter, tab])
+  }, [rows, search, typeFilter, assignedFilter, tab, currentLegacyUserId, isSalesRestricted, isSalesManager])
 
   const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE)
@@ -404,11 +416,18 @@ export default function Activities() {
       </div>
 
       <div className="flex flex-wrap gap-1 mb-5 border-b border-gray-200">
-        {TABS.map(t => {
+        {visibleTabs.map(t => {
           const today = todayString()
           const tomorrow = todayString(1)
+          const isOwnActivity = (row) => (
+            String(row.assignedTo || '') === String(currentLegacyUserId) ||
+            String(row.user_id || '') === String(currentLegacyUserId) ||
+            String(row.lead?.assigned_to || '') === String(currentLegacyUserId)
+          )
           const count = rows.filter(r => {
+            if (isSalesRestricted && (!isSalesManager || t.id !== 'all') && !isOwnActivity(r)) return false
             const completed = isCompleted(r.status)
+            if (t.id === 'all') return true
             if (t.id === 'open') return !completed
             if (t.id === 'completed') return completed
             if (completed) return false

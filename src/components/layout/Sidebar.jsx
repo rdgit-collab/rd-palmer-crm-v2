@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { isAdminRole, isSalesRole, roleLabel } from '../../lib/roles'
 import {
   LayoutDashboard, Building2, UserCircle, TrendingUp, FileText, Receipt,
   Activity, Ticket, Wrench, MapPin, RotateCcw, Gauge, Hash, Package,
@@ -55,12 +56,12 @@ export default function Sidebar({ open, onClose }) {
   const { profile, signOut, hasPermission } = useAuth()
   const location = useLocation()
 
-  const roleLabel = profile?.role_id === 1 ? 'Admin' : profile?.role_id === 2 ? 'Sales' : 'Service'
+  const currentRoleLabel = roleLabel(profile?.role_id)
 
   // Pick the base item list for this role
-  const baseItems = profile?.role_id === 1
+  const baseItems = isAdminRole(profile?.role_id)
     ? adminItems
-    : profile?.role_id === 2
+    : isSalesRole(profile?.role_id)
     ? salesItems
     : serviceItems
 
@@ -132,7 +133,7 @@ export default function Sidebar({ open, onClose }) {
           <div className="px-2 pb-1">
             <div className="text-xs text-gray-500">Signed in as</div>
             <div className="text-sm text-white font-medium truncate">{profile?.first_name} {profile?.last_name}</div>
-            <div className="text-xs text-[#CC0000]">{roleLabel}</div>
+            <div className="text-xs text-[#CC0000]">{currentRoleLabel}</div>
           </div>
           <Link to="/profile" onClick={onClose}
             className={`flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${

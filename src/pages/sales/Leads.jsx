@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
 import PaginationControls from '../../components/PaginationControls'
+import { isSalesRole } from '../../lib/roles'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -105,7 +106,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const load = useCallback(async () => {
     setLoading(true)
     let leadQuery = supabase.from('sales_lead').select('*').eq('id', leadId)
-    if (profile?.role_id === 2) {
+    if (isSalesRole(profile?.role_id)) {
       leadQuery = leadQuery.eq('assigned_to', getLegacyUserId(profile))
     }
     const [{ data: l }, { data: act }, legacyUsers, { data: sources }, { data: stageRows }, { data: typeRows }, { data: priorityRows }, { data: statusRows }] = await Promise.all([
@@ -360,7 +361,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
 function LeadForm({ lead, onSave, onCancel }) {
   const { profile } = useAuth()
   const isEdit = !!lead
-  const isSalesRestricted = profile?.role_id === 2
+  const isSalesRestricted = isSalesRole(profile?.role_id)
   const currentLegacyUserId = getLegacyUserId(profile)
   const [leadSources, setLeadSources] = useState([])
   const [stages, setStages] = useState([])
@@ -936,7 +937,7 @@ export default function Leads() {
     if (!profile) return
     setLoading(true)
     let q = supabase.from('sales_lead').select('*', { count: 'exact' })
-    const isSalesRestricted = profile?.role_id === 2
+    const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
 
     if (isSalesRestricted) {
@@ -1030,7 +1031,7 @@ export default function Leads() {
           <option value="">All Stages</option>
           {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        {profile?.role_id !== 2 && (
+        {!isSalesRole(profile?.role_id) && (
           <select
             className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
             value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}

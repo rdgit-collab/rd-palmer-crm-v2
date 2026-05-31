@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchAssignableUsers, getUserName as formatUserName } from '../lib/legacyUsers'
+import { isSalesRole, isServiceRole, ROLE_SALES, ROLE_SALES_MANAGER } from '../lib/roles'
 
 // ── Shared stat card ──────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color, bg, to }) {
@@ -332,7 +333,7 @@ function SalesDashboard({ firstName }) {
     const staleDate = new Date()
     staleDate.setDate(staleDate.getDate() - 7)
     const staleIso = staleDate.toISOString().split('T')[0]
-    const isSalesRestricted = profile?.role_id === 2
+    const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
 
     let customerCountQuery = supabase.from('customer').select('*', { count: 'exact', head: true })
@@ -367,7 +368,7 @@ function SalesDashboard({ firstName }) {
       supabase.from('invoice').select('id, user_id, invoice_number, date, sales_person, total').limit(2000),
       supabase.from('stage').select('id, name').order('name'),
       fetchAssignableUsers(supabase),
-      supabase.from('users').select('old_user_id, first_name, last_name').eq('role_id', 2).neq('status', 'Inactive').order('first_name'),
+      supabase.from('users').select('old_user_id, first_name, last_name').in('role_id', [ROLE_SALES, ROLE_SALES_MANAGER]).neq('status', 'Inactive').order('first_name'),
     ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads, allLeads, allActivities, allQuotations, allInvoices, stageRows, users, salesUsersResult]) => {
       const usersList = users || []
       const salesUsers = (salesUsersResult.data || []).map(user => ({
@@ -900,7 +901,7 @@ export default function Dashboard() {
   const { profile } = useAuth()
   const firstName = profile?.first_name || 'there'
 
-  if (profile?.role_id === 2) return <SalesDashboard firstName={firstName} />
-  if (profile?.role_id === 3) return <ServiceDashboard firstName={firstName} />
+  if (isSalesRole(profile?.role_id)) return <SalesDashboard firstName={firstName} />
+  if (isServiceRole(profile?.role_id)) return <ServiceDashboard firstName={firstName} />
   return <AdminDashboard firstName={firstName} />
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { roleLabel } from '../lib/roles'
 import { User, Lock } from 'lucide-react'
 
 export default function Profile() {
@@ -24,7 +25,7 @@ export default function Profile() {
   const [pwMsg,    setPwMsg]    = useState('')
   const [pwError,  setPwError]  = useState('')
 
-  const roleLabel = profile?.role_id === 1 ? 'Admin' : profile?.role_id === 2 ? 'Sales' : 'Service'
+  const currentRoleLabel = roleLabel(profile?.role_id)
 
   // ── Save profile ──────────────────────────────────────────────────
   const handleProfileSave = async (e) => {
@@ -93,7 +94,7 @@ export default function Profile() {
     <div className="p-6 max-w-2xl space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
-        <p className="text-sm text-gray-500 mt-1">{user?.email} · <span className="text-red-600 font-medium">{roleLabel}</span></p>
+        <p className="text-sm text-gray-500 mt-1">{user?.email} · <span className="text-red-600 font-medium">{currentRoleLabel}</span></p>
       </div>
 
       {/* Profile Info */}

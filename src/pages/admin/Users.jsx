@@ -10,6 +10,7 @@ const ROLES = [
   { id: 1, label: 'Admin' },
   { id: 2, label: 'Sales' },
   { id: 3, label: 'Service' },
+  { id: 4, label: 'Sales Manager' },
 ]
 
 function roleLabel(id) {
@@ -20,6 +21,7 @@ function roleColor(id) {
   if (id == 1) return 'bg-red-100 text-red-700'
   if (id == 2) return 'bg-blue-100 text-blue-700'
   if (id == 3) return 'bg-green-100 text-green-700'
+  if (id == 4) return 'bg-purple-100 text-purple-700'
   return 'bg-gray-100 text-gray-600'
 }
 

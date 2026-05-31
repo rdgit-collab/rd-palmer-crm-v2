@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { effectivePermissionRoleId, isAdminRole } from '../lib/roles'
 
 const AuthContext = createContext({})
 
@@ -28,13 +29,13 @@ export function AuthProvider({ children }) {
     setProfile(prof)
 
     // Admin (role_id=1) has access to everything — no DB lookup needed
-    if (prof?.role_id === 1) {
+    if (isAdminRole(prof?.role_id)) {
       setPermissions('admin')
     } else if (prof?.role_id) {
       const { data: perms } = await supabase
         .from('module_permission')
         .select('module, can_access')
-        .eq('role_id', prof.role_id)
+        .eq('role_id', effectivePermissionRoleId(prof.role_id))
       // Build a map: { 'customers': true, 'invoices': false, ... }
       const map = {}
       ;(perms || []).forEach(p => { map[p.module] = p.can_access })

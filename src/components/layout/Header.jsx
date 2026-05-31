@@ -1,10 +1,11 @@
 import { Menu } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import NotificationBell from '../NotificationBell'
+import { roleLabel } from '../../lib/roles'
 
 export default function Header({ onMenuClick }) {
   const { profile } = useAuth()
-  const roleLabel = profile?.role_id === 1 ? 'Admin' : profile?.role_id === 2 ? 'Sales' : 'Service'
+  const currentRoleLabel = roleLabel(profile?.role_id)
   const initials  = `${profile?.first_name?.[0] ?? ''}${profile?.last_name?.[0] ?? ''}`
 
   return (
@@ -20,7 +21,7 @@ export default function Header({ onMenuClick }) {
         {/* User info */}
         <div className="text-right hidden sm:block">
           <div className="text-sm font-medium text-[#111111]">{profile?.first_name} {profile?.last_name}</div>
-          <div className="text-xs text-gray-400">{roleLabel}</div>
+          <div className="text-xs text-gray-400">{currentRoleLabel}</div>
         </div>
         <div className="w-8 h-8 bg-[#CC0000] rounded-full flex items-center justify-center text-white text-xs font-bold">
           {initials}

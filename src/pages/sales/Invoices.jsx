@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { isSalesRole } from '../../lib/roles'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -1163,7 +1164,7 @@ export default function Invoices() {
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('invoice').select(INVOICE_LIST_COLUMNS, { count: 'exact' })
-    if (profile?.role_id === 2) q = q.eq('user_id', getLegacyUserId(profile))
+    if (isSalesRole(profile?.role_id)) q = q.eq('user_id', getLegacyUserId(profile))
     if (search.trim()) {
       const term = search.trim()
       q = q.or(`name.ilike.%${term}%,invoice_number.ilike.%${term}%`)
