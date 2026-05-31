@@ -270,12 +270,6 @@ export default function Activities() {
             </div>
           </div>
         )}
-        {selectedLead && (
-          <div className="grid grid-cols-3 gap-4">
-            <span className="text-sm font-medium text-gray-700">Company</span>
-            <div className="col-span-2 text-sm text-gray-800 bg-gray-50 border border-gray-100 px-3 py-2">{selectedLead.company_name || '-'}</div>
-          </div>
-        )}
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Activity Type <span className="text-red-500">*</span></label>
           <div className="col-span-2">

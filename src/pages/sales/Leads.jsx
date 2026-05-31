@@ -11,11 +11,40 @@ import {
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const PAGE_SIZE = 30
+const LOOKUP_PAGE_SIZE = 1000
 
 const lookupName = (items, id, fallbackPrefix) => {
   if (!id) return '—'
   const item = items.find((row) => String(row.id) === String(id))
   return item?.name || `${fallbackPrefix} #${id}`
+}
+
+async function fetchAllRows(tableName, columns = '*', orderField = 'id') {
+  let from = 0
+  let rows = []
+  while (true) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select(columns)
+      .order(orderField)
+      .range(from, from + LOOKUP_PAGE_SIZE - 1)
+    if (error) return rows
+    rows = rows.concat(data || [])
+    if (!data || data.length < LOOKUP_PAGE_SIZE) return rows
+    from += LOOKUP_PAGE_SIZE
+  }
+}
+
+function optionValue(items, value, field = 'name') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const match = items.find(item => String(item.id) === raw || String(item[field] || '').trim() === raw)
+  return match?.[field] || raw
+}
+
+function hasOption(items, value, field = 'name') {
+  const raw = String(value || '').trim()
+  return !raw || items.some(item => String(item[field] || '') === raw)
 }
 
 // Stage badge colours by name
@@ -332,6 +361,11 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [users, setUsers] = useState([])
   const [customers, setCustomers] = useState([])
   const [contacts, setContacts] = useState([])
+  const [industries, setIndustries] = useState([])
+  const [accountTypes, setAccountTypes] = useState([])
+  const [countries, setCountries] = useState([])
+  const [states, setStates] = useState([])
+  const [cities, setCities] = useState([])
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [selectedContactId, setSelectedContactId] = useState('')
   const [contactMode, setContactMode] = useState('existing')
@@ -370,16 +404,36 @@ function LeadForm({ lead, onSave, onCancel }) {
 
   useEffect(() => {
     const run = async () => {
-      const [{ data: sources }, { data: stageRows }, assignableUsers, { data: customerRows }] = await Promise.all([
+      const [
+        { data: sources },
+        { data: stageRows },
+        assignableUsers,
+        customerRows,
+        { data: industryRows },
+        { data: accountRows },
+        { data: countryRows },
+        { data: stateRows },
+        { data: cityRows },
+      ] = await Promise.all([
         supabase.from('lead').select('id, name').order('name'),
         supabase.from('stage').select('id, name').order('name'),
         fetchAssignableUsers(supabase),
-        supabase.from('customer').select('*').order('company_name').limit(5000),
+        fetchAllRows('customer', '*', 'company_name'),
+        supabase.from('industries').select('id, name').order('name'),
+        supabase.from('account_type').select('id, type').order('type'),
+        supabase.from('country').select('id, name').order('name'),
+        supabase.from('state').select('id, name, country_id').order('name'),
+        supabase.from('city').select('id, name, state_id, country_id').order('name'),
       ])
       setLeadSources(sources || [])
       setStages(stageRows || [])
       setUsers(assignableUsers || [])
       setCustomers(customerRows || [])
+      setIndustries(industryRows || [])
+      setAccountTypes(accountRows || [])
+      setCountries(countryRows || [])
+      setStates(stateRows || [])
+      setCities(cityRows || [])
     }
     run()
   }, [])
@@ -401,13 +455,13 @@ function LeadForm({ lead, onSave, onCancel }) {
     setForm(f => ({
       ...f,
       company_name: customer.company_name || '',
-      industry: customer.industry || '',
-      account_type: customer.account_type || '',
+      industry: optionValue(industries, customer.industry),
+      account_type: optionValue(accountTypes, customer.account_type, 'type'),
       address1: customer.address1 || '',
       address2: customer.address2 || '',
-      country: customer.country || '',
-      state: customer.state || '',
-      city: customer.city || '',
+      country: optionValue(countries, customer.country),
+      state: optionValue(states, customer.state),
+      city: optionValue(cities, customer.city),
       zipcode: customer.zipcode || '',
       office_number: customer.office_number || '',
       mobile_number: customer.mobile_number || '',
@@ -510,6 +564,14 @@ function LeadForm({ lead, onSave, onCancel }) {
   const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500'
   const labelCls = 'block text-sm font-medium text-gray-700 mb-1'
   const sectionCls = 'text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 mt-6 pb-1 border-b border-gray-100'
+  const selectedCountry = countries.find(country => country.name === form.country || String(country.id) === String(form.country))
+  const selectedState = states.find(state => state.name === form.state || String(state.id) === String(form.state))
+  const stateOptions = selectedCountry ? states.filter(state => String(state.country_id || '') === String(selectedCountry.id)) : states
+  const cityOptions = selectedState
+    ? cities.filter(city => String(city.state_id || '') === String(selectedState.id))
+    : selectedCountry
+      ? cities.filter(city => String(city.country_id || '') === String(selectedCountry.id))
+      : cities
 
   return (
     <>
@@ -568,20 +630,29 @@ function LeadForm({ lead, onSave, onCancel }) {
           </div>
         )}
 
-        <div className="mb-4">
-          <label className={labelCls}>Company Name <span className="text-red-500">*</span></label>
-          <input className={inputCls} value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Company Name" required readOnly={form.type === '1' && !!selectedCustomerId}
-            disabled={form.type === '1' && !!selectedCustomerId} />
-        </div>
+        {form.type !== '1' && (
+          <div className="mb-4">
+            <label className={labelCls}>Company Name <span className="text-red-500">*</span></label>
+            <input className={inputCls} value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Company Name" required />
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className={labelCls}>Industry</label>
-            <input className={inputCls} value={form.industry} onChange={e => set('industry', e.target.value)} placeholder="Industry" />
+            <select className={inputCls} value={form.industry} onChange={e => set('industry', e.target.value)}>
+              <option value="">Please Select</option>
+              {!hasOption(industries, form.industry) && <option value={form.industry}>{form.industry}</option>}
+              {industries.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
           </div>
           <div>
             <label className={labelCls}>Account Type</label>
-            <input className={inputCls} value={form.account_type} onChange={e => set('account_type', e.target.value)} placeholder="Account Type" />
+            <select className={inputCls} value={form.account_type} onChange={e => set('account_type', e.target.value)}>
+              <option value="">Please Select</option>
+              {!hasOption(accountTypes, form.account_type, 'type') && <option value={form.account_type}>{form.account_type}</option>}
+              {accountTypes.map(item => <option key={item.id} value={item.type}>{item.type}</option>)}
+            </select>
           </div>
         </div>
 
@@ -596,18 +667,30 @@ function LeadForm({ lead, onSave, onCancel }) {
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className={labelCls}>Country</label>
-            <input className={inputCls} value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" />
+            <select className={inputCls} value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value, state: '', city: '' }))}>
+              <option value="">Please Select</option>
+              {!hasOption(countries, form.country) && <option value={form.country}>{form.country}</option>}
+              {countries.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
           </div>
           <div>
             <label className={labelCls}>State</label>
-            <input className={inputCls} value={form.state} onChange={e => set('state', e.target.value)} placeholder="State" />
+            <select className={inputCls} value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value, city: '' }))}>
+              <option value="">Please Select</option>
+              {!hasOption(stateOptions, form.state) && <option value={form.state}>{form.state}</option>}
+              {stateOptions.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className={labelCls}>City</label>
-            <input className={inputCls} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" />
+            <select className={inputCls} value={form.city} onChange={e => set('city', e.target.value)}>
+              <option value="">Please Select</option>
+              {!hasOption(cityOptions, form.city) && <option value={form.city}>{form.city}</option>}
+              {cityOptions.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
           </div>
           <div>
             <label className={labelCls}>Postcode</label>
