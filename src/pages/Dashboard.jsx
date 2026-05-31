@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { fetchAssignableUsers, getUserName as formatUserName } from '../lib/legacyUsers'
+import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../lib/legacyUsers'
 import { isSalesRole, isServiceRole, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_SERVICE } from '../lib/roles'
 
 // ── Shared stat card ──────────────────────────────────────────────
