@@ -323,6 +323,14 @@ async function getNextInvoiceNumber() {
 
 // ─── Line Item Row ─────────────────────────────────────────────────────────────
 function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
+  const selectedItem = catalogueItems.find(c => String(c.id) === String(item.itemid || ''))
+  const [itemSearch, setItemSearch] = useState(selectedItem ? catalogueItemLabel(selectedItem) : '')
+  const [showItemOptions, setShowItemOptions] = useState(false)
+
+  useEffect(() => {
+    setItemSearch(selectedItem ? catalogueItemLabel(selectedItem) : '')
+  }, [selectedItem?.id, selectedItem?.sku, selectedItem?.name])
+
   const applyCatalogueItem = (selected) => {
     const rate = parseFloat(selected.price || 0)
     const qty = item.qty || 1
@@ -334,21 +342,16 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
       rate,
       amount: qty * rate,
     })
+    setItemSearch(catalogueItemLabel(selected))
+    setShowItemOptions(false)
   }
 
   const handleItemSearch = (value) => {
-    const searchValue = value.trim().toLowerCase()
-    const selected = catalogueItems.find(c => {
-      const label = catalogueItemLabel(c).toLowerCase()
-      return label === searchValue ||
-        String(c.sku || '').trim().toLowerCase() === searchValue ||
-        String(c.name || '').trim().toLowerCase() === searchValue
-    })
+    setItemSearch(value)
+    setShowItemOptions(true)
 
-    if (selected) {
-      applyCatalogueItem(selected)
-    } else {
-      onChange(idx, { ...item, itemid: '', item: value })
+    if (!value.trim() && item.itemid) {
+      onChange(idx, { ...item, itemid: '', item: '', description: '', rate: 0, amount: 0 })
     }
   }
 
@@ -374,26 +377,52 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
   const tdCls = 'px-2 py-1.5'
   const inputCls = 'w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-400'
-  const selectedItem = catalogueItems.find(c => String(c.id) === String(item.itemid || ''))
-  const itemInputValue = selectedItem ? catalogueItemLabel(selectedItem) : (item.item || '')
-  const itemOptionsId = `quotation-item-options-${idx}`
+  const searchNeedle = itemSearch.trim().toLowerCase()
+  const filteredCatalogueItems = (searchNeedle
+    ? catalogueItems.filter(c => {
+      const sku = String(c.sku || '').toLowerCase()
+      const name = String(c.name || '').toLowerCase()
+      const label = catalogueItemLabel(c).toLowerCase()
+      return sku.includes(searchNeedle) || name.includes(searchNeedle) || label.includes(searchNeedle)
+    })
+    : catalogueItems
+  ).slice(0, 20)
 
   return (
     <tr className="border-b border-gray-100">
       <td className={`${tdCls} text-center text-gray-400 text-xs w-8`}>{idx + 1}</td>
       <td className={`${tdCls} min-w-[180px]`}>
-        <input
-          className={inputCls}
-          list={itemOptionsId}
-          placeholder="Search SKU or item name..."
-          value={itemInputValue}
-          onChange={e => handleItemSearch(e.target.value)}
-        />
-        <datalist id={itemOptionsId}>
-          {catalogueItems.map(c => (
-            <option key={c.id} value={catalogueItemLabel(c)} />
-          ))}
-        </datalist>
+        <div className="relative">
+          <input
+            className={inputCls}
+            placeholder="Search SKU or item name..."
+            value={itemSearch}
+            onChange={e => handleItemSearch(e.target.value)}
+            onFocus={() => setShowItemOptions(true)}
+            onBlur={() => setTimeout(() => setShowItemOptions(false), 120)}
+          />
+          {showItemOptions && filteredCatalogueItems.length > 0 && (
+            <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg">
+              {filteredCatalogueItems.map(c => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => applyCatalogueItem(c)}
+                >
+                  <span className="font-medium">{c.sku || '-'}</span>
+                  <span className="text-gray-400"> - </span>
+                  <span>{c.name || '-'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {item.itemid === '' && (
+          <input className={`${inputCls} mt-1`} placeholder="Or type item name"
+            value={item.item || ''} onChange={e => onChange(idx, { ...item, item: e.target.value })} />
+        )}
       </td>
       <td className={`${tdCls} min-w-[160px]`}>
         <textarea className={`${inputCls} resize-none h-12`} placeholder="Description"
