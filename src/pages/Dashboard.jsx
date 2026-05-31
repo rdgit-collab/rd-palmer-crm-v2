@@ -211,6 +211,7 @@ function addSalesMetric(map, salesIndex, owner, updates) {
 // ADMIN DASHBOARD
 // ════════════════════════════════════════════════════════════════════
 function AdminDashboard({ firstName }) {
+  const { profile } = useAuth()
   const [stats, setStats] = useState({})
   const [recentTickets, setRecentTickets] = useState([])
   const [recentActivities, setRecentActivities] = useState([])
