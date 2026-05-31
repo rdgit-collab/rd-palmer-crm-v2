@@ -456,7 +456,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
         )}
       </td>
       <td className={`${tdCls} min-w-[420px]`}>
-        <textarea className={`${inputCls} resize-y min-h-24`} placeholder="Description"
+        <textarea className={`${inputCls} resize-y h-12 min-h-12`} placeholder="Description"
           value={item.description || ''} onChange={e => onChange(idx, { ...item, description: e.target.value })} />
       </td>
       <td className={`${tdCls} w-20`}>
