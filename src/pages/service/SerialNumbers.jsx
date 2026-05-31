@@ -7,6 +7,7 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
+const SERIAL_COLUMNS = 'id, date, ref_number, customername, sku, serial_number, warranty_period'
 
 const SEARCH_FIELDS = [
   { value: 'all', label: 'All Fields', placeholder: 'Search serial, SKU, customer or ref...' },
@@ -43,19 +44,96 @@ export default function SerialNumbers() {
   const fetchRows = useCallback(async () => {
     setLoading(true)
     setError('')
+    const term = search.trim()
+    const from = (page - 1) * PAGE_SIZE
+    const to = page * PAGE_SIZE - 1
+
+    if (term && searchField !== 'all') {
+      const exactCountResult = await supabase
+        .from('serialnumber')
+        .select('id', { count: 'exact', head: true })
+        .eq(searchField, term)
+
+      if (exactCountResult.error) {
+        setRows([])
+        setTotal(0)
+        setError(exactCountResult.error.message)
+        setLoading(false)
+        return
+      }
+
+      const exactCount = exactCountResult.count || 0
+      let exactRows = []
+
+      if (from < exactCount) {
+        const exactTo = Math.min(to, exactCount - 1)
+        const exactResult = await supabase
+          .from('serialnumber')
+          .select(SERIAL_COLUMNS)
+          .eq(searchField, term)
+          .order('id', { ascending: false })
+          .range(from, exactTo)
+
+        if (exactResult.error) {
+          setRows([])
+          setTotal(0)
+          setError(exactResult.error.message)
+          setLoading(false)
+          return
+        }
+        exactRows = exactResult.data || []
+      }
+
+      const remaining = PAGE_SIZE - exactRows.length
+      const fuzzyOffset = Math.max(0, from - exactCount)
+      let fuzzyRows = []
+      let fuzzyCount = 0
+
+      if (remaining > 0) {
+        const fuzzyResult = await supabase
+          .from('serialnumber')
+          .select(SERIAL_COLUMNS, { count: 'estimated' })
+          .ilike(searchField, `%${term}%`)
+          .neq(searchField, term)
+          .order(searchField, { ascending: true })
+          .order('id', { ascending: false })
+          .range(fuzzyOffset, fuzzyOffset + remaining - 1)
+
+        if (fuzzyResult.error) {
+          setRows([])
+          setTotal(0)
+          setError(fuzzyResult.error.message)
+          setLoading(false)
+          return
+        }
+        fuzzyRows = fuzzyResult.data || []
+        fuzzyCount = fuzzyResult.count || 0
+      } else {
+        const fuzzyCountResult = await supabase
+          .from('serialnumber')
+          .select('id', { count: 'estimated', head: true })
+          .ilike(searchField, `%${term}%`)
+          .neq(searchField, term)
+        fuzzyCount = fuzzyCountResult.count || 0
+      }
+
+      setRows([...exactRows, ...fuzzyRows])
+      setTotal(exactCount + fuzzyCount)
+      setLoading(false)
+      return
+    }
+
     let q = supabase
       .from('serialnumber')
-      .select('id, date, ref_number, customername, sku, serial_number, warranty_period', { count: 'estimated' })
+      .select(SERIAL_COLUMNS, { count: 'estimated' })
       .order('id', { ascending: false })
-    const term = search.trim()
+
     if (term) {
       if (searchField === 'all') {
         q = q.or(SEARCH_COLUMNS.map(column => `${column}.ilike.%${term}%`).join(','))
-      } else {
-        q = q.ilike(searchField, `%${term}%`)
       }
     }
-    q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
+    q = q.range(from, to)
     const { data, count, error: err } = await q
     if (err) {
       setRows([])
