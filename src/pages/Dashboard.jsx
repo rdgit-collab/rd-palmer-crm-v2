@@ -8,7 +8,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchAssignableUsers, getUserName as formatUserName } from '../lib/legacyUsers'
-import { isSalesRole, isServiceRole, ROLE_SALES, ROLE_SALES_MANAGER } from '../lib/roles'
+import { isSalesRole, isServiceRole, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_SERVICE } from '../lib/roles'
 
 // ── Shared stat card ──────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color, bg, to }) {
@@ -104,8 +104,7 @@ function isActiveUserStatus(status) {
 }
 
 function serviceDashboardRoleLabel(roleId) {
-  if (Number(roleId) === 1) return 'Admin'
-  if (Number(roleId) === 3) return 'Tech'
+  if (Number(roleId) === ROLE_SERVICE) return 'Tech'
   return '—'
 }
 
@@ -642,6 +641,7 @@ function ServiceDashboard({ firstName }) {
   const [recentTickets, setRecentTickets] = useState([])
   const [recentTasks, setRecentTasks] = useState([])
   const [staffRows, setStaffRows] = useState([])
+  const [staffLoadNote, setStaffLoadNote] = useState('')
   const [attentionItems, setAttentionItems] = useState([])
 
   useEffect(() => {
@@ -658,7 +658,7 @@ function ServiceDashboard({ firstName }) {
       supabase.from('task').select('id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed').limit(2000),
       supabase.from('onsiteticket').select('id, ticket_id, issue_description, product, assigned_to, date, is_completed, status').limit(2000),
       fetchAssignableUsers(supabase),
-      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').in('role_id', [1, 3]).order('first_name'),
+      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').eq('role_id', ROLE_SERVICE).order('first_name'),
     ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users, serviceStaff]) => {
       const tickets = allTickets.data || []
       const tasks = allTasks.data || []
@@ -730,10 +730,15 @@ function ServiceDashboard({ firstName }) {
       })
       setRecentTickets(rTick.data || [])
       setRecentTasks(rTask.data || [])
-      setStaffRows(Object.values(staffMap)
+      const nextStaffRows = Object.values(staffMap)
         .map(row => ({ ...row, pending: row.openTickets + row.openTasks + row.openOnsites }))
         .sort((a, b) => (b.pending + b.overdue) - (a.pending + a.overdue))
-      )
+      setStaffRows(nextStaffRows)
+      setStaffLoadNote(serviceStaff.error
+        ? `Unable to load tech users: ${serviceStaff.error.message}`
+        : nextStaffRows.length === 0
+          ? 'No active Tech users found. Check user role and active status in Settings > Users.'
+          : '')
       setAttentionItems(attention)
     })
   }, [])
@@ -765,7 +770,7 @@ function ServiceDashboard({ firstName }) {
           </div>
           <Link to="/tasks" className="text-xs text-red-600 hover:underline">Review work</Link>
         </div>
-        {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No assigned service work yet.</p> : (
+        {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">{staffLoadNote || 'No active tech users found.'}</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
