@@ -259,17 +259,6 @@ export default function Activities() {
             </select>
           </div>
         </div>
-        {!form.lead_id && (
-          <div className="grid grid-cols-3 gap-4 items-center">
-            <label className="text-sm font-medium text-gray-700">Customer</label>
-            <div className="col-span-2">
-              <select value={form.company_id} onChange={e => setForm(f => ({...f, company_id: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                <option value="">Please Select</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-              </select>
-            </div>
-          </div>
-        )}
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Activity Type <span className="text-red-500">*</span></label>
           <div className="col-span-2">
