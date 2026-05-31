@@ -161,6 +161,10 @@ function userDisplayName(user) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
 }
 
+function catalogueItemLabel(item) {
+  return [item?.sku, item?.name].filter(Boolean).join(' - ') || ''
+}
+
 function addressLines(customer) {
   if (!customer) return []
   return [
@@ -313,14 +317,25 @@ async function getNextInvNumber() {
 
 // ─── Line Item Row ─────────────────────────────────────────────────────────────
 function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
-  const handleItemSelect = (e) => {
-    const selected = catalogueItems.find(c => String(c.id) === e.target.value)
+  const applyCatalogueItem = (selected) => {
+    const rate = parseFloat(selected.price || 0)
+    const qty = item.qty || 1
+    onChange(idx, { ...item, itemid: selected.id, item: selected.name, description: selected.description || '', rate, amount: qty * rate })
+  }
+
+  const handleItemSearch = (value) => {
+    const searchValue = value.trim().toLowerCase()
+    const selected = catalogueItems.find(c => {
+      const label = catalogueItemLabel(c).toLowerCase()
+      return label === searchValue ||
+        String(c.sku || '').trim().toLowerCase() === searchValue ||
+        String(c.name || '').trim().toLowerCase() === searchValue
+    })
+
     if (selected) {
-      const rate = parseFloat(selected.price || 0)
-      const qty = item.qty || 1
-      onChange(idx, { ...item, itemid: selected.id, item: selected.name, description: selected.description || '', rate, amount: qty * rate })
+      applyCatalogueItem(selected)
     } else {
-      onChange(idx, { ...item, itemid: '', item: '', description: '', rate: 0, amount: 0 })
+      onChange(idx, { ...item, itemid: '', item: value })
     }
   }
   const handleQtyChange = (qty) => {
@@ -338,19 +353,26 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
   const tdCls = 'px-2 py-1.5'
   const inputCls = 'w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-400'
+  const selectedItem = catalogueItems.find(c => String(c.id) === String(item.itemid || ''))
+  const itemInputValue = selectedItem ? catalogueItemLabel(selectedItem) : (item.item || '')
+  const itemOptionsId = `invoice-item-options-${idx}`
 
   return (
     <tr className="border-b border-gray-100">
       <td className={`${tdCls} text-center text-gray-400 text-xs w-8`}>{idx + 1}</td>
       <td className={`${tdCls} min-w-[180px]`}>
-        <select className={inputCls} value={item.itemid || ''} onChange={handleItemSelect}>
-          <option value="">Select item...</option>
-          {catalogueItems.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        {item.itemid === '' && (
-          <input className={`${inputCls} mt-1`} placeholder="Or type item name"
-            value={item.item || ''} onChange={e => onChange(idx, { ...item, item: e.target.value })} />
-        )}
+        <input
+          className={inputCls}
+          list={itemOptionsId}
+          placeholder="Search SKU or item name..."
+          value={itemInputValue}
+          onChange={e => handleItemSearch(e.target.value)}
+        />
+        <datalist id={itemOptionsId}>
+          {catalogueItems.map(c => (
+            <option key={c.id} value={catalogueItemLabel(c)} />
+          ))}
+        </datalist>
       </td>
       <td className={`${tdCls} min-w-[160px]`}>
         <textarea className={`${inputCls} resize-none h-12`} placeholder="Description"
@@ -436,7 +458,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     const load = async () => {
       const [custs, cats, users, { data: txs }, { data: pts }] = await Promise.all([
         fetchAllRows('customer', 'id, company_name, assigned', 'company_name'),
-        fetchAllRows('goodsservices', 'id, name, price, description', 'name'),
+        fetchAllRows('goodsservices', 'id, sku, name, price, description', 'name'),
         fetchAssignableUsers(supabase),
         supabase.from('tax').select('id, name').order('name'),
         supabase.from('payment_term').select('id, name').order('name'),
