@@ -48,24 +48,39 @@ export default function SerialNumbers() {
     const to = page * PAGE_SIZE - 1
 
     if (term) {
-      const exactResult = await supabase
+      const exactCountResult = await supabase
         .from('serialnumber')
-        .select(SERIAL_COLUMNS, { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
         .eq(searchField, term)
-        .order('id', { ascending: false })
-        .range(from, to)
 
-      if (exactResult.error) {
+      if (exactCountResult.error) {
         setRows([])
         setTotal(0)
-        setError(exactResult.error.message)
+        setError(exactCountResult.error.message)
         setLoading(false)
         return
       }
 
-      if (exactResult.data?.length) {
+      const exactCount = exactCountResult.count || 0
+
+      if (exactCount > 0) {
+        const exactResult = await supabase
+          .from('serialnumber')
+          .select(SERIAL_COLUMNS)
+          .eq(searchField, term)
+          .order('id', { ascending: false })
+          .range(from, to)
+
+        if (exactResult.error) {
+          setRows([])
+          setTotal(exactCount)
+          setError(exactResult.error.message)
+          setLoading(false)
+          return
+        }
+
         setRows(exactResult.data)
-        setTotal(exactResult.count || exactResult.data.length)
+        setTotal(exactCount)
         setLoading(false)
         return
       }
