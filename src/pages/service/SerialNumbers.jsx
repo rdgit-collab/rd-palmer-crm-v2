@@ -49,76 +49,46 @@ export default function SerialNumbers() {
     const to = page * PAGE_SIZE - 1
 
     if (term && searchField !== 'all') {
-      const exactCountResult = await supabase
+      const exactResult = await supabase
         .from('serialnumber')
-        .select('id', { count: 'exact', head: true })
+        .select(SERIAL_COLUMNS)
         .eq(searchField, term)
+        .order('id', { ascending: false })
+        .limit(PAGE_SIZE)
 
-      if (exactCountResult.error) {
+      if (exactResult.error) {
         setRows([])
         setTotal(0)
-        setError(exactCountResult.error.message)
+        setError(exactResult.error.message)
         setLoading(false)
         return
       }
 
-      const exactCount = exactCountResult.count || 0
-      let exactRows = []
-
-      if (from < exactCount) {
-        const exactTo = Math.min(to, exactCount - 1)
-        const exactResult = await supabase
-          .from('serialnumber')
-          .select(SERIAL_COLUMNS)
-          .eq(searchField, term)
-          .order('id', { ascending: false })
-          .range(from, exactTo)
-
-        if (exactResult.error) {
-          setRows([])
-          setTotal(0)
-          setError(exactResult.error.message)
-          setLoading(false)
-          return
-        }
-        exactRows = exactResult.data || []
+      if (exactResult.data?.length) {
+        setRows(exactResult.data)
+        setTotal(exactResult.data.length)
+        setLoading(false)
+        return
       }
 
-      const remaining = PAGE_SIZE - exactRows.length
-      const fuzzyOffset = Math.max(0, from - exactCount)
-      let fuzzyRows = []
-      let fuzzyCount = 0
+      const fuzzyResult = await supabase
+        .from('serialnumber')
+        .select(SERIAL_COLUMNS)
+        .ilike(searchField, `%${term}%`)
+        .order('id', { ascending: false })
+        .range(from, to)
 
-      if (remaining > 0) {
-        const fuzzyResult = await supabase
-          .from('serialnumber')
-          .select(SERIAL_COLUMNS, { count: 'estimated' })
-          .ilike(searchField, `%${term}%`)
-          .neq(searchField, term)
-          .order(searchField, { ascending: true })
-          .order('id', { ascending: false })
-          .range(fuzzyOffset, fuzzyOffset + remaining - 1)
-
-        if (fuzzyResult.error) {
-          setRows([])
-          setTotal(0)
-          setError(fuzzyResult.error.message)
-          setLoading(false)
-          return
-        }
-        fuzzyRows = fuzzyResult.data || []
-        fuzzyCount = fuzzyResult.count || 0
-      } else {
-        const fuzzyCountResult = await supabase
-          .from('serialnumber')
-          .select('id', { count: 'estimated', head: true })
-          .ilike(searchField, `%${term}%`)
-          .neq(searchField, term)
-        fuzzyCount = fuzzyCountResult.count || 0
+      if (fuzzyResult.error) {
+        setRows([])
+        setTotal(0)
+        setError(fuzzyResult.error.message)
+        setLoading(false)
+        return
       }
 
-      setRows([...exactRows, ...fuzzyRows])
-      setTotal(exactCount + fuzzyCount)
+      const fuzzyRows = fuzzyResult.data || []
+      setRows(fuzzyRows)
+      setTotal(from + fuzzyRows.length + (fuzzyRows.length === PAGE_SIZE ? 1 : 0))
       setLoading(false)
       return
     }
