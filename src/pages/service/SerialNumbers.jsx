@@ -7,6 +7,16 @@ import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-r
 
 const PAGE_SIZE = 30
 
+const SEARCH_FIELDS = [
+  { value: 'all', label: 'All Fields', placeholder: 'Search serial, SKU, customer or ref...' },
+  { value: 'serial_number', label: 'Serial Number', placeholder: 'Search serial number...' },
+  { value: 'sku', label: 'SKU', placeholder: 'Search SKU...' },
+  { value: 'customername', label: 'Customer', placeholder: 'Search customer...' },
+  { value: 'ref_number', label: 'Ref Number', placeholder: 'Search ref number...' },
+]
+
+const SEARCH_COLUMNS = SEARCH_FIELDS.filter(field => field.value !== 'all').map(field => field.value)
+
 const emptyForm = {
   date: new Date().toISOString().split('T')[0],
   ref_number: '', customername: '', sku: '',
@@ -20,6 +30,7 @@ export default function SerialNumbers() {
   const [total, setTotal]       = useState(0)
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
+  const [searchField, setSearchField] = useState('all')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
@@ -31,12 +42,19 @@ export default function SerialNumbers() {
   const fetchRows = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('serialnumber').select('*', { count: 'exact' }).order('id', { ascending: false })
-    if (search) q = q.or(`serial_number.ilike.%${search}%,sku.ilike.%${search}%,customername.ilike.%${search}%`)
+    const term = search.trim()
+    if (term) {
+      if (searchField === 'all') {
+        q = q.or(SEARCH_COLUMNS.map(column => `${column}.ilike.%${term}%`).join(','))
+      } else {
+        q = q.ilike(searchField, `%${term}%`)
+      }
+    }
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
     if (!err) { setRows(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page])
+  }, [search, searchField, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -76,6 +94,7 @@ export default function SerialNumbers() {
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+  const activeSearchField = SEARCH_FIELDS.find(field => field.value === searchField) || SEARCH_FIELDS[0]
 
   if (view === 'list') return (
     <div className="p-6">
@@ -83,10 +102,21 @@ export default function SerialNumbers() {
         <h1 className="text-2xl font-bold text-gray-900">Serial Numbers</h1>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Record</button>
       </div>
-      <div className="relative max-w-sm mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Search serial, SKU or customer..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <select
+          value={searchField}
+          onChange={e => { setSearchField(e.target.value); setPage(1) }}
+          className="w-full sm:w-48 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+        >
+          {SEARCH_FIELDS.map(field => (
+            <option key={field.value} value={field.value}>{field.label}</option>
+          ))}
+        </select>
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder={activeSearchField.placeholder} value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+        </div>
       </div>
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
