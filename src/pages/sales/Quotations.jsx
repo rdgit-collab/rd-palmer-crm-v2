@@ -165,13 +165,10 @@ function catalogueItemLabel(item) {
   return [item?.sku, item?.name].filter(Boolean).join(' - ') || ''
 }
 
-function salesDocumentItemTitle(item) {
+function salesDocumentSkuTitle(item) {
   const sku = String(item?.sku || '').trim()
   const name = String(item?.item || '').trim()
-  if (!sku) return name
-  if (!name) return sku
-  if (name.toLowerCase().startsWith(sku.toLowerCase())) return name
-  return `${sku} - ${name}`
+  return sku || name
 }
 
 function addressLines(customer) {
@@ -192,7 +189,7 @@ function quotationHtml(quotation, items, contactName, customer) {
   const itemRows = items.map((item, idx) => `
     <tr>
       <td>${idx + 1}</td>
-      <td><strong>${escapeHtml(salesDocumentItemTitle(item))}</strong><div class="desc">${printableText(item.description || '')}</div></td>
+      <td><strong>${escapeHtml(salesDocumentSkuTitle(item))}</strong><div class="desc">${printableText(item.description || '')}</div></td>
       <td>${escapeHtml(item.qty || '')}</td>
       <td>${fmtMoney(item.rate)}</td>
       <td>${escapeHtml(item.taxlbl || '-')}</td>
@@ -1205,17 +1202,18 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['#', 'Item', 'Description', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => (
+                {['#', 'SKU', 'Item', 'Description', 'Qty', 'Rate', 'Tax', 'Amount'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {items.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-4 text-center text-gray-400 text-sm">No items</td></tr>
+                <tr><td colSpan={8} className="px-4 py-4 text-center text-gray-400 text-sm">No items</td></tr>
               ) : items.map((item, idx) => (
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{item.sku || '—'}</td>
                   <td className="px-4 py-3 font-medium text-gray-900">{item.item}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs max-w-xs"><HtmlBlock value={item.description || '—'} /></td>
                   <td className="px-4 py-3 text-gray-700">{item.qty}</td>
