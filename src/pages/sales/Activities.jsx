@@ -68,6 +68,8 @@ function typeColor(t = '') {
 export default function Activities() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const isSalesRestricted = profile?.role_id === 2
+  const currentLegacyUserId = getLegacyUserId(profile)
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
   const [rawActivities, setRawActivities] = useState([])
@@ -108,9 +110,13 @@ export default function Activities() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    const [actR, leadR, custR, activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
-      supabase.from('activity').select('*').order('id', { ascending: false }).limit(5000),
-      fetchAllRows('sales_lead', 'id, company_name, first_name, last_name, assigned_to, status', 'company_name'),
+    const [leadR, custR, activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
+      fetchAllRows(
+        'sales_lead',
+        'id, company_name, first_name, last_name, assigned_to, status',
+        'company_name',
+        isSalesRestricted ? { eq: { assigned_to: currentLegacyUserId } } : {}
+      ),
       fetchAllRows('customer', 'id, company_name', 'company_name'),
       fetchAssignableUsers(supabase),
       fetchLegacyUsers(supabase),
@@ -118,6 +124,19 @@ export default function Activities() {
       supabase.from('priority').select('id, name').order('name'),
       supabase.from('activity_status').select('id, name').order('name'),
     ])
+
+    let activityQuery = supabase.from('activity').select('*').order('id', { ascending: false }).limit(5000)
+    if (isSalesRestricted) {
+      const ownedLeadIds = (leadR || []).map(lead => lead.id).filter(Boolean)
+      const ownershipFilters = [
+        `assigned_to.eq.${currentLegacyUserId}`,
+        `user_id.eq.${currentLegacyUserId}`,
+      ]
+      if (ownedLeadIds.length) ownershipFilters.push(`lead_id.in.(${ownedLeadIds.join(',')})`)
+      activityQuery = activityQuery.or(ownershipFilters.join(','))
+    }
+    const actR = await activityQuery
+
     setLeads(leadR || [])
     setCustomers(custR || [])
     if (!actR.error) setRawActivities(actR.data || [])
@@ -127,7 +146,7 @@ export default function Activities() {
     if (!prioR.error) setPriorities(prioR.data || [])
     if (!statusR.error) setActivityStatuses(statusR.data || [])
     setLoading(false)
-  }, [])
+  }, [currentLegacyUserId, isSalesRestricted])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -171,6 +190,14 @@ export default function Activities() {
   const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE)
 
   const getUserName = (id) => formatUserName(users, id)
+  const currentUserOption = users.find(u => String(u.id) === String(currentLegacyUserId))
+    || assignableUsers.find(u => String(u.id) === String(currentLegacyUserId))
+  const formAssignableUsers = isSalesRestricted
+    ? (currentUserOption ? [currentUserOption] : [])
+    : assignableUsers
+  const filterUsers = isSalesRestricted
+    ? (currentUserOption ? [currentUserOption] : [])
+    : users
 
   const historyForDetail = (activity) => {
     if (!activity?.lead_id) return [activity]
@@ -181,7 +208,11 @@ export default function Activities() {
   }
 
   const openAdd = () => {
-    setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] })
+    setForm({
+      ...emptyForm,
+      date: new Date().toISOString().split('T')[0],
+      assigned_to: isSalesRestricted ? String(currentLegacyUserId) : '',
+    })
     setError('')
     setView('form')
   }
@@ -192,7 +223,7 @@ export default function Activities() {
       date: new Date().toISOString().split('T')[0],
       lead_id: activity.lead_id ? String(activity.lead_id) : '',
       company_id: activity.company_id ? String(activity.company_id) : '',
-      assigned_to: activity.assignedTo ? String(activity.assignedTo) : '',
+      assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (activity.assignedTo ? String(activity.assignedTo) : ''),
     })
     setError('')
     setView('form')
@@ -215,7 +246,7 @@ export default function Activities() {
       description: form.description,
       lead_id: form.lead_id ? parseInt(form.lead_id) : null,
       company_id: form.lead_id ? null : (form.company_id || null),
-      assigned_to: form.assigned_to || selectedLead?.assigned_to || null,
+      assigned_to: isSalesRestricted ? currentLegacyUserId : (form.assigned_to || selectedLead?.assigned_to || null),
       user_id: getLegacyUserId(profile),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -239,7 +270,7 @@ export default function Activities() {
       ...f,
       lead_id: leadId,
       company_id: '',
-      assigned_to: lead?.assigned_to ? String(lead.assigned_to) : f.assigned_to,
+      assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (lead?.assigned_to ? String(lead.assigned_to) : f.assigned_to),
     }))
   }
 
@@ -299,7 +330,7 @@ export default function Activities() {
           <div className="col-span-2">
             <select value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
               <option value="">Please Select</option>
-              {assignableUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+              {formAssignableUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
             </select>
           </div>
         </div>
@@ -406,10 +437,12 @@ export default function Activities() {
           <option value="">All Types</option>
           {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
         </select>
-        <select value={assignedFilter} onChange={e => { setAssignedFilter(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-          <option value="">All Assigned Users</option>
-          {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
-        </select>
+        {!isSalesRestricted && (
+          <select value={assignedFilter} onChange={e => { setAssignedFilter(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+            <option value="">All Assigned Users</option>
+            {filterUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+          </select>
+        )}
         {(search || typeFilter || assignedFilter) && <button onClick={() => { setSearch(''); setTF(''); setAssignedFilter('') }} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"><X size={14} /> Clear</button>}
       </div>
 
