@@ -501,11 +501,15 @@ function LeadForm({ lead, onSave, onCancel }) {
     e.preventDefault()
     if (!form.company_name.trim()) { setError('Company name is required'); return }
     setSaving(true); setError('')
+    const assignedUser = users.find(u => String(u.id) === String(form.assigned_to))
+    const assignedName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : ''
 
     const payload = {
       lead_source: form.lead_source,
       status: form.status,
       type: parseInt(form.type),
+      company_id: form.type === '1' && selectedCustomerId ? parseInt(selectedCustomerId) : null,
+      contact_id: form.type === '1' && selectedContactId ? parseInt(selectedContactId) : null,
       company_name: form.company_name,
       industry: form.industry,
       account_type: form.account_type,
@@ -542,8 +546,68 @@ function LeadForm({ lead, onSave, onCancel }) {
     setSaving(false)
     if (result.error) { setError(result.error.message); return }
 
+    if (!isEdit && form.type === '0') {
+      let customerId = null
+      const { data: existingCustomers } = await supabase
+        .from('customer')
+        .select('id')
+        .ilike('company_name', form.company_name.trim())
+        .limit(1)
+
+      if (existingCustomers?.length) {
+        customerId = existingCustomers[0].id
+      } else {
+        const { data: newCustomer, error: customerError } = await supabase.from('customer').insert([{
+          user_id: getLegacyUserId(profile),
+          company_name: form.company_name,
+          industry: form.industry || null,
+          account_type: form.account_type || null,
+          address1: form.address1 || null,
+          address2: form.address2 || null,
+          country: form.country || null,
+          state: form.state || null,
+          city: form.city || null,
+          zipcode: form.zipcode || null,
+          office_number: form.office_number || null,
+          mobile_number: form.mobile_number || null,
+          email: form.email || null,
+          website: form.website || null,
+          assigned: assignedName || null,
+          assignto: form.assigned_to ? parseInt(form.assigned_to) : null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }]).select('id').single()
+        if (customerError) { setError(`Lead saved, but customer creation failed: ${customerError.message}`); return }
+        customerId = newCustomer?.id || null
+      }
+
+      let contactId = null
+      if (customerId && (form.first_name || form.last_name || form.contact_email || form.contact_mobile_number)) {
+        const { data: newContact, error: contactError } = await supabase.from('contact').insert([{
+          user_id: getLegacyUserId(profile),
+          company_id: customerId,
+          Salutation: form.salutation || null,
+          first_name: form.first_name || null,
+          last_name: form.last_name || null,
+          position: form.position || null,
+          department_id: form.department_id || null,
+          mobile_number: form.contact_mobile_number || null,
+          email: form.contact_email || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }]).select('id').single()
+        if (contactError) { setError(`Lead and customer saved, but contact creation failed: ${contactError.message}`); return }
+        contactId = newContact?.id || null
+      }
+
+      if (customerId) {
+        await supabase.from('sales_lead').update({ company_id: customerId, contact_id: contactId, updated_at: new Date().toISOString() }).eq('id', result.data.id)
+        result.data = { ...result.data, company_id: customerId, contact_id: contactId }
+      }
+    }
+
     if (!isEdit && form.type === '1' && selectedCustomerId && contactMode === 'new' && (form.first_name || form.last_name || form.contact_email || form.contact_mobile_number)) {
-      await supabase.from('contact').insert([{
+      const { data: createdContact } = await supabase.from('contact').insert([{
         user_id: getLegacyUserId(profile),
         company_id: parseInt(selectedCustomerId),
         Salutation: form.salutation || null,
@@ -555,7 +619,11 @@ function LeadForm({ lead, onSave, onCancel }) {
         email: form.contact_email || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }])
+      }]).select('id').single()
+      if (createdContact?.id) {
+        await supabase.from('sales_lead').update({ contact_id: createdContact.id, updated_at: new Date().toISOString() }).eq('id', result.data.id)
+        result.data = { ...result.data, contact_id: createdContact.id }
+      }
     }
 
     onSave(result.data)

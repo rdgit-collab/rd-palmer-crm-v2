@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { fetchAssignableUsers } from '../../lib/legacyUsers'
+import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
@@ -13,7 +13,19 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 
 
 // ─── Customer Form (Add / Edit) ────────────────────────────────────────────────
+const emptyContact = {
+  Salutation: '',
+  first_name: '',
+  last_name: '',
+  position: '',
+  department_id: '',
+  mobile_number: '',
+  email: '',
+  address: '',
+}
+
 function CustomerForm({ customer, onSave, onCancel }) {
+  const { profile } = useAuth()
   const isEdit = !!customer
 
   const [industries, setIndustries] = useState([])
@@ -24,6 +36,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
   const [cities, setCities] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [newContacts, setNewContacts] = useState([{ ...emptyContact }])
 
   const [form, setForm] = useState({
     industry: customer?.industry || '',
@@ -104,7 +117,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
       website: form.website,
       assigned: assignedName,
       assignto: form.assignto ? parseInt(form.assignto) : null,
-      user_id: 1,
+      user_id: getLegacyUserId(profile),
       updated_at: new Date().toISOString(),
     }
 
@@ -118,11 +131,38 @@ function CustomerForm({ customer, onSave, onCancel }) {
 
     setSaving(false)
     if (result.error) { setError(result.error.message); return }
+
+    if (!isEdit) {
+      const contactPayload = newContacts
+        .filter(contact => [contact.first_name, contact.last_name, contact.mobile_number, contact.email].some(value => String(value || '').trim()))
+        .map(contact => ({
+          user_id: getLegacyUserId(profile),
+          company_id: result.data.id,
+          Salutation: contact.Salutation || null,
+          first_name: contact.first_name || null,
+          last_name: contact.last_name || null,
+          position: contact.position || null,
+          department_id: contact.department_id || null,
+          mobile_number: contact.mobile_number || null,
+          email: contact.email || null,
+          address: contact.address || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }))
+      if (contactPayload.length > 0) {
+        const { error: contactError } = await supabase.from('contact').insert(contactPayload)
+        if (contactError) { setError(`Customer saved, but contact creation failed: ${contactError.message}`); return }
+      }
+    }
+
     onSave(result.data)
   }
 
   const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500'
   const labelCls = 'block text-sm font-medium text-gray-700 mb-1'
+  const setContact = (idx, field, value) => setNewContacts(prev => prev.map((contact, itemIdx) => itemIdx === idx ? { ...contact, [field]: value } : contact))
+  const addContact = () => setNewContacts(prev => [...prev, { ...emptyContact }])
+  const removeContact = (idx) => setNewContacts(prev => prev.length === 1 ? [{ ...emptyContact }] : prev.filter((_, itemIdx) => itemIdx !== idx))
 
   return (
     <>
@@ -252,6 +292,65 @@ function CustomerForm({ customer, onSave, onCancel }) {
             ))}
           </select>
         </div>
+
+        {!isEdit && (
+          <div className="mb-6 border-t border-gray-100 pt-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contacts</h2>
+              <button type="button" onClick={addContact} className="flex items-center gap-1 text-xs bg-red-600 text-white px-2.5 py-1.5 rounded hover:bg-red-700">
+                <Plus size={12} /> Add Contact
+              </button>
+            </div>
+            <div className="space-y-4">
+              {newContacts.map((contact, idx) => (
+                <div key={idx} className="border border-gray-200 rounded p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-medium text-gray-500">Contact {idx + 1}</span>
+                    <button type="button" onClick={() => removeContact(idx)} className="text-gray-400 hover:text-red-600"><X size={14} /></button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <label className={labelCls}>Salutation</label>
+                      <input className={inputCls} value={contact.Salutation} onChange={e => setContact(idx, 'Salutation', e.target.value)} placeholder="Mr / Ms / Dr" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>First Name</label>
+                      <input className={inputCls} value={contact.first_name} onChange={e => setContact(idx, 'first_name', e.target.value)} placeholder="First Name" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Last Name</label>
+                      <input className={inputCls} value={contact.last_name} onChange={e => setContact(idx, 'last_name', e.target.value)} placeholder="Last Name" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className={labelCls}>Position</label>
+                      <input className={inputCls} value={contact.position} onChange={e => setContact(idx, 'position', e.target.value)} placeholder="Job title" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Department</label>
+                      <input className={inputCls} value={contact.department_id} onChange={e => setContact(idx, 'department_id', e.target.value)} placeholder="Department" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className={labelCls}>Mobile</label>
+                      <input className={inputCls} value={contact.mobile_number} onChange={e => setContact(idx, 'mobile_number', e.target.value)} placeholder="Mobile number" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Email</label>
+                      <input className={inputCls} type="email" value={contact.email} onChange={e => setContact(idx, 'email', e.target.value)} placeholder="example@example.com" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Address</label>
+                    <input className={inputCls} value={contact.address} onChange={e => setContact(idx, 'address', e.target.value)} placeholder="Contact address" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex justify-end gap-3">
           <button type="button" onClick={onCancel} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
