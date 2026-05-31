@@ -326,10 +326,33 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   const selectedItem = catalogueItems.find(c => String(c.id) === String(item.itemid || ''))
   const [itemSearch, setItemSearch] = useState(selectedItem ? catalogueItemLabel(selectedItem) : '')
   const [showItemOptions, setShowItemOptions] = useState(false)
+  const [itemDropdownStyle, setItemDropdownStyle] = useState({})
+  const itemSearchRef = useRef(null)
 
   useEffect(() => {
     setItemSearch(selectedItem ? catalogueItemLabel(selectedItem) : '')
   }, [selectedItem?.id, selectedItem?.sku, selectedItem?.name])
+
+  const updateItemDropdownPosition = useCallback(() => {
+    if (!itemSearchRef.current) return
+    const rect = itemSearchRef.current.getBoundingClientRect()
+    setItemDropdownStyle({
+      left: rect.left,
+      top: rect.bottom + 4,
+      width: rect.width,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!showItemOptions) return undefined
+    updateItemDropdownPosition()
+    window.addEventListener('resize', updateItemDropdownPosition)
+    window.addEventListener('scroll', updateItemDropdownPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateItemDropdownPosition)
+      window.removeEventListener('scroll', updateItemDropdownPosition, true)
+    }
+  }, [showItemOptions, updateItemDropdownPosition])
 
   const applyCatalogueItem = (selected) => {
     const rate = parseFloat(selected.price || 0)
@@ -349,6 +372,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   const handleItemSearch = (value) => {
     setItemSearch(value)
     setShowItemOptions(true)
+    updateItemDropdownPosition()
 
     if (!value.trim() && item.itemid) {
       onChange(idx, { ...item, itemid: '', item: '', description: '', rate: 0, amount: 0 })
@@ -394,15 +418,22 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
       <td className={`${tdCls} min-w-[180px]`}>
         <div className="relative">
           <input
+            ref={itemSearchRef}
             className={inputCls}
             placeholder="Search SKU or item name..."
             value={itemSearch}
             onChange={e => handleItemSearch(e.target.value)}
-            onFocus={() => setShowItemOptions(true)}
+            onFocus={() => {
+              setShowItemOptions(true)
+              updateItemDropdownPosition()
+            }}
             onBlur={() => setTimeout(() => setShowItemOptions(false), 120)}
           />
           {showItemOptions && filteredCatalogueItems.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg">
+            <div
+              className="fixed z-[1000] max-h-56 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
+              style={itemDropdownStyle}
+            >
               {filteredCatalogueItems.map(c => (
                 <button
                   key={c.id}
@@ -424,8 +455,8 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
             value={item.item || ''} onChange={e => onChange(idx, { ...item, item: e.target.value })} />
         )}
       </td>
-      <td className={`${tdCls} min-w-[160px]`}>
-        <textarea className={`${inputCls} resize-none h-12`} placeholder="Description"
+      <td className={`${tdCls} min-w-[420px]`}>
+        <textarea className={`${inputCls} resize-y min-h-24`} placeholder="Description"
           value={item.description || ''} onChange={e => onChange(idx, { ...item, description: e.target.value })} />
       </td>
       <td className={`${tdCls} w-20`}>
@@ -804,7 +835,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[1120px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-8">#</th>
