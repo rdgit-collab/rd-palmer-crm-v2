@@ -24,6 +24,15 @@ Prices quoted are EX-Work Kuala Lumpur, Malaysia unless other specified.
 
 Please confirm your agreement to the terms and conditions stated therein by signing at the below.`
 
+const emptyContactForm = {
+  Salutation: '',
+  first_name: '',
+  last_name: '',
+  position: '',
+  mobile_number: '',
+  email: '',
+}
+
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 }
@@ -408,6 +417,10 @@ function QuotationForm({ quotation, onSave, onCancel }) {
   const [paymentTerms, setPaymentTerms] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [showContactForm, setShowContactForm] = useState(false)
+  const [contactForm, setContactForm] = useState(emptyContactForm)
+  const [contactSaving, setContactSaving] = useState(false)
+  const [contactError, setContactError] = useState('')
 
   // Header fields
   const [form, setForm] = useState({
@@ -501,6 +514,40 @@ function QuotationForm({ quotation, onSave, onCancel }) {
   }, [form.companyid, customers, salesUsers])
 
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const setContact = (k, v) => setContactForm(f => ({ ...f, [k]: v }))
+
+  const openContactForm = () => {
+    if (!form.companyid) { setError('Please select a customer before adding a contact'); return }
+    setContactForm(emptyContactForm)
+    setContactError('')
+    setShowContactForm(true)
+  }
+
+  const saveContact = async (e) => {
+    e.preventDefault()
+    if (!form.companyid) { setContactError('Please select a customer first'); return }
+    if (!contactForm.first_name.trim()) { setContactError('First name is required'); return }
+    setContactSaving(true)
+    setContactError('')
+    const payload = {
+      company_id: parseInt(form.companyid),
+      Salutation: contactForm.Salutation,
+      first_name: contactForm.first_name,
+      last_name: contactForm.last_name,
+      position: contactForm.position,
+      mobile_number: contactForm.mobile_number,
+      email: contactForm.email,
+      user_id: getLegacyUserId(profile),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    const { data, error: err } = await supabase.from('contact').insert(payload).select('id, Salutation, first_name, last_name, email').single()
+    setContactSaving(false)
+    if (err) { setContactError(err.message); return }
+    setContacts(prev => [...prev, data])
+    setForm(f => ({ ...f, contact_person: String(data.id) }))
+    setShowContactForm(false)
+  }
 
   const addLine = () => setLineItems(prev => [...prev, { itemid: '', item: '', description: '', qty: 1, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }])
   const removeLine = (idx) => setLineItems(prev => prev.filter((_, i) => i !== idx))
@@ -682,11 +729,16 @@ function QuotationForm({ quotation, onSave, onCancel }) {
             {/* Contact Person */}
             <div>
               <label className={labelCls}>Contact Person</label>
-              <select className={inputCls} value={form.contact_person} onChange={e => setF('contact_person', e.target.value)}>
-                <option value="">Please Select</option>
-                {!hasCurrentContactOption && <option value={form.contact_person}>{form.contact_person}</option>}
-                {contacts.map(c => <option key={c.id} value={c.id}>{contactDisplayName(c)}</option>)}
-              </select>
+              <div className="flex gap-2">
+                <select className={`${inputCls} flex-1`} value={form.contact_person} onChange={e => setF('contact_person', e.target.value)}>
+                  <option value="">Please Select</option>
+                  {!hasCurrentContactOption && <option value={form.contact_person}>{form.contact_person}</option>}
+                  {contacts.map(c => <option key={c.id} value={c.id}>{contactDisplayName(c)}</option>)}
+                </select>
+                <button type="button" onClick={openContactForm} title="Add contact" className="px-3 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 hover:text-red-600">
+                  <Plus size={16} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -804,6 +856,50 @@ function QuotationForm({ quotation, onSave, onCancel }) {
           </button>
         </div>
       </form>
+
+      {showContactForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <form onSubmit={saveContact} className="bg-white w-full max-w-lg rounded-lg shadow-xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Add Contact</h2>
+              <button type="button" onClick={() => setShowContactForm(false)} className="text-gray-400 hover:text-gray-700"><X size={18} /></button>
+            </div>
+            {contactError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{contactError}</div>}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className={labelCls}>Salutation</label>
+                <input className={inputCls} value={contactForm.Salutation} onChange={e => setContact('Salutation', e.target.value)} placeholder="Mr / Ms" />
+              </div>
+              <div>
+                <label className={labelCls}>First Name <span className="text-red-500">*</span></label>
+                <input className={inputCls} value={contactForm.first_name} onChange={e => setContact('first_name', e.target.value)} required />
+              </div>
+              <div>
+                <label className={labelCls}>Last Name</label>
+                <input className={inputCls} value={contactForm.last_name} onChange={e => setContact('last_name', e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Position</label>
+                <input className={inputCls} value={contactForm.position} onChange={e => setContact('position', e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>Mobile Number</label>
+                <input className={inputCls} value={contactForm.mobile_number} onChange={e => setContact('mobile_number', e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Email</label>
+              <input type="email" className={inputCls} value={contactForm.email} onChange={e => setContact('email', e.target.value)} />
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setShowContactForm(false)} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={contactSaving} className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">{contactSaving ? 'Saving...' : 'Save Contact'}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </>
   )
 }
