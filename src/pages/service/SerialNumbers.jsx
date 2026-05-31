@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -41,7 +42,11 @@ export default function SerialNumbers() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('serialnumber').select('*', { count: 'exact' }).order('id', { ascending: false })
+    setError('')
+    let q = supabase
+      .from('serialnumber')
+      .select('id, date, ref_number, customername, sku, serial_number, warranty_period', { count: 'estimated' })
+      .order('id', { ascending: false })
     const term = search.trim()
     if (term) {
       if (searchField === 'all') {
@@ -52,16 +57,25 @@ export default function SerialNumbers() {
     }
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
-    if (!err) { setRows(data || []); setTotal(count || 0) }
+    if (err) {
+      setRows([])
+      setTotal(0)
+      setError(err.message)
+    } else {
+      setRows(data || [])
+      setTotal(count || 0)
+    }
     setLoading(false)
   }, [search, searchField, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
   useEffect(() => {
-    supabase.from('goodsservices').select('id, sku').order('sku')
-      .then(({ data }) => setSkuList(data || []))
-  }, [])
+    if (view !== 'form' || skuList.length) return
+    fetchAllRows('goodsservices', 'id, sku', 'sku')
+      .then(data => setSkuList(data || []))
+      .catch(() => setSkuList([]))
+  }, [view, skuList.length])
 
   const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
   const openEdit = (r) => {
@@ -118,6 +132,7 @@ export default function SerialNumbers() {
             className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
         </div>
       </div>
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
           <thead>

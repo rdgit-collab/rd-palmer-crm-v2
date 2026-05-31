@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react'
@@ -66,13 +67,13 @@ export default function Calibration() {
   useEffect(() => {
     const run = async () => {
       const [tickR, activeUsers, legacyUsers, checklistR, termsR] = await Promise.all([
-        supabase.from('ticket').select('id, ticket_id, company_name').order('id', { ascending: false }).limit(2000),
+        fetchAllRows('ticket', 'id, ticket_id, company_name', 'id', { ascending: false }),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
         supabase.from('checklist').select('id, name').order('name').limit(500),
         supabase.from('termcondition').select('id, name').order('id').limit(200),
       ])
-      if (!tickR.error) setTickets(tickR.data || [])
+      setTickets(tickR || [])
       setUsers(activeUsers || [])
       setAllUsers(legacyUsers || [])
       if (!checklistR.error) setChecklistOptions(checklistR.data || [])

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -114,13 +115,13 @@ export default function OnsiteTickets() {
   useEffect(() => {
     const run = async () => {
       const [tickR, usrR, spareR] = await Promise.all([
-        supabase.from('ticket').select('id, ticket_id, company_name, description, assigned_to').eq('is_completed', 0).order('id', { ascending: false }),
+        fetchAllRows('ticket', 'id, ticket_id, company_name, description, assigned_to', 'id', { ascending: false, eq: { is_completed: 0 } }),
         fetchAssignableUsers(supabase),
-        supabase.from('goodsservices').select('id, name').order('name').limit(1000),
+        fetchAllRows('goodsservices', 'id, name', 'name'),
       ])
-      if (!tickR.error) setTickets(tickR.data || [])
+      setTickets(tickR || [])
       setUsers(usrR || [])
-      if (!spareR.error) setSpares(spareR.data || [])
+      setSpares(spareR || [])
     }
     run()
   }, [])

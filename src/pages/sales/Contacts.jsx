@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
@@ -29,8 +30,9 @@ function ContactForm({ contact, onSave, onCancel }) {
   })
 
   useEffect(() => {
-    supabase.from('customer').select('id, company_name').order('company_name')
-      .then(({ data }) => setCustomers(data || []))
+    fetchAllRows('customer', 'id, company_name', 'company_name')
+      .then(data => setCustomers(data || []))
+      .catch(() => setCustomers([]))
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))

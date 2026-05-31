@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -60,11 +61,11 @@ export default function RMA() {
   useEffect(() => {
     const run = async () => {
       const [tickR, venR, modeR] = await Promise.all([
-        supabase.from('ticket').select('id, ticket_id, company_name').order('id', { ascending: false }),
+        fetchAllRows('ticket', 'id, ticket_id, company_name', 'id', { ascending: false }),
         supabase.from('vendor').select('id, name').order('name'),
         supabase.from('mode').select('id, name').order('name'),
       ])
-      if (!tickR.error) setTickets(tickR.data || [])
+      setTickets(tickR || [])
       if (!venR.error)  setVendors(venR.data || [])
       if (!modeR.error) setModes(modeR.data || [])
     }

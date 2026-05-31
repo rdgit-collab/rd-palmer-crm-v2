@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -200,10 +201,10 @@ export default function Tickets() {
     const run = async () => {
       const [catR, custR, usrR, allUsrR, skuR, prioR, svcR, spareR, vendorR, modeR] = await Promise.all([
         supabase.from('category').select('id, name').order('name'),
-        supabase.from('customer').select('id, company_name').order('company_name'),
+        fetchAllRows('customer', 'id, company_name', 'company_name'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
-        supabase.from('goodsservices').select('id, sku, description').order('sku'),
+        fetchAllRows('goodsservices', 'id, sku, description', 'sku'),
         supabase.from('priority').select('id, name').order('name'),
         supabase.from('service_type').select('id, type').order('type'),
         supabase.from('spare').select('id, name').order('name'),
@@ -211,10 +212,10 @@ export default function Tickets() {
         supabase.from('mode').select('id, name').order('name'),
       ])
       if (!catR.error)  setCategories(catR.data  || [])
-      if (!custR.error) setCustomers(custR.data  || [])
+      setCustomers(custR || [])
       setUsers(usrR || [])
       setAllUsers(allUsrR || [])
-      if (!skuR.error)  setSkuList(skuR.data     || [])
+      setSkuList(skuR || [])
       if (!prioR.error) setPriorities(prioR.data || [])
       if (!svcR.error) setServiceTypes(svcR.data || [])
       if (!spareR.error) setSpares(spareR.data || [])

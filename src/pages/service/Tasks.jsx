@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -77,19 +78,19 @@ export default function Tasks() {
   useEffect(() => {
     const run = async () => {
       const [tickR, stR, usrR, allUsrR, sprR, taskSpareR] = await Promise.all([
-        supabase.from('ticket').select('id, ticket_id, company_name').eq('is_completed', 0).order('id', { ascending: false }),
+        fetchAllRows('ticket', 'id, ticket_id, company_name', 'id', { ascending: false, eq: { is_completed: 0 } }),
         supabase.from('service_type').select('id, type').order('type'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
-        supabase.from('spare').select('id, name').order('name'),
+        fetchAllRows('spare', 'id, name', 'name'),
         supabase.from('task').select('spare').not('spare', 'is', null).neq('spare', '').limit(1000),
       ])
-      if (!tickR.error) setTickets(tickR.data || [])
+      setTickets(tickR || [])
       if (!stR.error)   setServiceTypes(stR.data || [])
       setUsers(usrR || [])
       setAllUsers(allUsrR || [])
-      if (!sprR.error && sprR.data?.length) {
-        setSpares(sprR.data || [])
+      if (sprR?.length) {
+        setSpares(sprR || [])
       } else if (!taskSpareR.error) {
         const names = [...new Set((taskSpareR.data || []).map(row => row.spare).filter(Boolean))]
         setSpares(names.map((name, idx) => ({ id: idx + 1, name })))

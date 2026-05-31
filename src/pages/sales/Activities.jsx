@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
@@ -109,16 +110,16 @@ export default function Activities() {
     setLoading(true)
     const [actR, leadR, custR, activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
       supabase.from('activity').select('*').order('id', { ascending: false }).limit(5000),
-      supabase.from('sales_lead').select('id, company_name, first_name, last_name, assigned_to, status').order('company_name').limit(5000),
-      supabase.from('customer').select('id, company_name').order('company_name').limit(5000),
+      fetchAllRows('sales_lead', 'id, company_name, first_name, last_name, assigned_to, status', 'company_name'),
+      fetchAllRows('customer', 'id, company_name', 'company_name'),
       fetchAssignableUsers(supabase),
       fetchLegacyUsers(supabase),
       supabase.from('activity_type').select('id, type').order('type'),
       supabase.from('priority').select('id, name').order('name'),
       supabase.from('activity_status').select('id, name').order('name'),
     ])
-    if (!leadR.error) setLeads(leadR.data || [])
-    if (!custR.error) setCustomers(custR.data || [])
+    setLeads(leadR || [])
+    setCustomers(custR || [])
     if (!actR.error) setRawActivities(actR.data || [])
     setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
     setAssignableUsers(activeUsers || [])

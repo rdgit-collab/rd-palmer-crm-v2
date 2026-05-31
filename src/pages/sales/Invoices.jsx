@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -373,6 +374,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
   const [catalogueItems, setCatalogueItems] = useState([])
   const [taxes, setTaxes] = useState([])
   const [paymentTerms, setPaymentTerms] = useState([])
+  const [customerSearch, setCustomerSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -416,9 +418,9 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: custs }, { data: cats }, { data: txs }, { data: pts }] = await Promise.all([
-        supabase.from('customer').select('id, company_name, assigned').order('company_name'),
-        supabase.from('goodsservices').select('id, name, price, description').order('name'),
+      const [custs, cats, { data: txs }, { data: pts }] = await Promise.all([
+        fetchAllRows('customer', 'id, company_name, assigned', 'company_name'),
+        fetchAllRows('goodsservices', 'id, name, price, description', 'name'),
         supabase.from('tax').select('id, name').order('name'),
         supabase.from('payment_term').select('id, name').order('name'),
       ])
@@ -539,6 +541,9 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500'
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
+  const filteredCustomers = customers.filter(c =>
+    !customerSearch.trim() || c.company_name?.toLowerCase().includes(customerSearch.trim().toLowerCase())
+  )
 
   return (
     <>
@@ -559,9 +564,16 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
             <div className="md:col-span-2">
               <label className={labelCls}>Customer <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={customerSearch}
+                onChange={e => setCustomerSearch(e.target.value)}
+                placeholder="Type to search company name..."
+                className={`${inputCls} mb-2`}
+              />
               <select className={inputCls} value={form.companyid} onChange={e => setF('companyid', e.target.value)} required>
                 <option value="">Select Customer</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                {filteredCustomers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
               </select>
             </div>
 
