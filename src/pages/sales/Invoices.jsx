@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { getLegacyUserId } from '../../lib/legacyUsers'
+import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
@@ -146,6 +146,10 @@ function isNumericId(value) {
 
 function resolvedContactName(value, contact) {
   return isNumericId(value) ? (contactDisplayName(contact) || value || '-') : (value || '-')
+}
+
+function userDisplayName(user) {
+  return [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
 }
 
 function addressLines(customer) {
@@ -372,9 +376,9 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
   const [customers, setCustomers] = useState([])
   const [contacts, setContacts] = useState([])
   const [catalogueItems, setCatalogueItems] = useState([])
+  const [salesUsers, setSalesUsers] = useState([])
   const [taxes, setTaxes] = useState([])
   const [paymentTerms, setPaymentTerms] = useState([])
-  const [customerSearch, setCustomerSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -418,14 +422,16 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   useEffect(() => {
     const load = async () => {
-      const [custs, cats, { data: txs }, { data: pts }] = await Promise.all([
+      const [custs, cats, users, { data: txs }, { data: pts }] = await Promise.all([
         fetchAllRows('customer', 'id, company_name, assigned', 'company_name'),
         fetchAllRows('goodsservices', 'id, name, price, description', 'name'),
+        fetchAssignableUsers(supabase),
         supabase.from('tax').select('id, name').order('name'),
         supabase.from('payment_term').select('id, name').order('name'),
       ])
       setCustomers(custs || [])
       setCatalogueItems(cats || [])
+      setSalesUsers(users || [])
       setTaxes(txs || [])
       setPaymentTerms(pts || [])
       if (!invoice) {
@@ -448,14 +454,19 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   useEffect(() => {
     if (form.companyid) {
-      supabase.from('contact').select('id, first_name, last_name').eq('company_id', parseInt(form.companyid))
+      supabase.from('contact').select('id, Salutation, first_name, last_name, email').eq('company_id', parseInt(form.companyid))
         .then(({ data }) => setContacts(data || []))
       const cust = customers.find(c => String(c.id) === form.companyid)
-      if (cust) setForm(f => ({ ...f, name: cust.company_name, sales_person: f.sales_person || cust.assigned || '' }))
+      const assignedUser = salesUsers.find(user => String(user.id) === String(cust?.assigned))
+      if (cust) setForm(f => ({
+        ...f,
+        name: cust.company_name,
+        sales_person: f.sales_person || userDisplayName(assignedUser) || '',
+      }))
     } else {
       setContacts([])
     }
-  }, [form.companyid, customers])
+  }, [form.companyid, customers, salesUsers])
 
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const addLine = () => setLineItems(prev => [...prev, { itemid: '', item: '', description: '', qty: 1, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }])
@@ -541,9 +552,8 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500'
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
-  const filteredCustomers = customers.filter(c =>
-    !customerSearch.trim() || c.company_name?.toLowerCase().includes(customerSearch.trim().toLowerCase())
-  )
+  const hasCurrentSalesOption = !form.sales_person || salesUsers.some(user => userDisplayName(user) === form.sales_person)
+  const hasCurrentContactOption = !form.contact_person || contacts.some(contact => String(contact.id) === String(form.contact_person))
 
   return (
     <>
@@ -564,16 +574,9 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
             <div className="md:col-span-2">
               <label className={labelCls}>Customer <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={customerSearch}
-                onChange={e => setCustomerSearch(e.target.value)}
-                placeholder="Type to search company name..."
-                className={`${inputCls} mb-2`}
-              />
               <select className={inputCls} value={form.companyid} onChange={e => setF('companyid', e.target.value)} required>
                 <option value="">Select Customer</option>
-                {filteredCustomers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
               </select>
             </div>
 
@@ -619,19 +622,23 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
             <div>
               <label className={labelCls}>Sales Person</label>
-              <input className={inputCls} value={form.sales_person} onChange={e => setF('sales_person', e.target.value)} placeholder="Sales person name" />
+              <select className={inputCls} value={form.sales_person} onChange={e => setF('sales_person', e.target.value)}>
+                <option value="">Please Select</option>
+                {!hasCurrentSalesOption && <option value={form.sales_person}>{form.sales_person}</option>}
+                {salesUsers.map(user => {
+                  const name = userDisplayName(user)
+                  return <option key={user.id} value={name}>{name}</option>
+                })}
+              </select>
             </div>
 
             <div>
               <label className={labelCls}>Contact Person</label>
-              {contacts.length > 0 ? (
-                <select className={inputCls} value={form.contact_person} onChange={e => setF('contact_person', e.target.value)}>
-                  <option value="">Please Select</option>
-                  {contacts.map(c => <option key={c.id} value={c.id}>{contactDisplayName(c)}</option>)}
-                </select>
-              ) : (
-                <input className={inputCls} value={form.contact_person} onChange={e => setF('contact_person', e.target.value)} placeholder="Contact person name" />
-              )}
+              <select className={inputCls} value={form.contact_person} onChange={e => setF('contact_person', e.target.value)}>
+                <option value="">Please Select</option>
+                {!hasCurrentContactOption && <option value={form.contact_person}>{form.contact_person}</option>}
+                {contacts.map(c => <option key={c.id} value={c.id}>{contactDisplayName(c)}</option>)}
+              </select>
             </div>
 
             <div>
