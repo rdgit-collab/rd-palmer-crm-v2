@@ -20,7 +20,7 @@ export function isServiceRole(roleId) {
 }
 
 export function effectivePermissionRoleId(roleId) {
-  return isSalesManagerRole(roleId) ? ROLE_SALES : Number(roleId)
+  return Number(roleId)
 }
 
 export function roleLabel(roleId) {

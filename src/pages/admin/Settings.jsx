@@ -558,7 +558,7 @@ function RolePermissionsPanel() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
@@ -567,6 +567,17 @@ function RolePermissionsPanel() {
         </div>
         <div>
           {SALES_MODULES.map(m => <ToggleRow key={m.module} roleId={2} module={m.module} label={m.label} />)}
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" />
+          <h3 className="font-semibold text-gray-800 text-sm">Sales Manager Role</h3>
+          <span className="text-xs text-gray-400 ml-1">— same sales modules with manager access</span>
+        </div>
+        <div>
+          {SALES_MODULES.map(m => <ToggleRow key={m.module} roleId={4} module={m.module} label={m.label} />)}
         </div>
       </div>
 
