@@ -103,6 +103,7 @@ function addStaffMetric(map, users, assignee, updates) {
     map[key] = {
       id: key,
       name: key === 'unassigned' ? 'Unassigned' : formatUserName(users, assignee),
+      role: key === 'unassigned' ? '—' : 'Service',
       openTickets: 0,
       openTasks: 0,
       openOnsites: 0,
@@ -112,6 +113,30 @@ function addStaffMetric(map, users, assignee, updates) {
   }
   Object.entries(updates).forEach(([field, value]) => {
     map[key][field] += value
+  })
+}
+
+function seedServiceStaffMetrics(map, staffUsers) {
+  staffUsers.forEach(user => {
+    const key = String(user.old_user_id || user.id || '')
+    if (!key) return
+    if (!map[key]) {
+      map[key] = {
+        id: key,
+        name: `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—',
+        role: user.role_id === 1 ? 'Admin' : 'Service',
+        openTickets: 0,
+        openTasks: 0,
+        openOnsites: 0,
+        completed: 0,
+        overdue: 0,
+      }
+    } else {
+      map[key].role = user.role_id === 1 ? 'Admin' : 'Service'
+      if (map[key].name === '—') {
+        map[key].name = `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—'
+      }
+    }
   })
 }
 
@@ -582,10 +607,12 @@ function ServiceDashboard({ firstName }) {
       supabase.from('task').select('id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed').limit(2000),
       supabase.from('onsiteticket').select('id, ticket_id, issue_description, product, assigned_to, date, is_completed, status').limit(2000),
       fetchAssignableUsers(supabase),
-    ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users]) => {
+      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').in('role_id', [1, 3]).or('status.is.null,status.neq.Inactive').order('first_name'),
+    ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users, serviceStaff]) => {
       const tickets = allTickets.data || []
       const tasks = allTasks.data || []
       const onsites = allOnsites.data || []
+      const activeServiceStaff = serviceStaff.data || []
       const ticketNumberById = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticket_id]))
       const completedWork = tasks.filter(t => t.is_completed == 1).length + onsites.filter(o => o.is_completed == 1 || o.status === 'Completed').length
       const pendingWork = tasks.filter(t => t.is_completed != 1).length + onsites.filter(o => o.is_completed != 1 && o.status !== 'Completed').length
@@ -593,6 +620,7 @@ function ServiceDashboard({ firstName }) {
         + tickets.filter(t => t.is_completed != 1 && t.due_date === today).length
 
       const staffMap = {}
+      seedServiceStaffMetrics(staffMap, activeServiceStaff)
       tickets.forEach(ticket => {
         if (ticket.is_completed == 1) return
         addStaffMetric(staffMap, users, ticket.assigned_to, {
@@ -653,7 +681,7 @@ function ServiceDashboard({ firstName }) {
       setStaffRows(Object.values(staffMap)
         .map(row => ({ ...row, pending: row.openTickets + row.openTasks + row.openOnsites }))
         .sort((a, b) => (b.pending + b.overdue) - (a.pending + a.overdue))
-        .slice(0, 8))
+      )
       setAttentionItems(attention)
     })
   }, [])
@@ -691,6 +719,7 @@ function ServiceDashboard({ firstName }) {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Staff</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Role</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Tickets</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Tasks</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Onsite</th>
@@ -703,6 +732,7 @@ function ServiceDashboard({ firstName }) {
                 {staffRows.map(row => (
                   <tr key={row.id} className="border-b border-gray-100 last:border-0">
                     <td className="px-3 py-2 font-medium text-gray-900">{row.name || '—'}</td>
+                    <td className="px-3 py-2 text-gray-500">{row.role || '—'}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openTickets}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openTasks}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openOnsites}</td>
