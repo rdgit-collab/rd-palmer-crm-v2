@@ -29,7 +29,9 @@ export default function SerialNumbers() {
   const [total, setTotal]       = useState(0)
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
+  const [draftSearch, setDraftSearch] = useState('')
   const [searchField, setSearchField] = useState('serial_number')
+  const [draftSearchField, setDraftSearchField] = useState('serial_number')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
@@ -147,8 +149,21 @@ export default function SerialNumbers() {
     setDeleteId(null); fetchRows()
   }
 
+  const applySearch = (e) => {
+    e?.preventDefault()
+    setSearchField(draftSearchField)
+    setSearch(draftSearch.trim())
+    setPage(1)
+  }
+
+  const clearSearch = () => {
+    setDraftSearch('')
+    setSearch('')
+    setPage(1)
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
-  const activeSearchField = SEARCH_FIELDS.find(field => field.value === searchField) || SEARCH_FIELDS[0]
+  const activeSearchField = SEARCH_FIELDS.find(field => field.value === draftSearchField) || SEARCH_FIELDS[0]
 
   if (view === 'list') return (
     <div className="p-6">
@@ -156,10 +171,10 @@ export default function SerialNumbers() {
         <h1 className="text-2xl font-bold text-gray-900">Serial Numbers</h1>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Record</button>
       </div>
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <form onSubmit={applySearch} className="flex flex-col sm:flex-row gap-3 mb-4">
         <select
-          value={searchField}
-          onChange={e => { setSearchField(e.target.value); setPage(1) }}
+          value={draftSearchField}
+          onChange={e => setDraftSearchField(e.target.value)}
           className="w-full sm:w-48 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
         >
           {SEARCH_FIELDS.map(field => (
@@ -168,10 +183,12 @@ export default function SerialNumbers() {
         </select>
         <div className="relative flex-1 max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder={activeSearchField.placeholder} value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+          <input type="text" placeholder={activeSearchField.placeholder} value={draftSearch} onChange={e => setDraftSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
         </div>
-      </div>
+        <button type="submit" disabled={loading} className="px-4 py-2 bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60">Search</button>
+        {search && <button type="button" onClick={clearSearch} className="px-4 py-2 border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Clear</button>}
+      </form>
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
