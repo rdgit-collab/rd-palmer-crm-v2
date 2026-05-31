@@ -10,14 +10,11 @@ const PAGE_SIZE = 30
 const SERIAL_COLUMNS = 'id, date, ref_number, customername, sku, serial_number, warranty_period'
 
 const SEARCH_FIELDS = [
-  { value: 'all', label: 'All Fields', placeholder: 'Search serial, SKU, customer or ref...' },
   { value: 'serial_number', label: 'Serial Number', placeholder: 'Search serial number...' },
   { value: 'sku', label: 'SKU', placeholder: 'Search SKU...' },
   { value: 'customername', label: 'Customer', placeholder: 'Search customer...' },
   { value: 'ref_number', label: 'Ref Number', placeholder: 'Search ref number...' },
 ]
-
-const SEARCH_COLUMNS = SEARCH_FIELDS.filter(field => field.value !== 'all').map(field => field.value)
 
 const emptyForm = {
   date: new Date().toISOString().split('T')[0],
@@ -32,7 +29,7 @@ export default function SerialNumbers() {
   const [total, setTotal]       = useState(0)
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
-  const [searchField, setSearchField] = useState('all')
+  const [searchField, setSearchField] = useState('serial_number')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
@@ -48,7 +45,7 @@ export default function SerialNumbers() {
     const from = (page - 1) * PAGE_SIZE
     const to = page * PAGE_SIZE - 1
 
-    if (term && searchField !== 'all') {
+    if (term) {
       const exactResult = await supabase
         .from('serialnumber')
         .select(SERIAL_COLUMNS)
@@ -98,11 +95,6 @@ export default function SerialNumbers() {
       .select(SERIAL_COLUMNS, { count: 'estimated' })
       .order('id', { ascending: false })
 
-    if (term) {
-      if (searchField === 'all') {
-        q = q.or(SEARCH_COLUMNS.map(column => `${column}.ilike.%${term}%`).join(','))
-      }
-    }
     q = q.range(from, to)
     const { data, count, error: err } = await q
     if (err) {
