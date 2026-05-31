@@ -97,20 +97,21 @@ function isClosedLeadStatus(status) {
   return value.includes('closed') || ['won', 'lost', 'complete', 'completed'].includes(value)
 }
 
-function addStaffMetric(map, users, assignee, updates) {
-  const key = assignee ? String(assignee) : 'unassigned'
-  if (!map[key]) {
-    map[key] = {
-      id: key,
-      name: key === 'unassigned' ? 'Unassigned' : formatUserName(users, assignee),
-      role: key === 'unassigned' ? '—' : 'Service',
-      openTickets: 0,
-      openTasks: 0,
-      openOnsites: 0,
-      completed: 0,
-      overdue: 0,
-    }
-  }
+function isActiveUserStatus(status) {
+  const value = String(status ?? '').trim().toLowerCase()
+  return !['inactive', 'resigned', 'disabled', '0', 'false'].includes(value)
+}
+
+function serviceDashboardRoleLabel(roleId) {
+  if (Number(roleId) === 1) return 'Admin'
+  if (Number(roleId) === 3) return 'Tech'
+  return '—'
+}
+
+function addStaffMetric(map, allowedStaffById, assignee, updates) {
+  const key = assignee ? String(assignee) : ''
+  if (!key || !allowedStaffById.has(key)) return
+  if (!map[key]) map[key] = { ...allowedStaffById.get(key) }
   Object.entries(updates).forEach(([field, value]) => {
     map[key][field] += value
   })
@@ -124,7 +125,7 @@ function seedServiceStaffMetrics(map, staffUsers) {
       map[key] = {
         id: key,
         name: `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—',
-        role: user.role_id === 1 ? 'Admin' : 'Service',
+        role: serviceDashboardRoleLabel(user.role_id),
         openTickets: 0,
         openTasks: 0,
         openOnsites: 0,
@@ -132,12 +133,28 @@ function seedServiceStaffMetrics(map, staffUsers) {
         overdue: 0,
       }
     } else {
-      map[key].role = user.role_id === 1 ? 'Admin' : 'Service'
+      map[key].role = serviceDashboardRoleLabel(user.role_id)
       if (map[key].name === '—') {
         map[key].name = `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—'
       }
     }
   })
+}
+
+function buildAllowedServiceStaffMap(staffUsers) {
+  return new Map(staffUsers.map(user => {
+    const key = String(user.old_user_id || user.id || '')
+    return [key, {
+      id: key,
+      name: `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—',
+      role: serviceDashboardRoleLabel(user.role_id),
+      openTickets: 0,
+      openTasks: 0,
+      openOnsites: 0,
+      completed: 0,
+      overdue: 0,
+    }]
+  }).filter(([key]) => key))
 }
 
 function normalizePersonName(value) {
@@ -640,12 +657,13 @@ function ServiceDashboard({ firstName }) {
       supabase.from('task').select('id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed').limit(2000),
       supabase.from('onsiteticket').select('id, ticket_id, issue_description, product, assigned_to, date, is_completed, status').limit(2000),
       fetchAssignableUsers(supabase),
-      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').in('role_id', [1, 3]).or('status.is.null,status.neq.Inactive').order('first_name'),
+      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').in('role_id', [1, 3]).order('first_name'),
     ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users, serviceStaff]) => {
       const tickets = allTickets.data || []
       const tasks = allTasks.data || []
       const onsites = allOnsites.data || []
-      const activeServiceStaff = serviceStaff.data || []
+      const activeServiceStaff = (serviceStaff.data || []).filter(user => isActiveUserStatus(user.status))
+      const allowedStaffById = buildAllowedServiceStaffMap(activeServiceStaff)
       const ticketNumberById = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticket_id]))
       const completedWork = tasks.filter(t => t.is_completed == 1).length + onsites.filter(o => o.is_completed == 1 || o.status === 'Completed').length
       const pendingWork = tasks.filter(t => t.is_completed != 1).length + onsites.filter(o => o.is_completed != 1 && o.status !== 'Completed').length
@@ -656,18 +674,18 @@ function ServiceDashboard({ firstName }) {
       seedServiceStaffMetrics(staffMap, activeServiceStaff)
       tickets.forEach(ticket => {
         if (ticket.is_completed == 1) return
-        addStaffMetric(staffMap, users, ticket.assigned_to, {
+        addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, {
           openTickets: 1,
           overdue: ticket.due_date && ticket.due_date < today ? 1 : 0,
         })
       })
       tasks.forEach(task => {
-        addStaffMetric(staffMap, users, task.assigned_to, task.is_completed == 1
+        addStaffMetric(staffMap, allowedStaffById, task.assigned_to, task.is_completed == 1
           ? { completed: 1 }
           : { openTasks: 1, overdue: task.enddate && task.enddate < today ? 1 : 0 })
       })
       onsites.forEach(onsiteRow => {
-        addStaffMetric(staffMap, users, onsiteRow.assigned_to, onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed'
+        addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed'
           ? { completed: 1 }
           : { openOnsites: 1 })
       })
