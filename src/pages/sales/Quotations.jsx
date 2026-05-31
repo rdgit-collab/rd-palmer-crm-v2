@@ -165,6 +165,15 @@ function catalogueItemLabel(item) {
   return [item?.sku, item?.name].filter(Boolean).join(' - ') || ''
 }
 
+function salesDocumentItemTitle(item) {
+  const sku = String(item?.sku || '').trim()
+  const name = String(item?.item || '').trim()
+  if (!sku) return name
+  if (!name) return sku
+  if (name.toLowerCase().startsWith(sku.toLowerCase())) return name
+  return `${sku} - ${name}`
+}
+
 function addressLines(customer) {
   if (!customer) return []
   return [
@@ -183,7 +192,7 @@ function quotationHtml(quotation, items, contactName, customer) {
   const itemRows = items.map((item, idx) => `
     <tr>
       <td>${idx + 1}</td>
-      <td><strong>${escapeHtml(item.item || '')}</strong><div class="desc">${printableText(item.description || '')}</div></td>
+      <td><strong>${escapeHtml(salesDocumentItemTitle(item))}</strong><div class="desc">${printableText(item.description || '')}</div></td>
       <td>${escapeHtml(item.qty || '')}</td>
       <td>${fmtMoney(item.rate)}</td>
       <td>${escapeHtml(item.taxlbl || '-')}</td>
@@ -1017,8 +1026,14 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
         const { data } = await supabase.from('customer').select('*').eq('id', q.companyid).maybeSingle()
         customerRow = data || null
       }
+      const itemIds = [...new Set((qi || []).map(item => item.itemid).filter(Boolean))]
+      let skuByItemId = {}
+      if (itemIds.length > 0) {
+        const { data: goodsRows } = await supabase.from('goodsservices').select('id, sku').in('id', itemIds)
+        skuByItemId = Object.fromEntries((goodsRows || []).map(row => [String(row.id), row.sku || '']))
+      }
       setQuotation(q)
-      setItems(qi || [])
+      setItems((qi || []).map(item => ({ ...item, sku: skuByItemId[String(item.itemid)] || item.sku || '' })))
       setContact(contactRow)
       setCustomer(customerRow)
       setLoading(false)
