@@ -104,8 +104,12 @@ function LeadDetail({ leadId, onBack, onEdit }) {
 
   const load = useCallback(async () => {
     setLoading(true)
+    let leadQuery = supabase.from('sales_lead').select('*').eq('id', leadId)
+    if (profile?.role_id === 2) {
+      leadQuery = leadQuery.eq('assigned_to', getLegacyUserId(profile))
+    }
     const [{ data: l }, { data: act }, legacyUsers, { data: sources }, { data: stageRows }, { data: typeRows }, { data: priorityRows }, { data: statusRows }] = await Promise.all([
-      supabase.from('sales_lead').select('*').eq('id', leadId).single(),
+      leadQuery.maybeSingle(),
       supabase.from('activity').select('*').eq('lead_id', leadId).order('created_at', { ascending: false }),
       fetchLegacyUsers(supabase),
       supabase.from('lead').select('id, name').order('name'),
@@ -123,7 +127,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     setPriorities(priorityRows || [])
     setActivityStatuses(statusRows || [])
     setLoading(false)
-  }, [leadId])
+  }, [leadId, profile])
 
   useEffect(() => {
     load()
@@ -356,6 +360,8 @@ function LeadDetail({ leadId, onBack, onEdit }) {
 function LeadForm({ lead, onSave, onCancel }) {
   const { profile } = useAuth()
   const isEdit = !!lead
+  const isSalesRestricted = profile?.role_id === 2
+  const currentLegacyUserId = getLegacyUserId(profile)
   const [leadSources, setLeadSources] = useState([])
   const [stages, setStages] = useState([])
   const [users, setUsers] = useState([])
@@ -399,7 +405,7 @@ function LeadForm({ lead, onSave, onCancel }) {
     contact_mobile_number: lead?.contact_mobile_number || '',
     contact_email: lead?.contact_email || '',
     // Assigned
-    assigned_to: lead?.assigned_to ? String(lead.assigned_to) : '',
+    assigned_to: lead?.assigned_to ? String(lead.assigned_to) : (isSalesRestricted ? String(currentLegacyUserId) : ''),
   })
 
   useEffect(() => {
@@ -438,6 +444,12 @@ function LeadForm({ lead, onSave, onCancel }) {
     run()
   }, [])
 
+  useEffect(() => {
+    if (isSalesRestricted && !form.assigned_to) {
+      set('assigned_to', String(currentLegacyUserId))
+    }
+  }, [isSalesRestricted, currentLegacyUserId, form.assigned_to])
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const loadContacts = async (companyId) => {
@@ -467,7 +479,7 @@ function LeadForm({ lead, onSave, onCancel }) {
       mobile_number: customer.mobile_number || '',
       email: customer.email || '',
       website: customer.website || '',
-      assigned_to: f.assigned_to || (customer.assignto ? String(customer.assignto) : ''),
+      assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (f.assigned_to || (customer.assignto ? String(customer.assignto) : '')),
     }))
   }
 
@@ -530,7 +542,7 @@ function LeadForm({ lead, onSave, onCancel }) {
       department_id: form.department_id,
       contact_mobile_number: form.contact_mobile_number,
       contact_email: form.contact_email,
-      assigned_to: form.assigned_to ? parseInt(form.assigned_to) : null,
+      assigned_to: isSalesRestricted ? currentLegacyUserId : (form.assigned_to ? parseInt(form.assigned_to) : null),
       user_id: getLegacyUserId(profile),
       updated_at: new Date().toISOString(),
     }
@@ -858,9 +870,9 @@ function LeadForm({ lead, onSave, onCancel }) {
         <p className={sectionCls}>Assignment</p>
         <div className="mb-6">
           <label className={labelCls}>Assigned To</label>
-          <select className={inputCls} value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)}>
+          <select className={inputCls} value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)} disabled={isSalesRestricted}>
             <option value="">Please Select</option>
-            {users.map(u => (
+            {(isSalesRestricted ? users.filter(u => String(u.id) === String(currentLegacyUserId)) : users).map(u => (
               <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
             ))}
           </select>
@@ -881,6 +893,7 @@ function LeadForm({ lead, onSave, onCancel }) {
 
 // ─── Main Leads Page ───────────────────────────────────────────────────────────
 export default function Leads() {
+  const { profile } = useAuth()
   const location = useLocation()
   const [view, setView] = useState('list')
   const [selectedId, setSelectedId] = useState(null)
@@ -920,8 +933,15 @@ export default function Leads() {
   }, [location.state])
 
   const fetchLeads = useCallback(async () => {
+    if (!profile) return
     setLoading(true)
     let q = supabase.from('sales_lead').select('*', { count: 'exact' })
+    const isSalesRestricted = profile?.role_id === 2
+    const currentLegacyUserId = getLegacyUserId(profile)
+
+    if (isSalesRestricted) {
+      q = q.eq('assigned_to', currentLegacyUserId)
+    }
 
     if (search.trim()) {
       q = q.ilike('company_name', `%${search.trim()}%`)
@@ -929,7 +949,7 @@ export default function Leads() {
     if (filterStatus) {
       q = q.eq('status', filterStatus)
     }
-    if (filterAssigned) {
+    if (!isSalesRestricted && filterAssigned) {
       q = q.eq('assigned_to', parseInt(filterAssigned))
     }
 
@@ -937,7 +957,7 @@ export default function Leads() {
     const { data, count, error } = await q
     if (!error) { setLeads(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, filterStatus, filterAssigned, page])
+  }, [search, filterStatus, filterAssigned, page, profile])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
   useEffect(() => { setPage(0) }, [search, filterStatus, filterAssigned])
@@ -1010,13 +1030,15 @@ export default function Leads() {
           <option value="">All Stages</option>
           {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <select
-          className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-          value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
-        >
-          <option value="">All Assigned Users</option>
-          {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
-        </select>
+        {profile?.role_id !== 2 && (
+          <select
+            className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+            value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
+          >
+            <option value="">All Assigned Users</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+          </select>
+        )}
         {(search || filterStatus || filterAssigned) && (
           <button onClick={() => { setSearch(''); setFilterStatus(''); setFilterAssigned('') }}
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">

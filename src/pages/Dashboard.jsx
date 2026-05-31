@@ -199,6 +199,7 @@ function AdminDashboard({ firstName }) {
   const [recentActivities, setRecentActivities] = useState([])
 
   useEffect(() => {
+    if (!profile) return
     const today = new Date().toISOString().split('T')[0]
     Promise.all([
       supabase.from('customer').select('*', { count: 'exact', head: true }),
@@ -298,6 +299,7 @@ function AdminDashboard({ firstName }) {
 // SALES DASHBOARD
 // ════════════════════════════════════════════════════════════════════
 function SalesDashboard({ firstName }) {
+  const { profile } = useAuth()
   const [stats, setStats] = useState({})
   const [recentActivities, setRecentActivities] = useState([])
   const [recentLeads, setRecentLeads] = useState([])
@@ -313,16 +315,37 @@ function SalesDashboard({ firstName }) {
     const staleDate = new Date()
     staleDate.setDate(staleDate.getDate() - 7)
     const staleIso = staleDate.toISOString().split('T')[0]
+    const isSalesRestricted = profile?.role_id === 2
+    const currentLegacyUserId = getLegacyUserId(profile)
+
+    let customerCountQuery = supabase.from('customer').select('*', { count: 'exact', head: true })
+    let leadCountQuery = supabase.from('sales_lead').select('*', { count: 'exact', head: true })
+    let quotationCountQuery = supabase.from('quotation').select('*', { count: 'exact', head: true })
+    let invoiceCountQuery = supabase.from('invoice').select('*', { count: 'exact', head: true })
+    let overdueInvoiceQuery = supabase.from('invoice').select('*', { count: 'exact', head: true }).lt('due_date', today)
+    let recentActivitiesQuery = supabase.from('activity').select('id, user_id, assigned_to, type, date, description, company_id').order('date', { ascending: false }).limit(8)
+    let recentLeadsQuery = supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').order('id', { ascending: false }).limit(5)
+
+    if (isSalesRestricted) {
+      customerCountQuery = customerCountQuery.or(`assignto.eq.${currentLegacyUserId},user_id.eq.${currentLegacyUserId}`)
+      leadCountQuery = leadCountQuery.eq('assigned_to', currentLegacyUserId)
+      quotationCountQuery = quotationCountQuery.eq('user_id', currentLegacyUserId)
+      invoiceCountQuery = invoiceCountQuery.eq('user_id', currentLegacyUserId)
+      overdueInvoiceQuery = overdueInvoiceQuery.eq('user_id', currentLegacyUserId)
+      recentActivitiesQuery = recentActivitiesQuery.or(`assigned_to.eq.${currentLegacyUserId},user_id.eq.${currentLegacyUserId}`)
+      recentLeadsQuery = recentLeadsQuery.eq('assigned_to', currentLegacyUserId)
+    }
+
     Promise.all([
-      supabase.from('customer').select('*', { count: 'exact', head: true }),
-      supabase.from('sales_lead').select('*', { count: 'exact', head: true }),
-      supabase.from('quotation').select('*', { count: 'exact', head: true }),
-      supabase.from('invoice').select('*', { count: 'exact', head: true }),
-      supabase.from('invoice').select('*', { count: 'exact', head: true }).lt('due_date', today),
-      supabase.from('activity').select('id, type, date, description, company_id').order('date', { ascending: false }).limit(8),
-      supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').order('id', { ascending: false }).limit(5),
+      customerCountQuery,
+      leadCountQuery,
+      quotationCountQuery,
+      invoiceCountQuery,
+      overdueInvoiceQuery,
+      recentActivitiesQuery,
+      recentLeadsQuery,
       supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').limit(2000),
-      supabase.from('activity').select('id, lead_id, assigned_to, type, status, date, description, created_at').limit(2000),
+      supabase.from('activity').select('id, lead_id, user_id, assigned_to, type, status, date, description, created_at').limit(2000),
       supabase.from('quotation').select('id, user_id, number, date, sales_person, total, isconvert').limit(2000),
       supabase.from('invoice').select('id, user_id, invoice_number, date, sales_person, total').limit(2000),
       supabase.from('stage').select('id, name').order('name'),
@@ -342,15 +365,25 @@ function SalesDashboard({ firstName }) {
       const invoiceRows = allInvoices.data || []
       const stageLookup = Object.fromEntries((stageRows.data || []).map(stage => [String(stage.id), stage.name]))
       const getLeadStatusName = (status) => status ? (stageLookup[String(status)] || String(status)) : 'Open'
-      const openLeads = leadRows.filter(lead => !isClosedLeadStatus(getLeadStatusName(lead.status)))
-      const newLeadsThisMonth = leadRows.filter(lead => isThisMonth(lead.created_at, monthStart)).length
-      const quoteValueThisMonth = quotationRows
+      const scopedLeadRows = isSalesRestricted ? leadRows.filter(lead => String(lead.assigned_to) === String(currentLegacyUserId)) : leadRows
+      const scopedLeadIds = new Set(scopedLeadRows.map(lead => String(lead.id)))
+      const scopedActivityRows = isSalesRestricted
+        ? activityRows.filter(activity =>
+          String(activity.assigned_to) === String(currentLegacyUserId) ||
+          String(activity.user_id) === String(currentLegacyUserId) ||
+          scopedLeadIds.has(String(activity.lead_id || '')))
+        : activityRows
+      const scopedQuotationRows = isSalesRestricted ? quotationRows.filter(row => String(row.user_id) === String(currentLegacyUserId)) : quotationRows
+      const scopedInvoiceRows = isSalesRestricted ? invoiceRows.filter(row => String(row.user_id) === String(currentLegacyUserId)) : invoiceRows
+      const openLeads = scopedLeadRows.filter(lead => !isClosedLeadStatus(getLeadStatusName(lead.status)))
+      const newLeadsThisMonth = scopedLeadRows.filter(lead => isThisMonth(lead.created_at, monthStart)).length
+      const quoteValueThisMonth = scopedQuotationRows
         .filter(row => isThisMonth(row.date, monthStart))
         .reduce((sum, row) => sum + Number(row.total || 0), 0)
-      const invoiceValueThisMonth = invoiceRows
+      const invoiceValueThisMonth = scopedInvoiceRows
         .filter(row => isThisMonth(row.date, monthStart))
         .reduce((sum, row) => sum + Number(row.total || 0), 0)
-      const convertedQuotes = quotationRows.filter(row => row.isconvert === 1).length
+      const convertedQuotes = scopedQuotationRows.filter(row => row.isconvert === 1).length
       const salesMap = {}
 
       leadRows.forEach(lead => {
@@ -382,7 +415,7 @@ function SalesDashboard({ firstName }) {
         })
 
       const lastActivityByLead = {}
-      activityRows.forEach(activity => {
+      scopedActivityRows.forEach(activity => {
         if (!activity.lead_id) return
         const date = String(activity.date || activity.created_at || '').slice(0, 10)
         if (!lastActivityByLead[activity.lead_id] || date > lastActivityByLead[activity.lead_id]) {
@@ -414,7 +447,7 @@ function SalesDashboard({ firstName }) {
         overdueInvoices: overdue.count || 0,
         quoteValueThisMonth,
         invoiceValueThisMonth,
-        quoteConversion: quotationRows.length > 0 ? Math.round((convertedQuotes / quotationRows.length) * 100) : 0,
+        quoteConversion: scopedQuotationRows.length > 0 ? Math.round((convertedQuotes / scopedQuotationRows.length) * 100) : 0,
       })
       setRecentActivities(acts.data || [])
       setRecentLeads((rLeads.data || []).map(lead => ({ ...lead, status_name: getLeadStatusName(lead.status) })))
@@ -423,7 +456,7 @@ function SalesDashboard({ firstName }) {
         .slice(0, 8))
       setFollowUpItems(followUps)
     })
-  }, [performanceMonth])
+  }, [performanceMonth, profile])
 
   function leadStatusColor(s) {
     if (!s) return 'bg-gray-100 text-gray-600'
