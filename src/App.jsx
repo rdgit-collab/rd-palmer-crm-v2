@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/layout/Layout'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const Login = lazy(() => import('./pages/Login'))
 const DashboardModule = lazy(() => import('./pages/Dashboard'))
@@ -53,34 +54,37 @@ function PermissionRoute({ children, module }) {
 
 function AppRoutes() {
   const { user } = useAuth()
+  const location = useLocation()
   return (
-    <Suspense fallback={<LoadingScreen />}>
-      <Routes>
-        <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
-        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route index element={<DashboardModule />} />
-          <Route path="sales-dashboard"   element={<SalesDashboardPage />} />
-          <Route path="service-dashboard" element={<ServiceDashboardPage />} />
-          <Route path="customers"     element={<PermissionRoute module="customers">   <Customers />   </PermissionRoute>} />
-          <Route path="contacts"      element={<PermissionRoute module="contacts">    <Contacts />    </PermissionRoute>} />
-          <Route path="leads"         element={<PermissionRoute module="leads">       <Leads />       </PermissionRoute>} />
-          <Route path="activities"    element={<PermissionRoute module="activities">  <Activities />  </PermissionRoute>} />
-          <Route path="quotations"    element={<PermissionRoute module="quotations">  <Quotations />  </PermissionRoute>} />
-          <Route path="invoices"      element={<PermissionRoute module="invoices">    <Invoices />    </PermissionRoute>} />
-          <Route path="tickets"       element={<PermissionRoute module="tickets">     <Tickets />     </PermissionRoute>} />
-          <Route path="tasks"         element={<PermissionRoute module="tasks">       <Tasks />       </PermissionRoute>} />
-          <Route path="onsite-tickets"element={<PermissionRoute module="onsite-tickets"><OnsiteTickets /></PermissionRoute>} />
-          <Route path="rma"           element={<PermissionRoute module="rma">         <RMA />         </PermissionRoute>} />
-          <Route path="calibration"   element={<PermissionRoute module="calibration"> <Calibration /> </PermissionRoute>} />
-          <Route path="serial-numbers"element={<PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute>} />
-          <Route path="catalogue"     element={<ProtectedRoute roles={[1]}><Catalogue /></ProtectedRoute>} />
-          <Route path="admin/users"   element={<ProtectedRoute roles={[1]}><Users /></ProtectedRoute>} />
-          <Route path="settings"      element={<ProtectedRoute roles={[1]}><Settings /></ProtectedRoute>} />
-          <Route path="profile"       element={<Profile />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+    <ErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<LoadingScreen />}>
+        <Routes>
+          <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+          <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route index element={<DashboardModule />} />
+            <Route path="sales-dashboard"   element={<SalesDashboardPage />} />
+            <Route path="service-dashboard" element={<ServiceDashboardPage />} />
+            <Route path="customers"     element={<PermissionRoute module="customers">   <Customers />   </PermissionRoute>} />
+            <Route path="contacts"      element={<PermissionRoute module="contacts">    <Contacts />    </PermissionRoute>} />
+            <Route path="leads"         element={<PermissionRoute module="leads">       <Leads />       </PermissionRoute>} />
+            <Route path="activities"    element={<PermissionRoute module="activities">  <Activities />  </PermissionRoute>} />
+            <Route path="quotations"    element={<PermissionRoute module="quotations">  <Quotations />  </PermissionRoute>} />
+            <Route path="invoices"      element={<PermissionRoute module="invoices">    <Invoices />    </PermissionRoute>} />
+            <Route path="tickets"       element={<PermissionRoute module="tickets">     <Tickets />     </PermissionRoute>} />
+            <Route path="tasks"         element={<PermissionRoute module="tasks">       <Tasks />       </PermissionRoute>} />
+            <Route path="onsite-tickets"element={<PermissionRoute module="onsite-tickets"><OnsiteTickets /></PermissionRoute>} />
+            <Route path="rma"           element={<PermissionRoute module="rma">         <RMA />         </PermissionRoute>} />
+            <Route path="calibration"   element={<PermissionRoute module="calibration"> <Calibration /> </PermissionRoute>} />
+            <Route path="serial-numbers"element={<PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute>} />
+            <Route path="catalogue"     element={<ProtectedRoute roles={[1]}><Catalogue /></ProtectedRoute>} />
+            <Route path="admin/users"   element={<ProtectedRoute roles={[1]}><Users /></ProtectedRoute>} />
+            <Route path="settings"      element={<ProtectedRoute roles={[1]}><Settings /></ProtectedRoute>} />
+            <Route path="profile"       element={<Profile />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 

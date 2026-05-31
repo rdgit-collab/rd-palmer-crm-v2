@@ -220,13 +220,13 @@ function AdminDashboard({ firstName }) {
     if (!profile) return
     const today = new Date().toISOString().split('T')[0]
     Promise.all([
-      supabase.from('customer').select('*', { count: 'exact', head: true }),
-      supabase.from('ticket').select('*', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('quotation').select('*', { count: 'exact', head: true }),
-      supabase.from('invoice').select('*', { count: 'exact', head: true }),
-      supabase.from('task').select('*', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('sales_lead').select('*', { count: 'exact', head: true }),
-      supabase.from('invoice').select('*', { count: 'exact', head: true }).eq('status', 'Unpaid').lt('due_date', today),
+      supabase.from('customer').select('id', { count: 'estimated', head: true }),
+      supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+      supabase.from('quotation').select('id', { count: 'estimated', head: true }),
+      supabase.from('invoice').select('id', { count: 'estimated', head: true }),
+      supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+      supabase.from('sales_lead').select('id', { count: 'estimated', head: true }),
+      supabase.from('invoice').select('id', { count: 'exact', head: true }).eq('status', 'Unpaid').lt('due_date', today),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
       supabase.from('activity').select('id, type, date, description, company_id').order('date', { ascending: false }).limit(6),
     ]).then(([c, t, q, inv, tsk, l, ov, rTick, rAct]) => {
@@ -336,11 +336,11 @@ function SalesDashboard({ firstName }) {
     const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
 
-    let customerCountQuery = supabase.from('customer').select('*', { count: 'exact', head: true })
-    let leadCountQuery = supabase.from('sales_lead').select('*', { count: 'exact', head: true })
-    let quotationCountQuery = supabase.from('quotation').select('*', { count: 'exact', head: true })
-    let invoiceCountQuery = supabase.from('invoice').select('*', { count: 'exact', head: true })
-    let overdueInvoiceQuery = supabase.from('invoice').select('*', { count: 'exact', head: true }).lt('due_date', today)
+    let customerCountQuery = supabase.from('customer').select('id', { count: 'exact', head: true })
+    let leadCountQuery = supabase.from('sales_lead').select('id', { count: 'exact', head: true })
+    let quotationCountQuery = supabase.from('quotation').select('id', { count: 'exact', head: true })
+    let invoiceCountQuery = supabase.from('invoice').select('id', { count: 'exact', head: true })
+    let overdueInvoiceQuery = supabase.from('invoice').select('id', { count: 'exact', head: true }).lt('due_date', today)
     let recentActivitiesQuery = supabase.from('activity').select('id, user_id, assigned_to, type, date, description, company_id').order('date', { ascending: false }).limit(8)
     let recentLeadsQuery = supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').order('id', { ascending: false }).limit(5)
 
@@ -648,11 +648,11 @@ function ServiceDashboard({ firstName }) {
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
     Promise.all([
-      supabase.from('ticket').select('*', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('task').select('*', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('onsiteticket').select('*', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('ticket').select('*', { count: 'exact', head: true }).eq('is_completed', 0).lt('due_date', today),
-      supabase.from('rma').select('*', { count: 'exact', head: true }),
+      supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+      supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+      supabase.from('onsiteticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+      supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0).lt('due_date', today),
+      supabase.from('rma').select('id', { count: 'exact', head: true }),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
       supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
       supabase.from('ticket').select('id, ticket_id, company_name, assigned_to, due_date, priority, is_completed, status').limit(2000),
