@@ -48,10 +48,10 @@ export default function SerialNumbers() {
     if (term) {
       const exactResult = await supabase
         .from('serialnumber')
-        .select(SERIAL_COLUMNS)
+        .select(SERIAL_COLUMNS, { count: 'exact' })
         .eq(searchField, term)
         .order('id', { ascending: false })
-        .limit(PAGE_SIZE)
+        .range(from, to)
 
       if (exactResult.error) {
         setRows([])
@@ -63,14 +63,14 @@ export default function SerialNumbers() {
 
       if (exactResult.data?.length) {
         setRows(exactResult.data)
-        setTotal(exactResult.data.length)
+        setTotal(exactResult.count || exactResult.data.length)
         setLoading(false)
         return
       }
 
       const fuzzyResult = await supabase
         .from('serialnumber')
-        .select(SERIAL_COLUMNS)
+        .select(SERIAL_COLUMNS, { count: 'exact' })
         .ilike(searchField, `%${term}%`)
         .order('id', { ascending: false })
         .range(from, to)
@@ -85,7 +85,7 @@ export default function SerialNumbers() {
 
       const fuzzyRows = fuzzyResult.data || []
       setRows(fuzzyRows)
-      setTotal(from + fuzzyRows.length + (fuzzyRows.length === PAGE_SIZE ? 1 : 0))
+      setTotal(fuzzyResult.count || 0)
       setLoading(false)
       return
     }
