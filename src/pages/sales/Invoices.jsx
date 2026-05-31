@@ -209,13 +209,18 @@ function invoiceHtml(invoice, items, contactName, customer) {
         .meta { margin-left: auto; width: 230px; }
         .meta-row { display: grid; grid-template-columns: 90px 1fr; gap: 8px; line-height: 1.35; }
         .meta-row .value { text-align: right; font-weight: 600; }
-        table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 18px 0 0; border: 1px solid #222; border-radius: 3px; overflow: hidden; }
+        table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; margin: 18px 0 0; border: 1px solid #222; border-radius: 3px; overflow: hidden; }
         th, td { padding: 7px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #e5e5e5; }
         th { background: #d4d4d4; color: #111; font-weight: 700; }
         td:nth-child(1), th:nth-child(1) { width: 28px; text-align: center; }
-        td:nth-child(3), th:nth-child(3), td:nth-child(4), th:nth-child(4), td:nth-child(5), th:nth-child(5), td:nth-child(6), th:nth-child(6) { text-align: right; width: 82px; }
+        td:nth-child(2), th:nth-child(2) { width: auto; }
+        td:nth-child(3), th:nth-child(3) { text-align: right; width: 42px; white-space: nowrap; }
+        td:nth-child(4), th:nth-child(4) { text-align: right; width: 74px; white-space: nowrap; }
+        td:nth-child(5), th:nth-child(5) { text-align: right; width: 50px; white-space: nowrap; }
+        td:nth-child(6), th:nth-child(6) { text-align: right; width: 86px; white-space: nowrap; }
         tr:last-child td { border-bottom: 0; }
-        .desc { margin-top: 4px; line-height: 1.4; }
+        td:nth-child(2) { overflow-wrap: anywhere; hyphens: auto; }
+        .desc { margin-top: 5px; line-height: 1.42; }
         tr, .totals, .section, .document-signature { break-inside: avoid; page-break-inside: avoid; }
         .below-table { display: grid; grid-template-columns: 1fr 250px; gap: 28px; align-items: start; margin-top: 6px; }
         .totals { width: 250px; margin-left: auto; border-top: 1px solid #aaa; padding-top: 8px; }
