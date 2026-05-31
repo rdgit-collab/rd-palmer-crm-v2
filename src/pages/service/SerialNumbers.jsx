@@ -16,6 +16,13 @@ const SEARCH_FIELDS = [
   { value: 'ref_number', label: 'Ref Number', placeholder: 'Search ref number...' },
 ]
 
+const WARRANTY_PERIODS = [
+  { value: '0', label: 'No Warranty' },
+  { value: '1', label: '1 Year' },
+  { value: '2', label: '2 Years' },
+  { value: '3', label: '3 Years' },
+]
+
 const emptyForm = {
   date: new Date().toISOString().split('T')[0],
   ref_number: '', customername: '', sku: '',
@@ -39,6 +46,7 @@ export default function SerialNumbers() {
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
   const [skuList, setSkuList]   = useState([])
+  const [customerList, setCustomerList] = useState([])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -134,6 +142,13 @@ export default function SerialNumbers() {
       .catch(() => setSkuList([]))
   }, [view, skuList.length])
 
+  useEffect(() => {
+    if (view !== 'form' || customerList.length) return
+    fetchAllRows('customer', 'id, company_name', 'company_name')
+      .then(data => setCustomerList(data || []))
+      .catch(() => setCustomerList([]))
+  }, [view, customerList.length])
+
   const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
   const openEdit = (r) => {
     setForm({
@@ -179,6 +194,8 @@ export default function SerialNumbers() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const activeSearchField = SEARCH_FIELDS.find(field => field.value === draftSearchField) || SEARCH_FIELDS[0]
+  const hasCurrentCustomerOption = !form.customername || customerList.some(c => c.company_name === form.customername)
+  const hasCurrentWarrantyOption = !form.warranty_period || WARRANTY_PERIODS.some(w => w.value === form.warranty_period)
 
   if (view === 'list') return (
     <div className="p-6">
@@ -263,7 +280,13 @@ export default function SerialNumbers() {
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Customer Name</label>
-          <div className="col-span-2"><input type="text" value={form.customername} onChange={e => setForm(f => ({...f, customername: e.target.value}))} placeholder="Customer" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+          <div className="col-span-2">
+            <select value={form.customername} onChange={e => setForm(f => ({...f, customername: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">Please Select</option>
+              {!hasCurrentCustomerOption && <option value={form.customername}>{form.customername}</option>}
+              {customerList.map(c => <option key={c.id} value={c.company_name}>{c.company_name}</option>)}
+            </select>
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">SKU</label>
@@ -280,7 +303,13 @@ export default function SerialNumbers() {
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Warranty Period</label>
-          <div className="col-span-2"><input type="text" value={form.warranty_period} onChange={e => setForm(f => ({...f, warranty_period: e.target.value}))} placeholder="e.g. 1 Year, 24 Months" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" /></div>
+          <div className="col-span-2">
+            <select value={form.warranty_period} onChange={e => setForm(f => ({...f, warranty_period: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">Please Select</option>
+              {!hasCurrentWarrantyOption && <option value={form.warranty_period}>{form.warranty_period}</option>}
+              {WARRANTY_PERIODS.map(period => <option key={period.value} value={period.value}>{period.label}</option>)}
+            </select>
+          </div>
         </div>
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
           <button type="button" onClick={() => setView('list')} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
