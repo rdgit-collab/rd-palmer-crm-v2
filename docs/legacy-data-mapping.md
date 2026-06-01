@@ -38,25 +38,26 @@ These fields are legacy integer user ids and should match `public.legacy_users.o
 
 ## Catalogue Lookup Fields
 
-`public.goodsservices` now stores the lookup ids used by the new frontend:
+`public.goodsservices` stores the original imported catalogue lookup ids:
 
-- `goodsservices.category` -> `product_category.id`
-- `goodsservices.model` -> `product_model.id`
-- `goodsservices.manufacture` -> `product_manufacturer.id`
+- `goodsservices.category` -> `category.id`
+- `goodsservices.model` -> `model.id`
+- `goodsservices.manufacture` -> `manufacture.id`
 - `goodsservices.item_type` -> `item_type.id`
 - `goodsservices.tax` -> `tax.id`
 
-Historical issue: imported `goodsservices` rows originally stored old lookup ids from `category`, `model`, and `manufacture`. Those ids overlapped numerically with the new `product_*` lookup tables but meant different labels, causing silent catalogue mismatch.
+Historical issue: imported `goodsservices` rows used `category`, `model`, and `manufacture`. The newer `product_*` lookup tables reused some of the same numbers for different labels, causing silent catalogue mismatch when the frontend read from `product_category`, `product_model`, and `product_manufacturer`.
 
-Applied Supabase migration:
+Supabase migrations:
 
 - `20260601111542 normalize_goodsservices_lookup_ids`
+- `20260601124610 restore_goodsservices_original_lookup_ids`
 
-The migration backed up original values to:
+The first migration normalized the rows toward `product_*` tables, but the live data had already been normalized once before, so applying it again shifted labels a second time. The restore migration backs up the current values to:
 
-- `app_private.goodsservices_lookup_backup_20260601`
+- `app_private.goodsservices_lookup_restore_backup_20260601`
 
-It then remapped `goodsservices.category`, `goodsservices.model`, and `goodsservices.manufacture` by matching old lookup names to new lookup names. It also changed `goodsservices.tax = '0'` to `null` because tax id `0` does not exist.
+It then restores `goodsservices.category`, `goodsservices.model`, and `goodsservices.manufacture` back to the original imported lookup tables by reversing the name-based mapping twice. The frontend Catalogue and Settings screens now use `category`, `model`, and `manufacture` directly.
 
 ## Remaining Data Cleanup Items
 

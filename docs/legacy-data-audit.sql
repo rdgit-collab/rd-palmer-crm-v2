@@ -34,15 +34,15 @@ select * from checks order by mismatched desc, field;
 -- ---------------------------------------------------------------------------
 
 with checks as (
-  select 'goodsservices.category -> product_category.id' as field,
+  select 'goodsservices.category -> category.id' as field,
          count(*) filter (where category is not null and category <> '') as populated,
-         count(*) filter (where category is not null and category <> '' and category ~ '^[0-9]+$' and not exists (select 1 from public.product_category pc where pc.id = goodsservices.category::bigint)) as numeric_orphans,
+         count(*) filter (where category is not null and category <> '' and category ~ '^[0-9]+$' and not exists (select 1 from public.category c where c.id = goodsservices.category::bigint)) as numeric_orphans,
          count(*) filter (where category is not null and category <> '' and category !~ '^[0-9]+$') as non_numeric
   from public.goodsservices
   union all
-  select 'goodsservices.model -> product_model.id', count(*) filter (where model is not null and model <> ''), count(*) filter (where model is not null and model <> '' and model ~ '^[0-9]+$' and not exists (select 1 from public.product_model pm where pm.id = goodsservices.model::bigint)), count(*) filter (where model is not null and model <> '' and model !~ '^[0-9]+$') from public.goodsservices
+  select 'goodsservices.model -> model.id', count(*) filter (where model is not null and model <> ''), count(*) filter (where model is not null and model <> '' and model ~ '^[0-9]+$' and not exists (select 1 from public.model m where m.id = goodsservices.model::bigint)), count(*) filter (where model is not null and model <> '' and model !~ '^[0-9]+$') from public.goodsservices
   union all
-  select 'goodsservices.manufacture -> product_manufacturer.id', count(*) filter (where manufacture is not null and manufacture <> ''), count(*) filter (where manufacture is not null and manufacture <> '' and manufacture ~ '^[0-9]+$' and not exists (select 1 from public.product_manufacturer pm where pm.id = goodsservices.manufacture::bigint)), count(*) filter (where manufacture is not null and manufacture <> '' and manufacture !~ '^[0-9]+$') from public.goodsservices
+  select 'goodsservices.manufacture -> manufacture.id', count(*) filter (where manufacture is not null and manufacture <> ''), count(*) filter (where manufacture is not null and manufacture <> '' and manufacture ~ '^[0-9]+$' and not exists (select 1 from public.manufacture m where m.id = goodsservices.manufacture::bigint)), count(*) filter (where manufacture is not null and manufacture <> '' and manufacture !~ '^[0-9]+$') from public.goodsservices
   union all
   select 'goodsservices.item_type -> item_type.id', count(*) filter (where item_type is not null and item_type <> ''), count(*) filter (where item_type is not null and item_type <> '' and item_type ~ '^[0-9]+$' and not exists (select 1 from public.item_type it where it.id = goodsservices.item_type::bigint)), count(*) filter (where item_type is not null and item_type <> '' and item_type !~ '^[0-9]+$') from public.goodsservices
   union all

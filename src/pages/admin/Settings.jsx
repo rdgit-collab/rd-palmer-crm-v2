@@ -672,9 +672,9 @@ export default function Settings() {
 
       {tab === 'catalogue' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <LookupPanel title="Product Categories" tableName="product_category" valueField="name" noUserId />
-          <LookupPanel title="Product Models" tableName="product_model" valueField="name" noUserId />
-          <LookupPanel title="Manufacturers" tableName="product_manufacturer" valueField="name" noUserId />
+          <LookupPanel title="Product Categories" tableName="category" valueField="name" hasUserIdInt />
+          <LookupPanel title="Product Models" tableName="model" valueField="name" hasUserIdInt />
+          <LookupPanel title="Manufacturers" tableName="manufacture" valueField="name" hasUserIdInt />
         </div>
       )}
 
