@@ -104,7 +104,16 @@ export default function Users() {
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
-        options: { data: { first_name: form.first_name, last_name: form.last_name } },
+        options: {
+          data: {
+            first_name: form.first_name,
+            last_name: form.last_name,
+            role_id: form.role_id,
+            position: form.position,
+            department: form.department,
+            phone: form.phone,
+          },
+        },
       })
       if (authErr) { setError(authErr.message); setSaving(false); return }
       if (authData?.user?.id) {

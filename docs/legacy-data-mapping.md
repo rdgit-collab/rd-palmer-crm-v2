@@ -95,6 +95,21 @@ The migration backs up the affected references to:
 
 It then adds old user `23` to `legacy_users` as `Legacy User 23 (Inactive)`. This preserves historical creator values instead of rewriting them to another staff member. The expanded audit now reports `0` mismatches for all checked legacy user fields.
 
+## New Staff Creation Guardrail
+
+Applied Supabase migration:
+
+- `20260601164028 sync_new_auth_users_to_legacy_users`
+
+The migration adds database triggers so future staff creation stays aligned:
+
+- New `auth.users` rows automatically create a matching `public.users` profile.
+- New profiles automatically receive a unique `old_user_id`.
+- `public.legacy_users` is created or updated from the profile.
+- Later user edits/deactivation keep `legacy_users` synchronized.
+
+The Admin Users screen also passes role, position, department, and phone into signup metadata so the database trigger can create a complete profile immediately. This prevents new staff from logging in without a valid legacy assignment id.
+
 ## Remaining Data Cleanup Items
 
 The latest audit found parent-child orphan references that should be reviewed before adding foreign keys:
