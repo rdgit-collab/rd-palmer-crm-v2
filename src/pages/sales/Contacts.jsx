@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { useAuth } from '../../contexts/AuthContext'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
@@ -13,6 +15,7 @@ const PAGE_SIZE = 30
 // ─── Contact Form (Add / Edit) ─────────────────────────────────────────────────
 function ContactForm({ contact, onSave, onCancel }) {
   const isEdit = !!contact
+  const { profile } = useAuth()
   const [customers, setCustomers] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -52,7 +55,7 @@ function ContactForm({ contact, onSave, onCancel }) {
       mobile_number: form.mobile_number,
       email: form.email,
       address: form.address,
-      user_id: 1,
+      user_id: contact?.user_id || getLegacyUserId(profile),
       updated_at: new Date().toISOString(),
     }
 

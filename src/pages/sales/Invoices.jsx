@@ -239,8 +239,8 @@ function invoiceHtml(invoice, items, contactName, customer) {
         .text-column .section, .below-table .section { text-align: justify; text-align-last: left; hyphens: auto; overflow-wrap: break-word; }
         .text-column .section h2, .below-table .section h2 { text-align: left; text-align-last: left; }
         .below-table .section { margin-top: 4px; }
-        .document-signature { display: grid; grid-template-columns: 220px 220px; gap: 32px; margin-top: 18px; }
-        .signature-line { border-top: 1px dotted #111; padding-top: 6px; font-style: italic; min-height: 42px; }
+        .document-signature { display: grid; grid-template-columns: 270px 270px; gap: 48px; margin-top: 28px; }
+        .signature-line { border-top: 1px dotted #111; padding-top: 10px; font-style: italic; min-height: 64px; line-height: 1.45; }
         ul { padding-left: 18px; margin-top: 4px; }
         @media print {
           body { background: #fff; }
@@ -300,10 +300,10 @@ function invoiceHtml(invoice, items, contactName, customer) {
         </div>
         <div class="text-column">
           ${terms ? `<div class="section"><h2>Terms & Conditions</h2>${terms}</div>` : ''}
-          <div class="document-signature">
-            <div class="signature-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
-            <div class="signature-line">(Co. Stamp)</div>
-          </div>
+        </div>
+        <div class="document-signature">
+          <div class="signature-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
+          <div class="signature-line">(Co. Stamp)</div>
         </div>
       </div>
     </body>

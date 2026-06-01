@@ -6,11 +6,15 @@ Rollback tag before this feature: `rollback-before-sales-doc-ownership-2026-05-2
 
 Related code commit: `6d577a7 Restrict sales docs and refine sales performance`
 
+Follow-up commit: `db475be Fix sales manager permissions`
+
 ## Purpose
 
 Sales users should only view quotation and invoice documents created under their own old CRM user id. Admin users should continue to view all quotation and invoice documents.
 
 This change also refined the Salesperson Performance dashboard so it only shows active Sales role users and lets management select the month being reviewed.
+
+Follow-up note: Sales Manager now uses its own role id (`role_id = 4`) and its own `module_permission` rows. In the frontend, Sales Manager is treated as a sales role for sales document list filtering, with the extra Activities `All Activity` tab. On 2026-06-01, Supabase quotation/invoice RLS was updated so Sales Manager is ownership-restricted the same way Sales is for quotations and invoices.
 
 ## Code Changes
 
@@ -28,12 +32,13 @@ This change also refined the Salesperson Performance dashboard so it only shows 
   - Quotation value/count uses `quotation.sales_person` or fallback `quotation.user_id`.
   - Invoice value uses `invoice.sales_person` or fallback `invoice.user_id`.
 - Admin, technical, service, and other non-sales users are ignored in the Salesperson Performance table.
+- Sales Manager users are included as sales users where the current dashboard and activity workflow requires it.
 
 ### `src/pages/sales/Quotations.jsx`
 
 - Imported `useAuth` and `getLegacyUserId`.
 - List query now includes `user_id`.
-- For users with `profile.role_id === 2`, the quotation list is filtered by:
+- For Sales and Sales Manager users, the quotation list is filtered by:
   - `quotation.user_id = getLegacyUserId(profile)`
 - Admin users are not filtered in the frontend.
 - New quotations now save:
@@ -45,7 +50,7 @@ This change also refined the Salesperson Performance dashboard so it only shows 
 
 - Imported `useAuth` and `getLegacyUserId`.
 - List query now includes `user_id`.
-- For users with `profile.role_id === 2`, the invoice list is filtered by:
+- For Sales and Sales Manager users, the invoice list is filtered by:
   - `invoice.user_id = getLegacyUserId(profile)`
 - Admin users are not filtered in the frontend.
 - New invoices now save:
@@ -101,9 +106,9 @@ Policy logic:
 - User must still have module permission via `app_private.can_access('quotations')` or `app_private.can_access('invoices')`.
 - Admin role can access all rows:
   - `app_private.current_role_id() = 1`
-- Non-sales roles with module permission are not ownership-restricted:
-  - `app_private.current_role_id() <> 2`
-- Sales role is ownership-restricted:
+- Non-sales roles with module permission are not ownership-restricted by the latest policies:
+  - `app_private.current_role_id() not in (2, 4)`
+- Sales and Sales Manager roles are ownership-restricted:
   - parent row `user_id = app_private.current_old_user_id()`
 - Item rows are protected through their parent document:
   - `quotation_item.qid -> quotation.id`
@@ -154,3 +159,8 @@ with check (app_private.can_access('invoices'));
 ```
 
 Important: reverting the frontend alone is not enough if Supabase RLS remains ownership-restricted. The policies must also be reverted for Sales users to see all quotation and invoice records again.
+
+Additional Sales Manager rollback note:
+
+- If removing the Sales Manager role, remove or ignore `module_permission` rows with `role_id = 4`.
+- Restore `effectivePermissionRoleId` behavior only if Sales Manager should intentionally share Sales permission rows again.

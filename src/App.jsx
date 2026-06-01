@@ -36,10 +36,22 @@ function LoadingScreen() {
   )
 }
 
+function AuthIssue({ message }) {
+  return (
+    <div className="flex h-screen items-center justify-center bg-gray-50 px-4">
+      <div className="max-w-md border border-red-100 bg-white p-6 text-center shadow-sm">
+        <h1 className="text-base font-semibold text-gray-900">Unable to load account access</h1>
+        <p className="mt-2 text-sm text-gray-500">{message}</p>
+      </div>
+    </div>
+  )
+}
+
 function ProtectedRoute({ children, roles }) {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, loading, authError } = useAuth()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/login" replace />
+  if (authError) return <AuthIssue message={authError} />
   if (roles && profile && !roles.includes(profile.role_id)) return <Navigate to="/" replace />
   return children
 }

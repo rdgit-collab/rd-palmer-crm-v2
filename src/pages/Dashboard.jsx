@@ -93,6 +93,10 @@ function isInMonth(value, range) {
   return date >= range.start && date < range.end
 }
 
+function earlierDate(a, b) {
+  return String(a) < String(b) ? a : b
+}
+
 function isClosedLeadStatus(status) {
   const value = String(status || '').toLowerCase()
   return value.includes('closed') || ['won', 'lost', 'complete', 'completed'].includes(value)
@@ -333,6 +337,8 @@ function SalesDashboard({ firstName }) {
     const staleDate = new Date()
     staleDate.setDate(staleDate.getDate() - 7)
     const staleIso = staleDate.toISOString().split('T')[0]
+    const salesMetricStart = earlierDate(selectedRange.start, monthStart)
+    const activityMetricStart = earlierDate(selectedRange.start, staleIso)
     const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
 
@@ -354,6 +360,32 @@ function SalesDashboard({ firstName }) {
       recentLeadsQuery = recentLeadsQuery.eq('assigned_to', currentLegacyUserId)
     }
 
+    let allLeadsQuery = supabase
+      .from('sales_lead')
+      .select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at')
+
+    let performanceActivitiesQuery = supabase
+      .from('activity')
+      .select('id, lead_id, user_id, assigned_to, type, status, date, description, created_at')
+      .gte('created_at', activityMetricStart)
+
+    let performanceQuotationsQuery = supabase
+      .from('quotation')
+      .select('id, user_id, number, date, sales_person, total, isconvert')
+      .gte('date', salesMetricStart)
+
+    let performanceInvoicesQuery = supabase
+      .from('invoice')
+      .select('id, user_id, invoice_number, date, sales_person, total')
+      .gte('date', salesMetricStart)
+
+    if (isSalesRestricted) {
+      allLeadsQuery = allLeadsQuery.eq('assigned_to', currentLegacyUserId)
+      performanceActivitiesQuery = performanceActivitiesQuery.or(`assigned_to.eq.${currentLegacyUserId},user_id.eq.${currentLegacyUserId}`)
+      performanceQuotationsQuery = performanceQuotationsQuery.eq('user_id', currentLegacyUserId)
+      performanceInvoicesQuery = performanceInvoicesQuery.eq('user_id', currentLegacyUserId)
+    }
+
     Promise.all([
       customerCountQuery,
       leadCountQuery,
@@ -362,10 +394,10 @@ function SalesDashboard({ firstName }) {
       overdueInvoiceQuery,
       recentActivitiesQuery,
       recentLeadsQuery,
-      supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').limit(2000),
-      supabase.from('activity').select('id, lead_id, user_id, assigned_to, type, status, date, description, created_at').limit(2000),
-      supabase.from('quotation').select('id, user_id, number, date, sales_person, total, isconvert').limit(2000),
-      supabase.from('invoice').select('id, user_id, invoice_number, date, sales_person, total').limit(2000),
+      allLeadsQuery,
+      performanceActivitiesQuery,
+      performanceQuotationsQuery,
+      performanceInvoicesQuery,
       supabase.from('stage').select('id, name').order('name'),
       fetchAssignableUsers(supabase),
       supabase.from('users').select('old_user_id, first_name, last_name').in('role_id', [ROLE_SALES, ROLE_SALES_MANAGER]).neq('status', 'Inactive').order('first_name'),

@@ -9,6 +9,7 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
 const PAGE_SIZE = 30
+const ACTIVITY_COLUMNS = 'id, type, priority, status, date, time, description, lead_id, company_id, assigned_to, user_id, created_at, updated_at'
 
 const emptyForm = {
   type: '', priority: '', status: '',
@@ -115,14 +116,13 @@ export default function Activities() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    const [leadR, custR, activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
+    const [leadR, activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
       fetchAllRows(
         'sales_lead',
         'id, company_name, first_name, last_name, assigned_to, status',
         'company_name',
         isSalesRestricted && !isSalesManager ? { eq: { assigned_to: currentLegacyUserId } } : {}
       ),
-      fetchAllRows('customer', 'id, company_name', 'company_name'),
       fetchAssignableUsers(supabase),
       fetchLegacyUsers(supabase),
       supabase.from('activity_type').select('id, type').order('type'),
@@ -130,7 +130,7 @@ export default function Activities() {
       supabase.from('activity_status').select('id, name').order('name'),
     ])
 
-    let activityQuery = supabase.from('activity').select('*').order('id', { ascending: false }).limit(5000)
+    let activityQuery = supabase.from('activity').select(ACTIVITY_COLUMNS).order('id', { ascending: false }).limit(5000)
     if (isSalesRestricted && !isSalesManager) {
       const ownedLeadIds = (leadR || []).map(lead => lead.id).filter(Boolean)
       const ownershipFilters = [
@@ -141,10 +141,15 @@ export default function Activities() {
       activityQuery = activityQuery.or(ownershipFilters.join(','))
     }
     const actR = await activityQuery
+    const activityRows = actR.data || []
+    const customerIds = [...new Set(activityRows.map(row => row.company_id).filter(Boolean))]
+    const custR = customerIds.length
+      ? await supabase.from('customer').select('id, company_name').in('id', customerIds)
+      : { data: [] }
 
     setLeads(leadR || [])
-    setCustomers(custR || [])
-    if (!actR.error) setRawActivities(actR.data || [])
+    setCustomers(custR.data || [])
+    if (!actR.error) setRawActivities(activityRows)
     setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
     setAssignableUsers(activeUsers || [])
     if (!atR.error) setActivityTypes(atR.data || [])

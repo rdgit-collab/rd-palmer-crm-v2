@@ -30,7 +30,7 @@ export async function fetchLegacyUsers(supabase) {
 }
 
 export function getLegacyUserId(profile) {
-  return profile?.old_user_id || 1
+  return profile?.old_user_id ?? null
 }
 
 export function getUserName(users, id) {
