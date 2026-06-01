@@ -9,23 +9,31 @@
 -- ---------------------------------------------------------------------------
 
 with legacy as (
-  select old_user_id from public.legacy_users where old_user_id is not null
+  select old_user_id::text as old_user_id from public.legacy_users where old_user_id is not null
 ), checks as (
-  select 'sales_lead.assigned_to' as field, count(*) filter (where assigned_to is not null) as populated, count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = sales_lead.assigned_to)) as mismatched from public.sales_lead
-  union all select 'customer.assignto', count(*) filter (where assignto is not null), count(*) filter (where assignto is not null and not exists (select 1 from legacy where old_user_id = customer.assignto)) from public.customer
-  union all select 'customer.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = customer.user_id)) from public.customer
-  union all select 'contact.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = contact.assigned_to)) from public.contact
-  union all select 'contact.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = contact.user_id)) from public.contact
-  union all select 'activity.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = activity.user_id)) from public.activity
-  union all select 'quotation.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = quotation.user_id)) from public.quotation
-  union all select 'quotation_item.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = quotation_item.user_id)) from public.quotation_item
-  union all select 'invoice.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = invoice.user_id)) from public.invoice
-  union all select 'invoice_item.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = invoice_item.user_id)) from public.invoice_item
-  union all select 'ticket.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = ticket.assigned_to)) from public.ticket
-  union all select 'task.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = task.assigned_to)) from public.task
-  union all select 'onsiteticket.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = onsiteticket.assigned_to)) from public.onsiteticket
-  union all select 'calibration.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = calibration.user_id)) from public.calibration
-  union all select 'serialnumber.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = serialnumber.user_id)) from public.serialnumber
+  select 'sales_lead.assigned_to' as field, count(*) filter (where assigned_to is not null) as populated, count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = sales_lead.assigned_to::text)) as mismatched from public.sales_lead
+  union all select 'customer.assignto', count(*) filter (where assignto is not null), count(*) filter (where assignto is not null and not exists (select 1 from legacy where old_user_id = customer.assignto::text)) from public.customer
+  union all select 'customer.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = customer.user_id::text)) from public.customer
+  union all select 'contact.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = contact.assigned_to::text)) from public.contact
+  union all select 'contact.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = contact.user_id::text)) from public.contact
+  union all select 'activity.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = activity.user_id::text)) from public.activity
+  union all select 'activity.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = activity.assigned_to::text)) from public.activity
+  union all select 'quotation.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = quotation.user_id::text)) from public.quotation
+  union all select 'quotation_item.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = quotation_item.user_id::text)) from public.quotation_item
+  union all select 'invoice.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = invoice.user_id::text)) from public.invoice
+  union all select 'invoice_item.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = invoice_item.user_id::text)) from public.invoice_item
+  union all select 'ticket.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = ticket.assigned_to::text)) from public.ticket
+  union all select 'ticket.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = ticket.user_id::text)) from public.ticket
+  union all select 'ticket_product.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = ticket_product.user_id::text)) from public.ticket_product
+  union all select 'ticket_remark.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = ticket_remark.user_id::text)) from public.ticket_remark
+  union all select 'task.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = task.assigned_to::text)) from public.task
+  union all select 'task.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = task.user_id::text)) from public.task
+  union all select 'onsiteticket.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = onsiteticket.assigned_to::text)) from public.onsiteticket
+  union all select 'onsiteticket.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = onsiteticket.user_id::text)) from public.onsiteticket
+  union all select 'calibration.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = calibration.user_id::text)) from public.calibration
+  union all select 'serialnumber.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = serialnumber.user_id::text)) from public.serialnumber
+  union all select 'notification.user_id', count(*) filter (where user_id is not null), count(*) filter (where user_id is not null and not exists (select 1 from legacy where old_user_id = notification.user_id::text)) from public.notification
+  union all select 'notification.assigned_to', count(*) filter (where assigned_to is not null), count(*) filter (where assigned_to is not null and not exists (select 1 from legacy where old_user_id = notification.assigned_to::text)) from public.notification
 )
 select * from checks order by mismatched desc, field;
 
