@@ -43,8 +43,8 @@ These fields are legacy integer user ids and should match `public.legacy_users.o
 - `goodsservices.category` -> `product_category.id` (converted in batch 1)
 - `goodsservices.model` -> `product_model.id` (converted in batch 2)
 - `goodsservices.manufacture` -> `product_manufacturer.id` (converted in batch 3)
-- `goodsservices.item_type` -> `item_type.id`
-- `goodsservices.tax` -> `tax.id`
+- `goodsservices.item_type` -> `item_type.id` (verified in batch 4, no conversion needed)
+- `goodsservices.tax` -> `tax.id` (verified in batch 4, no conversion needed)
 
 Historical issue: imported `goodsservices` rows used `category`, `model`, and `manufacture`. The newer `product_*` lookup tables reused some of the same numbers for different labels, causing silent catalogue mismatch when the frontend read from `product_category`, `product_model`, and `product_manufacturer`.
 
@@ -55,6 +55,7 @@ Supabase migrations:
 - `20260601130835 convert_goodsservices_category_to_product_category`
 - `20260601132227 convert_goodsservices_model_to_product_model`
 - `20260601133531 convert_goodsservices_manufacture_to_product_manufacturer`
+- Batch 4 item type/tax verification did not require a migration.
 
 The first migration normalized the rows toward `product_*` tables, but the live data had already been normalized once before, so applying it again shifted labels a second time. The restore migration backs up the current values to:
 
@@ -75,6 +76,10 @@ Batch 3 converts only `goodsservices.manufacture` from `manufacture.id` to `prod
 - `app_private.goodsservices_manufacture_before_product_manufacturer_20260601`
 
 The frontend Catalogue and Settings screens now use `product_category`, `product_model`, and `product_manufacturer` for catalogue category/model/manufacturer.
+
+Batch 4 verifies that `goodsservices.item_type` and `goodsservices.tax` already point to the correct lookup tables. Verification notes are in:
+
+- `docs/catalogue-item-type-tax-verification-2026-06-01.md`
 
 ## Remaining Data Cleanup Items
 
