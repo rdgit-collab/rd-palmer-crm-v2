@@ -40,7 +40,7 @@ with checks as (
          count(*) filter (where category is not null and category <> '' and category !~ '^[0-9]+$') as non_numeric
   from public.goodsservices
   union all
-  select 'goodsservices.model -> model.id', count(*) filter (where model is not null and model <> ''), count(*) filter (where model is not null and model <> '' and model ~ '^[0-9]+$' and not exists (select 1 from public.model m where m.id = goodsservices.model::bigint)), count(*) filter (where model is not null and model <> '' and model !~ '^[0-9]+$') from public.goodsservices
+  select 'goodsservices.model -> product_model.id', count(*) filter (where model is not null and model <> ''), count(*) filter (where model is not null and model <> '' and model ~ '^[0-9]+$' and not exists (select 1 from public.product_model pm where pm.id = goodsservices.model::bigint)), count(*) filter (where model is not null and model <> '' and model !~ '^[0-9]+$') from public.goodsservices
   union all
   select 'goodsservices.manufacture -> manufacture.id', count(*) filter (where manufacture is not null and manufacture <> ''), count(*) filter (where manufacture is not null and manufacture <> '' and manufacture ~ '^[0-9]+$' and not exists (select 1 from public.manufacture m where m.id = goodsservices.manufacture::bigint)), count(*) filter (where manufacture is not null and manufacture <> '' and manufacture !~ '^[0-9]+$') from public.goodsservices
   union all
