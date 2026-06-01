@@ -112,15 +112,25 @@ The Admin Users screen also passes role, position, department, and phone into si
 
 ## Remaining Data Cleanup Items
 
-The latest audit found parent-child orphan references that should be reviewed before adding foreign keys:
+The latest audit found parent-child orphan references that should be reviewed before adding foreign keys.
 
-- `ticket_product.ticket_id -> ticket.id`: 170 orphan rows
+Applied Supabase migration:
+
+- `20260601164854 repair_ticket_child_visible_id_refs`
+
+This migration fixed the safe ticket child rows where `ticket_product.ticket_id` or `task.ticket_id` had the old visible ticket number instead of the internal `ticket.id`. It backed up the repaired rows to:
+
+- `app_private.ticket_child_visible_id_ref_backup_20260602`
+
+Result after this batch:
+
+- `task.ticket_id -> ticket.id`: 0 orphan rows, 1 row still has a blank ticket reference
+- `ticket_product.ticket_id -> ticket.id`: 161 orphan rows remaining
 - `quotation_item.qid -> quotation.id`: 79 orphan rows
 - `invoice_item.invoiceid -> invoice.id`: 38 orphan rows
 - `calibration_checklist.cid -> calibration.id`: 30 orphan rows
-- `task.ticket_id -> ticket.id`: 1 null reference
 
-These were not automatically deleted because they may represent migrated historical detail rows. Review exports or old CRM context before deciding whether to archive, reconnect, or remove them.
+The remaining orphan rows were not automatically changed because they do not have a clear one-to-one parent match in the current database. Review exports or old CRM context before deciding whether to archive, reconnect, or remove them.
 
 ## Frontend Guardrails Added
 
