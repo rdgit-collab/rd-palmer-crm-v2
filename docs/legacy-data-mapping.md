@@ -38,9 +38,9 @@ These fields are legacy integer user ids and should match `public.legacy_users.o
 
 ## Catalogue Lookup Fields
 
-`public.goodsservices` stores the original imported catalogue lookup ids:
+`public.goodsservices` is being moved to the new catalogue lookup ids in reviewed batches:
 
-- `goodsservices.category` -> `category.id`
+- `goodsservices.category` -> `product_category.id` (converted in batch 1)
 - `goodsservices.model` -> `model.id`
 - `goodsservices.manufacture` -> `manufacture.id`
 - `goodsservices.item_type` -> `item_type.id`
@@ -52,12 +52,19 @@ Supabase migrations:
 
 - `20260601111542 normalize_goodsservices_lookup_ids`
 - `20260601124610 restore_goodsservices_original_lookup_ids`
+- `20260601130835 convert_goodsservices_category_to_product_category`
 
 The first migration normalized the rows toward `product_*` tables, but the live data had already been normalized once before, so applying it again shifted labels a second time. The restore migration backs up the current values to:
 
 - `app_private.goodsservices_lookup_restore_backup_20260601`
 
-It then restores `goodsservices.category`, `goodsservices.model`, and `goodsservices.manufacture` back to the original imported lookup tables by reversing the name-based mapping twice. The frontend Catalogue and Settings screens now use `category`, `model`, and `manufacture` directly.
+It then restores `goodsservices.category`, `goodsservices.model`, and `goodsservices.manufacture` back to the original imported lookup tables by reversing the name-based mapping twice.
+
+Batch 1 converts only `goodsservices.category` from `category.id` to `product_category.id` by matching category names. It backs up pre-conversion category values to:
+
+- `app_private.goodsservices_category_before_product_category_20260601`
+
+The frontend Catalogue and Settings screens now use `product_category` for category, while model and manufacturer still use their original imported lookup tables until their own reviewed batches.
 
 ## Remaining Data Cleanup Items
 

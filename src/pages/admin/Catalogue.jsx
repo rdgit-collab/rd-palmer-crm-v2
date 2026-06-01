@@ -37,7 +37,7 @@ export default function Catalogue() {
   const [taxes, setTaxes]                 = useState([])
 
   useEffect(() => {
-    supabase.from('category').select('id, name').order('name').then(({ data }) => setCategories(data || []))
+    supabase.from('product_category').select('id, name').order('name').then(({ data }) => setCategories(data || []))
     supabase.from('model').select('id, name').order('name').then(({ data }) => setModels(data || []))
     supabase.from('manufacture').select('id, name').order('name').then(({ data }) => setManufacturers(data || []))
     supabase.from('item_type').select('id, name').order('id').then(({ data }) => setItemTypes(data || []))

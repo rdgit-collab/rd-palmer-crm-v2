@@ -34,9 +34,9 @@ select * from checks order by mismatched desc, field;
 -- ---------------------------------------------------------------------------
 
 with checks as (
-  select 'goodsservices.category -> category.id' as field,
+  select 'goodsservices.category -> product_category.id' as field,
          count(*) filter (where category is not null and category <> '') as populated,
-         count(*) filter (where category is not null and category <> '' and category ~ '^[0-9]+$' and not exists (select 1 from public.category c where c.id = goodsservices.category::bigint)) as numeric_orphans,
+         count(*) filter (where category is not null and category <> '' and category ~ '^[0-9]+$' and not exists (select 1 from public.product_category pc where pc.id = goodsservices.category::bigint)) as numeric_orphans,
          count(*) filter (where category is not null and category <> '' and category !~ '^[0-9]+$') as non_numeric
   from public.goodsservices
   union all
