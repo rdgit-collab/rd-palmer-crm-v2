@@ -42,7 +42,7 @@ These fields are legacy integer user ids and should match `public.legacy_users.o
 
 - `goodsservices.category` -> `product_category.id` (converted in batch 1)
 - `goodsservices.model` -> `product_model.id` (converted in batch 2)
-- `goodsservices.manufacture` -> `manufacture.id`
+- `goodsservices.manufacture` -> `product_manufacturer.id` (converted in batch 3)
 - `goodsservices.item_type` -> `item_type.id`
 - `goodsservices.tax` -> `tax.id`
 
@@ -54,6 +54,7 @@ Supabase migrations:
 - `20260601124610 restore_goodsservices_original_lookup_ids`
 - `20260601130835 convert_goodsservices_category_to_product_category`
 - `20260601132227 convert_goodsservices_model_to_product_model`
+- `20260601133531 convert_goodsservices_manufacture_to_product_manufacturer`
 
 The first migration normalized the rows toward `product_*` tables, but the live data had already been normalized once before, so applying it again shifted labels a second time. The restore migration backs up the current values to:
 
@@ -69,7 +70,11 @@ Batch 2 converts only `goodsservices.model` from `model.id` to `product_model.id
 
 - `app_private.goodsservices_model_before_product_model_20260601`
 
-The frontend Catalogue and Settings screens now use `product_category` for category and `product_model` for model, while manufacturer still uses the original imported lookup table until its own reviewed batch.
+Batch 3 converts only `goodsservices.manufacture` from `manufacture.id` to `product_manufacturer.id` by matching manufacturer names. It backs up pre-conversion manufacturer values to:
+
+- `app_private.goodsservices_manufacture_before_product_manufacturer_20260601`
+
+The frontend Catalogue and Settings screens now use `product_category`, `product_model`, and `product_manufacturer` for catalogue category/model/manufacturer.
 
 ## Remaining Data Cleanup Items
 

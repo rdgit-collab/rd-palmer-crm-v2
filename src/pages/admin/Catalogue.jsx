@@ -39,7 +39,7 @@ export default function Catalogue() {
   useEffect(() => {
     supabase.from('product_category').select('id, name').order('name').then(({ data }) => setCategories(data || []))
     supabase.from('product_model').select('id, name').order('name').then(({ data }) => setModels(data || []))
-    supabase.from('manufacture').select('id, name').order('name').then(({ data }) => setManufacturers(data || []))
+    supabase.from('product_manufacturer').select('id, name').order('name').then(({ data }) => setManufacturers(data || []))
     supabase.from('item_type').select('id, name').order('id').then(({ data }) => setItemTypes(data || []))
     supabase.from('tax').select('id, name').order('id').then(({ data }) => setTaxes(data || []))
   }, [])
