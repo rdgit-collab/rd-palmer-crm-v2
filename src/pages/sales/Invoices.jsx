@@ -14,6 +14,11 @@ import {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const markedRate = (baseRate, markup) => {
+  const base = parseFloat(baseRate) || 0
+  const pct = parseFloat(markup) || 0
+  return base * (1 + pct / 100)
+}
 const PAGE_SIZE = 30
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
 const INVOICE_LIST_COLUMNS = 'id, user_id, invoice_number, name, date, due_date, quote_ref_number, currency, total, created_at'
@@ -361,9 +366,10 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   }, [showItemOptions, updateItemDropdownPosition])
 
   const applyCatalogueItem = (selected) => {
-    const rate = parseFloat(selected.price || 0)
+    const baseRate = parseFloat(selected.price || 0)
+    const rate = markedRate(baseRate, item.markup)
     const qty = item.qty || 1
-    onChange(idx, { ...item, itemid: selected.id, item: selected.name, description: selected.description || '', rate, amount: qty * rate })
+    onChange(idx, { ...item, itemid: selected.id, item: selected.name, description: selected.description || '', base_rate: baseRate, rate, amount: qty * rate })
     setItemSearch(catalogueItemLabel(selected))
     setShowItemOptions(false)
   }
@@ -374,7 +380,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
     updateItemDropdownPosition()
 
     if (!value.trim() && item.itemid) {
-      onChange(idx, { ...item, itemid: '', item: '', description: '', rate: 0, amount: 0 })
+      onChange(idx, { ...item, itemid: '', item: '', description: '', markup: '', base_rate: 0, rate: 0, amount: 0 })
     }
   }
   const handleQtyChange = (qty) => {
@@ -383,7 +389,14 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   }
   const handleRateChange = (rate) => {
     const r = parseFloat(rate) || 0
-    onChange(idx, { ...item, rate: r, amount: (parseFloat(item.qty) || 0) * r })
+    const pct = parseFloat(item.markup) || 0
+    const baseRate = pct ? r / (1 + pct / 100) : r
+    onChange(idx, { ...item, base_rate: baseRate, rate: r, amount: (parseFloat(item.qty) || 0) * r })
+  }
+  const handleMarkupChange = (markup) => {
+    const baseRate = parseFloat(item.base_rate ?? item.rate) || 0
+    const r = markedRate(baseRate, markup)
+    onChange(idx, { ...item, markup, base_rate: baseRate, rate: r, amount: (parseFloat(item.qty) || 0) * r })
   }
   const handleTaxSelect = (e) => {
     const tax = taxes.find(t => String(t.id) === e.target.value)
@@ -456,6 +469,9 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
       <td className={`${tdCls} w-28`}>
         <input type="number" min="0" step="0.01" className={inputCls} value={item.rate} onChange={e => handleRateChange(e.target.value)} />
       </td>
+      <td className={`${tdCls} w-24`}>
+        <input type="number" min="0" step="0.01" className={inputCls} value={item.markup || ''} onChange={e => handleMarkupChange(e.target.value)} placeholder="%" />
+      </td>
       <td className={`${tdCls} w-32`}>
         <select className={inputCls} value={item.taxid || ''} onChange={handleTaxSelect}>
           <option value="">No Tax</option>
@@ -517,13 +533,15 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
           item: i.item || '',
           description: cleanSalesText(i.description || ''),
           qty: i.qty || 1,
+          markup: i.markup || '',
+          base_rate: i.markup ? (parseFloat(i.rate) || 0) / (1 + (parseFloat(i.markup) || 0) / 100) : (i.rate || 0),
           rate: i.rate || 0,
           taxid: String(i.taxid || ''),
           taxlbl: i.taxlbl || '',
           taxrate: 0,
           amount: i.amount || 0,
         }))
-      : [{ itemid: '', item: '', description: '', qty: 1, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }]
+      : [{ itemid: '', item: '', description: '', qty: 1, markup: '', base_rate: 0, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }]
   )
 
   useEffect(() => {
@@ -609,7 +627,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     setForm(f => ({ ...f, contact_person: String(data.id) }))
     setShowContactForm(false)
   }
-  const addLine = () => setLineItems(prev => [...prev, { itemid: '', item: '', description: '', qty: 1, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }])
+  const addLine = () => setLineItems(prev => [...prev, { itemid: '', item: '', description: '', qty: 1, markup: '', base_rate: 0, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }])
   const removeLine = (idx) => setLineItems(prev => prev.filter((_, i) => i !== idx))
   const updateLine = (idx, updated) => setLineItems(prev => prev.map((item, i) => i === idx ? updated : item))
 
@@ -677,6 +695,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
         rate: parseFloat(i.rate) || 0,
         tax: i.taxrate > 0 ? (parseFloat(i.amount) * i.taxrate / 100) : 0,
         amount: parseFloat(i.amount) || 0,
+        markup: i.markup ? String(i.markup) : null,
         itemid: i.itemid ? parseInt(i.itemid) : null,
         taxid: i.taxid ? parseInt(i.taxid) : null,
         taxlbl: i.taxlbl || null,
@@ -798,7 +817,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px]">
+            <table className="w-full min-w-[1200px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-8">#</th>
@@ -806,6 +825,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-400">Description</th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-20">Qty</th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-28">Rate</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-24">Markup %</th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-32">Tax</th>
                   <th className="px-2 py-2 text-right text-xs font-medium text-gray-400 w-28">Amount</th>
                   <th className="w-8"></th>
