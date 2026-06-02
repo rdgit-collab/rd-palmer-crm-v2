@@ -11,6 +11,15 @@ const PAGE_SIZE = 30
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
+function DetailField({ label, children, className = '' }) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <div className="font-medium text-gray-500">{label}</div>
+      <div className="mt-1 whitespace-pre-wrap break-words text-gray-900">{children || '—'}</div>
+    </div>
+  )
+}
+
 function statusColor(s) {
   if (!s) return 'bg-gray-100 text-gray-600'
   const l = s.toLowerCase()
@@ -389,15 +398,15 @@ export default function OnsiteTickets() {
         </div>
       </div>
       <div className="bg-white border border-gray-200 p-6 space-y-4 text-sm">
-        <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-          <div><span className="font-medium text-gray-500">Ticket: </span><span className="text-red-600 font-semibold">{getTicketLabel(detail.ticket_id)}</span></div>
-          <div><span className="font-medium text-gray-500">Date: </span>{detail.date || '—'}</div>
-          <div><span className="font-medium text-gray-500">Product: </span>{detail.product || '—'}</div>
-          <div><span className="font-medium text-gray-500">Serial Number: </span>{detail.serial_number || '—'}</div>
-          <div><span className="font-medium text-gray-500">Location: </span>{detail.location || '—'}</div>
-          <div><span className="font-medium text-gray-500">Vendor Ref: </span>{detail.vandor_order_ref || '—'}</div>
-          <div><span className="font-medium text-gray-500">Spare: </span>{detail.spare || '—'}</div>
-          <div><span className="font-medium text-gray-500">Assigned To: </span>{getUserName(detail.assigned_to)}</div>
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
+          <DetailField label="Ticket"><span className="text-red-600 font-semibold">{getTicketLabel(detail.ticket_id)}</span></DetailField>
+          <DetailField label="Date">{detail.date || '—'}</DetailField>
+          <DetailField label="Product" className="md:col-span-2">{detail.product || '—'}</DetailField>
+          <DetailField label="Serial Number" className="md:col-span-2">{detail.serial_number || '—'}</DetailField>
+          <DetailField label="Location">{detail.location || '—'}</DetailField>
+          <DetailField label="Vendor Ref">{detail.vandor_order_ref || '—'}</DetailField>
+          <DetailField label="Spare" className="md:col-span-2">{detail.spare || '—'}</DetailField>
+          <DetailField label="Assigned To">{getUserName(detail.assigned_to)}</DetailField>
           <div>
             <span className="font-medium text-gray-500">Document: </span>
             {detail.file ? (
