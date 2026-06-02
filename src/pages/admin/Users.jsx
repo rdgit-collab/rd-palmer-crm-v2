@@ -1,29 +1,28 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import {
+  ROLE_ADMIN,
+  ROLE_SALES,
+  ROLE_SERVICE,
+  ROLE_SALES_MANAGER,
+  ROLE_SUPER_ADMIN,
+  isSuperAdminRole,
+  roleColor,
+  roleLabel,
+} from '../../lib/roles'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Edit2, UserX, UserCheck, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
 
 const ROLES = [
-  { id: 1, label: 'Admin' },
-  { id: 2, label: 'Sales' },
-  { id: 3, label: 'Service' },
-  { id: 4, label: 'Sales Manager' },
+  { id: ROLE_ADMIN, label: 'Admin' },
+  { id: ROLE_SALES, label: 'Sales' },
+  { id: ROLE_SERVICE, label: 'Service' },
+  { id: ROLE_SALES_MANAGER, label: 'Sales Manager' },
+  { id: ROLE_SUPER_ADMIN, label: 'Super Admin' },
 ]
-
-function roleLabel(id) {
-  const r = ROLES.find(r => r.id == id)
-  return r ? r.label : '—'
-}
-function roleColor(id) {
-  if (id == 1) return 'bg-red-100 text-red-700'
-  if (id == 2) return 'bg-blue-100 text-blue-700'
-  if (id == 3) return 'bg-green-100 text-green-700'
-  if (id == 4) return 'bg-purple-100 text-purple-700'
-  return 'bg-gray-100 text-gray-600'
-}
 
 const emptyForm = {
   first_name: '', last_name: '', email: '', password: '',
@@ -31,7 +30,7 @@ const emptyForm = {
 }
 
 export default function Users() {
-  const { user: currentUser } = useAuth()
+  const { user: currentUser, profile } = useAuth()
   const [view, setView]             = useState('list')
   const [rows, setRows]             = useState([])
   const [total, setTotal]           = useState(0)
@@ -44,6 +43,10 @@ export default function Users() {
   const [toggling, setToggling]     = useState(false)
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
+  const canManageSuperAdmin = isSuperAdminRole(profile?.role_id)
+  const availableRoles = canManageSuperAdmin
+    ? ROLES
+    : ROLES.filter(role => role.id !== ROLE_SUPER_ADMIN)
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -62,6 +65,10 @@ export default function Users() {
 
   const openAdd = () => { setForm(emptyForm); setEditId(null); setError(''); setView('form') }
   const openEdit = (r) => {
+    if (isSuperAdminRole(r.role_id) && !canManageSuperAdmin) {
+      setError('Only a Super Admin can edit a Super Admin account.')
+      return
+    }
     setForm({
       first_name: r.first_name || '', last_name: r.last_name || '',
       email: r.email || '', password: '',
@@ -74,6 +81,11 @@ export default function Users() {
   // ── Deactivate / Reactivate ─────────────────────────────────────────────────
   const handleToggleActive = async () => {
     if (!confirmToggle) return
+    if (isSuperAdminRole(confirmToggle.role_id) && !canManageSuperAdmin) {
+      setError('Only a Super Admin can change a Super Admin account status.')
+      setConfirmToggle(null)
+      return
+    }
     setToggling(true)
     const { id, activate } = confirmToggle
 
@@ -93,6 +105,11 @@ export default function Users() {
     e.preventDefault(); setSaving(true); setError('')
 
     if (editId) {
+      if (isSuperAdminRole(form.role_id) && !canManageSuperAdmin) {
+        setError('Only a Super Admin can assign the Super Admin role.')
+        setSaving(false)
+        return
+      }
       const payload = {
         first_name: form.first_name, last_name: form.last_name,
         role_id: parseInt(form.role_id), position: form.position || null,
@@ -101,6 +118,11 @@ export default function Users() {
       const { error: err } = await supabase.from('users').update(payload).eq('id', editId)
       if (err) { setError(err.message); setSaving(false); return }
     } else {
+      if (isSuperAdminRole(form.role_id) && !canManageSuperAdmin) {
+        setError('Only a Super Admin can create a Super Admin account.')
+        setSaving(false)
+        return
+      }
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
@@ -140,6 +162,7 @@ export default function Users() {
           <Plus size={16} /> Add User
         </button>
       </div>
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
 
       <div className="relative max-w-sm mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -168,6 +191,7 @@ export default function Users() {
               : rows.map(r => {
                   const isActive = r.status !== 'Inactive'
                   const isMe = r.id === currentUser?.id
+                  const isProtectedSuperAdmin = isSuperAdminRole(r.role_id) && !canManageSuperAdmin
                   return (
                     <tr key={r.id} className={`border-b border-gray-100 ${isActive ? 'hover:bg-gray-50' : 'bg-gray-50 opacity-60'}`}>
                       <td className="px-4 py-3 font-medium text-gray-900">
@@ -190,21 +214,22 @@ export default function Users() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => openEdit(r)} title="Edit"
-                            className="text-gray-400 hover:text-gray-600">
+                          <button onClick={() => openEdit(r)} title={isProtectedSuperAdmin ? 'Only Super Admin can edit this account' : 'Edit'}
+                            disabled={isProtectedSuperAdmin}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed">
                             <Edit2 size={15} />
                           </button>
-                          {!isMe && (
+                          {!isMe && !isProtectedSuperAdmin && (
                             isActive ? (
                               <button
-                                onClick={() => setConfirmToggle({ id: r.id, name: `${r.first_name} ${r.last_name}`, activate: false })}
+                                onClick={() => setConfirmToggle({ id: r.id, role_id: r.role_id, name: `${r.first_name} ${r.last_name}`, activate: false })}
                                 title="Deactivate account"
                                 className="text-gray-400 hover:text-red-600">
                                 <UserX size={15} />
                               </button>
                             ) : (
                               <button
-                                onClick={() => setConfirmToggle({ id: r.id, name: `${r.first_name} ${r.last_name}`, activate: true })}
+                                onClick={() => setConfirmToggle({ id: r.id, role_id: r.role_id, name: `${r.first_name} ${r.last_name}`, activate: true })}
                                 title="Reactivate account"
                                 className="text-gray-400 hover:text-green-600">
                                 <UserCheck size={15} />
@@ -310,7 +335,7 @@ export default function Users() {
           <div className="col-span-2">
             <select value={form.role_id} onChange={e => setForm(f => ({...f, role_id: e.target.value}))}
               className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+              {availableRoles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
           </div>
         </div>

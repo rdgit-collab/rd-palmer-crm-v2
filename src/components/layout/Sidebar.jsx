@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { isAdminRole, isSalesRole, roleLabel } from '../../lib/roles'
+import { hasAdminAccess, isSalesRole, isSuperAdminRole, roleLabel } from '../../lib/roles'
 import {
   LayoutDashboard, Building2, UserCircle, TrendingUp, FileText, Receipt,
   Activity, Ticket, Wrench, MapPin, RotateCcw, Gauge, Hash, Package,
@@ -50,6 +50,7 @@ const adminItems = [
   { name: 'Users',     href: '/admin/users', icon: Users   },
   { name: 'Catalogue', href: '/catalogue',   icon: Package },
   { name: 'Settings',  href: '/settings',    icon: Settings},
+  { name: 'Activity Log', href: '/admin/activity-log', icon: Activity, superAdminOnly: true },
 ]
 
 export default function Sidebar({ open, onClose }) {
@@ -59,7 +60,7 @@ export default function Sidebar({ open, onClose }) {
   const currentRoleLabel = roleLabel(profile?.role_id)
 
   // Pick the base item list for this role
-  const baseItems = isAdminRole(profile?.role_id)
+  const baseItems = hasAdminAccess(profile?.role_id)
     ? adminItems
     : isSalesRole(profile?.role_id)
     ? salesItems
@@ -73,6 +74,7 @@ export default function Sidebar({ open, onClose }) {
       acc.push({ ...item, _divider: true })
       return acc
     }
+    if (item.superAdminOnly && !isSuperAdminRole(profile?.role_id)) return acc
     // Dashboard (no module) always visible
     if (!item.module) { acc.push(item); return acc }
     // Check permission

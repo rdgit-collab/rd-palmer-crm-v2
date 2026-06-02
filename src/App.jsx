@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/layout/Layout'
 import ErrorBoundary from './components/ErrorBoundary'
+import { ROLE_ADMIN, ROLE_SUPER_ADMIN } from './lib/roles'
 
 const Login = lazy(() => import('./pages/Login'))
 const DashboardModule = lazy(() => import('./pages/Dashboard'))
@@ -23,6 +24,7 @@ const SerialNumbers = lazy(() => import('./pages/service/SerialNumbers'))
 const Users = lazy(() => import('./pages/admin/Users'))
 const Catalogue = lazy(() => import('./pages/admin/Catalogue'))
 const Settings = lazy(() => import('./pages/admin/Settings'))
+const ActivityLog = lazy(() => import('./pages/admin/ActivityLog'))
 const Profile = lazy(() => import('./pages/Profile'))
 
 function LoadingScreen() {
@@ -88,9 +90,10 @@ function AppRoutes() {
             <Route path="rma"           element={<PermissionRoute module="rma">         <RMA />         </PermissionRoute>} />
             <Route path="calibration"   element={<PermissionRoute module="calibration"> <Calibration /> </PermissionRoute>} />
             <Route path="serial-numbers"element={<PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute>} />
-            <Route path="catalogue"     element={<ProtectedRoute roles={[1]}><Catalogue /></ProtectedRoute>} />
-            <Route path="admin/users"   element={<ProtectedRoute roles={[1]}><Users /></ProtectedRoute>} />
-            <Route path="settings"      element={<ProtectedRoute roles={[1]}><Settings /></ProtectedRoute>} />
+            <Route path="catalogue"     element={<ProtectedRoute roles={[ROLE_ADMIN, ROLE_SUPER_ADMIN]}><Catalogue /></ProtectedRoute>} />
+            <Route path="admin/users"   element={<ProtectedRoute roles={[ROLE_ADMIN, ROLE_SUPER_ADMIN]}><Users /></ProtectedRoute>} />
+            <Route path="settings"      element={<ProtectedRoute roles={[ROLE_ADMIN, ROLE_SUPER_ADMIN]}><Settings /></ProtectedRoute>} />
+            <Route path="admin/activity-log" element={<ProtectedRoute roles={[ROLE_SUPER_ADMIN]}><ActivityLog /></ProtectedRoute>} />
             <Route path="profile"       element={<Profile />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { effectivePermissionRoleId, isAdminRole } from '../lib/roles'
+import { effectivePermissionRoleId, hasAdminAccess } from '../lib/roles'
 
 const AuthContext = createContext({})
 
@@ -46,8 +46,8 @@ export function AuthProvider({ children }) {
 
     setProfile(prof)
 
-    // Admin (role_id=1) has access to everything — no DB lookup needed
-    if (isAdminRole(prof?.role_id)) {
+    // Admin and Super Admin have access to everything — no DB lookup needed
+    if (hasAdminAccess(prof?.role_id)) {
       setPermissions('admin')
     } else if (prof?.role_id) {
       const { data: perms, error: permissionError } = await supabase
