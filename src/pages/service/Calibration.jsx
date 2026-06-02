@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import salesDocumentLogo from '../../assets/sales-document-logo.png'
+import { Plus, Search, Eye, Edit2, Trash2, X, Printer } from 'lucide-react'
 
 const PAGE_SIZE = 30
 
@@ -28,11 +29,18 @@ function checklistResult(value) {
   return Number(value) === 1 ? 'Pass' : 'Fail'
 }
 
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+}
+
+function fmtDate(d) {
+  return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+}
+
 export default function Calibration() {
   const { profile } = useAuth()
   const [view, setView]             = useState('list')
   const [rows, setRows]             = useState([])
-  const [total, setTotal]           = useState(0)
   const [page, setPage]             = useState(1)
   const [search, setSearch]         = useState('')
   const [loading, setLoading]       = useState(false)
@@ -54,13 +62,14 @@ export default function Calibration() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('calibration').select('*', { count: 'exact' }).order('id', { ascending: false })
-    if (search) q = q.or(`certificate_number.ilike.%${search}%,serial_number.ilike.%${search}%,conduct_by.ilike.%${search}%`)
-    q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
-    const { data, count, error: err } = await q
-    if (!err) { setRows(data || []); setTotal(count || 0) }
+    try {
+      const data = await fetchAllRows('calibration', '*', 'id', { ascending: false })
+      setRows(data || [])
+    } catch {
+      setRows([])
+    }
     setLoading(false)
-  }, [search, page])
+  }, [])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -87,12 +96,45 @@ export default function Calibration() {
     return t ? `TID${t.ticket_id} - ${t.company_name || ''}` : tid ? `#${tid}` : '-'
   }
 
+  const ticketInfoById = useMemo(() => {
+    const map = new Map()
+    tickets.forEach(t => {
+      map.set(String(t.id), {
+        number: Number(t.ticket_id) || 0,
+        label: `TID${t.ticket_id} - ${t.company_name || ''}`,
+      })
+    })
+    return map
+  }, [tickets])
+
   const getUserName = (id) => {
     const name = formatUserName(allUsers.length ? allUsers : users, id)
     return name === '-' || name === '—' ? (id || '-') : name
   }
 
   const getTermName = (id) => termOptions.find(t => String(t.id) === String(id))?.name || '-'
+
+  const filteredRows = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    const sorted = [...rows].sort((a, b) => {
+      const aTicket = ticketInfoById.get(String(a.ticket_id))?.number || Number(a.ticket_id) || 0
+      const bTicket = ticketInfoById.get(String(b.ticket_id))?.number || Number(b.ticket_id) || 0
+      if (aTicket !== bTicket) return bTicket - aTicket
+      return Number(b.id || 0) - Number(a.id || 0)
+    })
+    if (!term) return sorted
+    return sorted.filter(r => [
+      r.certificate_number,
+      r.serial_number,
+      r.conduct_by,
+      ticketInfoById.get(String(r.ticket_id))?.label || r.ticket_id,
+    ].some(value => String(value || '').toLowerCase().includes(term)))
+  }, [rows, search, ticketInfoById])
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return filteredRows.slice(start, start + PAGE_SIZE)
+  }, [filteredRows, page])
 
   const presetChecklistRows = () => (
     checklistOptions.length
@@ -228,7 +270,93 @@ export default function Calibration() {
     fetchRows()
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const totalRows = filteredRows.length
+  const totalPages = Math.ceil(totalRows / PAGE_SIZE)
+
+  const calibrationReportHtml = () => {
+    const checklistRowsHtml = detailChecklist.map((item, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(item.name || '-')}</td>
+        <td>${escapeHtml(checklistResult(item.passfail))}</td>
+      </tr>
+    `).join('')
+    const terms = getTermName(detail.termid)
+
+    return `<!doctype html>
+    <html>
+      <head>
+        <title>${escapeHtml(detail.certificate_number || 'Calibration Report')}</title>
+        <style>
+          @page { size: A4; margin: 0; }
+          body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
+          .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
+          .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 24px; }
+          .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
+          .company { text-align: right; line-height: 1.35; font-size: 11px; }
+          .company strong { font-size: 12px; }
+          .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin: 8px 0 16px; text-transform: uppercase; }
+          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin-bottom: 18px; }
+          .meta-row { display: grid; grid-template-columns: 105px 1fr; gap: 8px; line-height: 1.45; }
+          .meta-row span:first-child { color: #555; font-weight: 700; }
+          .value { font-weight: 600; overflow-wrap: anywhere; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #222; }
+          th, td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #e5e5e5; }
+          th { background: #d4d4d4; color: #111; font-weight: 700; }
+          td:first-child, th:first-child { width: 36px; text-align: center; }
+          td:last-child, th:last-child { width: 90px; }
+          tr:last-child td { border-bottom: 0; }
+          .section { margin-top: 18px; line-height: 1.45; break-inside: avoid; page-break-inside: avoid; }
+          .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin: 0 0 6px; }
+          .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+          @media print {
+            body { background: #fff; }
+            .sheet { width: auto; min-height: 0; margin: 0; padding: 15mm; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="sheet">
+          <div class="top">
+            <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
+            <div class="company">
+              <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
+              63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
+              Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
+              Website: www.rd-palmer.com
+            </div>
+          </div>
+          <div class="doc-title">Calibration Report</div>
+          <div class="meta">
+            <div class="meta-row"><span>Certificate No.:</span><span class="value">${escapeHtml(detail.certificate_number || '-')}</span></div>
+            <div class="meta-row"><span>Date:</span><span class="value">${fmtDate(detail.created_at)}</span></div>
+            <div class="meta-row"><span>Ticket:</span><span class="value">${escapeHtml(getTicketLabel(detail.ticket_id))}</span></div>
+            <div class="meta-row"><span>Status:</span><span class="value">${escapeHtml(detail.status || '-')}</span></div>
+            <div class="meta-row"><span>Serial Number:</span><span class="value">${escapeHtml(detail.serial_number || '-')}</span></div>
+            <div class="meta-row"><span>Std. Number:</span><span class="value">${escapeHtml(detail.snumber || '-')}</span></div>
+            <div class="meta-row"><span>Conducted By:</span><span class="value">${escapeHtml(getUserName(detail.conduct_by))}</span></div>
+          </div>
+          <div class="section">
+            <h2>Checklist</h2>
+            <table>
+              <thead><tr><th>#</th><th>Checklist</th><th>Result</th></tr></thead>
+              <tbody>${checklistRowsHtml || '<tr><td colspan="3" style="text-align:center;color:#777;">No checklist rows.</td></tr>'}</tbody>
+            </table>
+          </div>
+          ${terms && terms !== '-' ? `<div class="section"><h2>Terms & Conditions</h2><div class="pre">${escapeHtml(terms)}</div></div>` : ''}
+          ${detail.remark ? `<div class="section"><h2>Remark</h2><div class="pre">${escapeHtml(detail.remark)}</div></div>` : ''}
+        </div>
+      </body>
+    </html>`
+  }
+
+  const printCalibrationReport = () => {
+    const win = window.open('', '_blank')
+    if (!win) return
+    win.document.write(calibrationReportHtml())
+    win.document.close()
+    win.onload = () => { win.focus(); win.print() }
+  }
 
   if (view === 'list') return (
     <div className="p-6">
@@ -255,8 +383,8 @@ export default function Calibration() {
           </thead>
           <tbody>
             {loading ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">No calibration records found.</td></tr>
-            : rows.map(r => (
+            : pagedRows.length === 0 ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">No calibration records found.</td></tr>
+            : pagedRows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-semibold text-red-600">{r.certificate_number || '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{getTicketLabel(r.ticket_id)}</td>
@@ -276,7 +404,7 @@ export default function Calibration() {
           </tbody>
         </table>
       </div>
-      <PaginationControls page={page} totalPages={totalPages} total={total} label="record" onPageChange={setPage} />
+      <PaginationControls page={page} totalPages={totalPages} total={totalRows} label="record" onPageChange={setPage} />
       {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Calibration Record?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
     </div>
   )
@@ -409,7 +537,10 @@ export default function Calibration() {
           <h1 className="text-2xl font-bold text-gray-900">Calibration - {detail.certificate_number}</h1>
           <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status || '-'}</span>
         </div>
-        <button onClick={() => openEdit(detail)} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Edit2 size={14}/> Edit</button>
+        <div className="flex items-center gap-2">
+          <button onClick={printCalibrationReport} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Printer size={14}/> Print Report</button>
+          <button onClick={() => openEdit(detail)} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Edit2 size={14}/> Edit</button>
+        </div>
       </div>
       <div className="bg-white border border-gray-200 p-6 text-sm space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
