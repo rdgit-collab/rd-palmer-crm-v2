@@ -382,10 +382,37 @@ function toEditorHtml(value = '') {
   return escapeTemplateHtml(raw).replace(/\n/g, '<br>')
 }
 
+function insertPlainTextAtCursor(text = '') {
+  const selection = window.getSelection()
+  if (!selection || !selection.rangeCount) {
+    document.execCommand('insertText', false, text)
+    return
+  }
+
+  const range = selection.getRangeAt(0)
+  range.deleteContents()
+
+  String(text).replace(/\r\n?/g, '\n').split('\n').forEach((line, index) => {
+    if (index > 0) {
+      range.insertNode(document.createElement('br'))
+      range.collapse(false)
+    }
+    if (line) {
+      range.insertNode(document.createTextNode(line))
+      range.collapse(false)
+    }
+  })
+
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
 function RichTemplateEditor({ value, onChange, placeholder }) {
   const editorRef = useRef(null)
+  const isEditingRef = useRef(false)
 
   useEffect(() => {
+    if (isEditingRef.current) return
     const nextHtml = toEditorHtml(value)
     if (editorRef.current && editorRef.current.innerHTML !== nextHtml) {
       editorRef.current.innerHTML = nextHtml
@@ -395,6 +422,19 @@ function RichTemplateEditor({ value, onChange, placeholder }) {
   const applyFormat = (command) => {
     editorRef.current?.focus()
     document.execCommand(command, false, null)
+    onChange(editorRef.current?.innerHTML || '')
+  }
+
+  const handlePaste = (e) => {
+    e.preventDefault()
+    insertPlainTextAtCursor(e.clipboardData?.getData('text/plain') || '')
+    onChange(editorRef.current?.innerHTML || '')
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    insertPlainTextAtCursor('\n')
     onChange(editorRef.current?.innerHTML || '')
   }
 
@@ -417,7 +457,11 @@ function RichTemplateEditor({ value, onChange, placeholder }) {
         aria-multiline="true"
         data-placeholder={placeholder}
         onInput={e => onChange(e.currentTarget.innerHTML)}
-        className="min-h-[145px] w-full px-4 py-3 text-sm text-gray-800 focus:outline-none leading-6 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 [&_u]:underline [&_b]:font-bold [&_strong]:font-bold"
+        onPaste={handlePaste}
+        onKeyDown={handleKeyDown}
+        onFocus={() => { isEditingRef.current = true }}
+        onBlur={() => { isEditingRef.current = false }}
+        className="min-h-[145px] w-full px-4 py-3 text-sm text-gray-800 focus:outline-none leading-6 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 [&_*]:!text-sm [&_*]:!leading-6 [&_*]:!text-gray-800 [&_u]:underline [&_b]:font-bold [&_strong]:font-bold"
       />
     </div>
   )
