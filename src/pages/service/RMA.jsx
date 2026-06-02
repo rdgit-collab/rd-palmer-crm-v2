@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -107,11 +108,27 @@ export default function RMA() {
       ? await supabase.from('rma').update(payload).eq('id', editId)
       : await supabase.from('rma').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
+    logActivity({
+      module: 'rma',
+      action: editId ? 'update' : 'create',
+      recordTable: 'rma',
+      recordId: editId || null,
+      recordLabel: form.rma_number,
+      summary: `${editId ? 'Updated' : 'Created'} RMA ${form.rma_number}`,
+      metadata: { ticket_id: form.ticket_id || null },
+    })
     setSaving(false); fetchRows(); setView('list')
   }
 
   const handleDelete = async (id) => {
     await supabase.from('rma').delete().eq('id', id)
+    logActivity({
+      module: 'rma',
+      action: 'delete',
+      recordTable: 'rma',
+      recordId: id,
+      summary: `Deleted RMA #${id}`,
+    })
     setDeleteId(null); fetchRows()
   }
 

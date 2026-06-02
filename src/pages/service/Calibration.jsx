@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { logActivity } from '../../lib/activityLog'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
@@ -266,6 +267,15 @@ export default function Calibration() {
 
     const checklistResult = await saveChecklist(result.data.id)
     if (checklistResult?.error) { setError(checklistResult.error.message); setSaving(false); return }
+    logActivity({
+      module: 'calibration',
+      action: editId ? 'update' : 'create',
+      recordTable: 'calibration',
+      recordId: result.data.id,
+      recordLabel: form.certificate_number,
+      summary: `${editId ? 'Updated' : 'Created'} calibration ${form.certificate_number}`,
+      metadata: { ticket_id: form.ticket_id || null, status: form.status || null },
+    })
 
     setSaving(false)
     setUploadFile(null)
@@ -276,6 +286,13 @@ export default function Calibration() {
   const handleDelete = async (id) => {
     await supabase.from('calibration_checklist').delete().eq('cid', id)
     await supabase.from('calibration').delete().eq('id', id)
+    logActivity({
+      module: 'calibration',
+      action: 'delete',
+      recordTable: 'calibration',
+      recordId: id,
+      summary: `Deleted calibration #${id}`,
+    })
     setDeleteId(null)
     fetchRows()
   }

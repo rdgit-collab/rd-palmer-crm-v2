@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
@@ -131,6 +132,15 @@ function CustomerForm({ customer, onSave, onCancel }) {
 
     setSaving(false)
     if (result.error) { setError(result.error.message); return }
+    logActivity({
+      module: 'customers',
+      action: isEdit ? 'update' : 'create',
+      recordTable: 'customer',
+      recordId: result.data.id,
+      recordLabel: form.company_name,
+      summary: `${isEdit ? 'Updated' : 'Created'} customer ${form.company_name}`,
+      metadata: { assignto: form.assignto || null },
+    })
 
     if (!isEdit) {
       const contactPayload = newContacts
@@ -565,6 +575,13 @@ export default function Customers() {
       return
     }
     await supabase.from('customer').delete().eq('id', id)
+    logActivity({
+      module: 'customers',
+      action: 'delete',
+      recordTable: 'customer',
+      recordId: id,
+      summary: `Deleted customer #${id}`,
+    })
     setDeleteId(null)
     fetchCustomers()
   }

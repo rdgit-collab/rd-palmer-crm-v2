@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { logActivity } from '../../lib/activityLog'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -256,15 +257,38 @@ export default function OnsiteTickets() {
       ? await supabase.from('onsiteticket').update(payload).eq('id', editId)
       : await supabase.from('onsiteticket').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
+    logActivity({
+      module: 'onsite-tickets',
+      action: editId ? 'update' : 'create',
+      recordTable: 'onsiteticket',
+      recordId: editId || null,
+      recordLabel: form.product || form.issue_description,
+      summary: `${editId ? 'Updated' : 'Created'} onsite ticket${form.ticket_id ? ` for ticket #${form.ticket_id}` : ''}`,
+      metadata: { ticket_id: form.ticket_id || null, assigned_to: form.assigned_to || null },
+    })
     setSaving(false); setUploadFile(null); fetchRows(); setView('list')
   }
 
   const markComplete = async (id) => {
     await supabase.from('onsiteticket').update({ is_completed: 1, status: 'Completed' }).eq('id', id)
+    logActivity({
+      module: 'onsite-tickets',
+      action: 'complete',
+      recordTable: 'onsiteticket',
+      recordId: id,
+      summary: `Marked onsite ticket #${id} complete`,
+    })
     setCompleteId(null); fetchRows()
   }
   const handleDelete = async (id) => {
     await supabase.from('onsiteticket').delete().eq('id', id)
+    logActivity({
+      module: 'onsite-tickets',
+      action: 'delete',
+      recordTable: 'onsiteticket',
+      recordId: id,
+      summary: `Deleted onsite ticket #${id}`,
+    })
     setDeleteId(null); fetchRows()
   }
 

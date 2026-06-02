@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { logActivity } from '../../lib/activityLog'
 import {
   ROLE_ADMIN,
   ROLE_SALES,
@@ -94,6 +95,15 @@ export default function Users() {
 
     // 2. Update status label in our users table
     await supabase.from('users').update({ status: activate ? 'Active' : 'Inactive' }).eq('id', id)
+    logActivity({
+      module: 'users',
+      action: activate ? 'reactivate' : 'deactivate',
+      recordTable: 'users',
+      recordId: id,
+      recordLabel: confirmToggle.name,
+      summary: `${activate ? 'Reactivated' : 'Deactivated'} user ${confirmToggle.name}`,
+      metadata: { target_role_id: confirmToggle.role_id || null },
+    })
 
     setToggling(false)
     setConfirmToggle(null)
@@ -117,6 +127,15 @@ export default function Users() {
       }
       const { error: err } = await supabase.from('users').update(payload).eq('id', editId)
       if (err) { setError(err.message); setSaving(false); return }
+      logActivity({
+        module: 'users',
+        action: 'update',
+        recordTable: 'users',
+        recordId: editId,
+        recordLabel: `${form.first_name} ${form.last_name}`.trim() || form.email,
+        summary: `Updated user ${`${form.first_name} ${form.last_name}`.trim() || form.email}`,
+        metadata: { role_id: parseInt(form.role_id) },
+      })
     } else {
       if (isSuperAdminRole(form.role_id) && !canManageSuperAdmin) {
         setError('Only a Super Admin can create a Super Admin account.')
@@ -145,6 +164,15 @@ export default function Users() {
           department: form.department || null, phone: form.phone || null,
           status: 'Active',
         }).eq('id', authData.user.id)
+        logActivity({
+          module: 'users',
+          action: 'create',
+          recordTable: 'users',
+          recordId: authData.user.id,
+          recordLabel: `${form.first_name} ${form.last_name}`.trim() || form.email,
+          summary: `Created user ${`${form.first_name} ${form.last_name}`.trim() || form.email}`,
+          metadata: { role_id: parseInt(form.role_id), email: form.email },
+        })
       }
     }
 

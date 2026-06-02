@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { isSalesRole } from '../../lib/roles'
+import { logActivity } from '../../lib/activityLog'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -746,6 +747,15 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       }))
       await supabase.from('quotation_item').insert(itemPayload)
     }
+    logActivity({
+      module: 'quotations',
+      action: isEdit ? 'update' : 'create',
+      recordTable: 'quotation',
+      recordId: qid,
+      recordLabel: qResult.data.number,
+      summary: `${isEdit ? 'Updated' : 'Created'} quotation ${qResult.data.number}`,
+      metadata: { companyid: form.companyid || null, total },
+    })
 
     setSaving(false)
     onSave(qResult.data)
@@ -1124,6 +1134,15 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       }
     }
     await supabase.from('quotation').update({ isconvert: 1 }).eq('id', quotationId)
+    logActivity({
+      module: 'quotations',
+      action: 'convert',
+      recordTable: 'quotation',
+      recordId: quotationId,
+      recordLabel: quotation.number,
+      summary: `Converted quotation ${quotation.number} to invoice ${invoice.invoice_number || invoice.id}`,
+      metadata: { invoice_id: invoice.id },
+    })
     setConverting(false)
     onConverted()
   }
@@ -1360,6 +1379,13 @@ export default function Quotations() {
   const handleDelete = async (id) => {
     await supabase.from('quotation_item').delete().eq('qid', id)
     await supabase.from('quotation').delete().eq('id', id)
+    logActivity({
+      module: 'quotations',
+      action: 'delete',
+      recordTable: 'quotation',
+      recordId: id,
+      summary: `Deleted quotation #${id}`,
+    })
     setDeleteId(null)
     fetchQuotations()
   }

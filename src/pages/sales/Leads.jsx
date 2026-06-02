@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { isSalesRole } from '../../lib/roles'
 import {
@@ -170,6 +171,14 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     const { error } = await supabase.from('activity').insert([payload])
     setActivitySaving(false)
     if (error) { setActivityError(error.message); return }
+    logActivity({
+      module: 'activities',
+      action: 'create',
+      recordTable: 'activity',
+      recordLabel: activityForm.type,
+      summary: `Added ${activityForm.type} progress update for lead ${lead.company_name || lead.id}`,
+      metadata: { lead_id: lead.id, assigned_to: lead.assigned_to || null },
+    })
     setActivityForm(defaultActivityForm())
     setShowActivityForm(false)
     load()
@@ -646,6 +655,16 @@ function LeadForm({ lead, onSave, onCancel }) {
       }
     }
 
+    logActivity({
+      module: 'leads',
+      action: isEdit ? 'update' : 'create',
+      recordTable: 'sales_lead',
+      recordId: result.data.id,
+      recordLabel: form.company_name,
+      summary: `${isEdit ? 'Updated' : 'Created'} sales lead ${form.company_name}`,
+      metadata: { assigned_to: payload.assigned_to || null, company_id: result.data.company_id || null },
+    })
+
     onSave(result.data)
   }
 
@@ -974,6 +993,13 @@ export default function Leads() {
 
   const handleDelete = async (id) => {
     await supabase.from('sales_lead').delete().eq('id', id)
+    logActivity({
+      module: 'leads',
+      action: 'delete',
+      recordTable: 'sales_lead',
+      recordId: id,
+      summary: `Deleted sales lead #${id}`,
+    })
     setDeleteId(null)
     fetchLeads()
   }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -99,11 +100,27 @@ export default function Catalogue() {
       ? await supabase.from('goodsservices').update(payload).eq('id', editId)
       : await supabase.from('goodsservices').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
+    logActivity({
+      module: 'catalogue',
+      action: editId ? 'update' : 'create',
+      recordTable: 'goodsservices',
+      recordId: editId || null,
+      recordLabel: form.sku || form.name,
+      summary: `${editId ? 'Updated' : 'Created'} catalogue item ${form.sku || form.name}`,
+      metadata: { sku: form.sku || null, name: form.name || null },
+    })
     setSaving(false); fetchRows(); setView('list')
   }
 
   const handleDelete = async (id) => {
     await supabase.from('goodsservices').delete().eq('id', id)
+    logActivity({
+      module: 'catalogue',
+      action: 'delete',
+      recordTable: 'goodsservices',
+      recordId: id,
+      summary: `Deleted catalogue item #${id}`,
+    })
     setDeleteId(null); fetchRows()
   }
 

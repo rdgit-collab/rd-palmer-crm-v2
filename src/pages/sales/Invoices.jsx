@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { isSalesRole } from '../../lib/roles'
+import { logActivity } from '../../lib/activityLog'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -704,6 +705,15 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       }))
       await supabase.from('invoice_item').insert(itemPayload)
     }
+    logActivity({
+      module: 'invoices',
+      action: isEdit ? 'update' : 'create',
+      recordTable: 'invoice',
+      recordId: invoiceid,
+      recordLabel: invResult.data.invoice_number,
+      summary: `${isEdit ? 'Updated' : 'Created'} invoice ${invResult.data.invoice_number || invoiceid}`,
+      metadata: { companyid: form.companyid || null, total },
+    })
 
     setSaving(false)
     onSave(invResult.data)
@@ -1220,6 +1230,13 @@ export default function Invoices() {
   const handleDelete = async (id) => {
     await supabase.from('invoice_item').delete().eq('invoiceid', id)
     await supabase.from('invoice').delete().eq('id', id)
+    logActivity({
+      module: 'invoices',
+      action: 'delete',
+      recordTable: 'invoice',
+      recordId: id,
+      summary: `Deleted invoice #${id}`,
+    })
     setDeleteId(null)
     fetchInvoices()
   }

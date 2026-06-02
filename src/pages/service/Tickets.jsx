@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -388,6 +389,15 @@ export default function Tickets() {
         }))
       )
     }
+    logActivity({
+      module: 'tickets',
+      action: editId ? 'update' : 'create',
+      recordTable: 'ticket',
+      recordId: ticketId,
+      recordLabel: form.ticket_number,
+      summary: `${editId ? 'Updated' : 'Created'} ${form.ticket_number}${form.company_name ? ` for ${form.company_name}` : ''}`,
+      metadata: { assigned_to: form.assigned_to || null, product_count: validProds.length },
+    })
 
     // ── Notify assigned user ──────────────────────────────────────
     const newAssignee = form.assigned_to || ''
@@ -412,6 +422,13 @@ export default function Tickets() {
   // ── Mark complete ─────────────────────────────────────────────────
   const markComplete = async (id) => {
     await supabase.from('ticket').update({ is_completed: 1, status: 'Completed' }).eq('id', id)
+    logActivity({
+      module: 'tickets',
+      action: 'complete',
+      recordTable: 'ticket',
+      recordId: id,
+      summary: `Marked ticket #${id} complete`,
+    })
     setCompleteId(null)
     fetchTickets()
   }
@@ -420,6 +437,13 @@ export default function Tickets() {
   const handleDelete = async (id) => {
     await supabase.from('ticket_product').delete().eq('ticket_id', id)
     await supabase.from('ticket').delete().eq('id', id)
+    logActivity({
+      module: 'tickets',
+      action: 'delete',
+      recordTable: 'ticket',
+      recordId: id,
+      summary: `Deleted ticket #${id}`,
+    })
     setDeleteId(null)
     fetchTickets()
   }
@@ -612,6 +636,14 @@ export default function Tickets() {
       setQuickSaving(false)
       return
     }
+    logActivity({
+      module: quickAction === 'onsite' ? 'onsite-tickets' : quickAction === 'rma' ? 'rma' : quickAction === 'remark' ? 'ticket-remarks' : 'tasks',
+      action: 'create',
+      recordTable: table,
+      recordLabel: quickAction === 'rma' ? quickForm.rma_number : `TID${detail.ticket_id}`,
+      summary: `Added ${quickAction === 'rma' ? 'RMA' : quickAction === 'onsite' ? 'onsite ticket' : quickAction === 'remark' ? 'remark' : 'task'} to TID${detail.ticket_id}`,
+      metadata: { ticket_id: detail.id, ticket_number: detail.ticket_id },
+    })
 
     await openDetail(detail)
     setQuickSaving(false)

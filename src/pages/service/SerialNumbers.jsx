@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -171,11 +172,27 @@ export default function SerialNumbers() {
       ? await supabase.from('serialnumber').update(payload).eq('id', editId)
       : await supabase.from('serialnumber').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
+    logActivity({
+      module: 'serial-numbers',
+      action: editId ? 'update' : 'create',
+      recordTable: 'serialnumber',
+      recordId: editId || null,
+      recordLabel: form.serial_number,
+      summary: `${editId ? 'Updated' : 'Created'} serial number ${form.serial_number}`,
+      metadata: { sku: form.sku || null, customername: form.customername || null },
+    })
     setSaving(false); fetchRows(); setView('list')
   }
 
   const handleDelete = async (id) => {
     await supabase.from('serialnumber').delete().eq('id', id)
+    logActivity({
+      module: 'serial-numbers',
+      action: 'delete',
+      recordTable: 'serialnumber',
+      recordId: id,
+      summary: `Deleted serial number record #${id}`,
+    })
     setDeleteId(null); fetchRows()
   }
 

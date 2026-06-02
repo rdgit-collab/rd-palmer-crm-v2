@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
@@ -69,6 +70,15 @@ function ContactForm({ contact, onSave, onCancel }) {
 
     setSaving(false)
     if (result.error) { setError(result.error.message); return }
+    logActivity({
+      module: 'contacts',
+      action: isEdit ? 'update' : 'create',
+      recordTable: 'contact',
+      recordId: result.data.id,
+      recordLabel: `${form.first_name} ${form.last_name}`.trim(),
+      summary: `${isEdit ? 'Updated' : 'Created'} contact ${`${form.first_name} ${form.last_name}`.trim()}`,
+      metadata: { company_id: form.company_id || null },
+    })
     onSave(result.data)
   }
 
@@ -212,6 +222,13 @@ export default function Contacts() {
 
   const handleDelete = async (id) => {
     await supabase.from('contact').delete().eq('id', id)
+    logActivity({
+      module: 'contacts',
+      action: 'delete',
+      recordTable: 'contact',
+      recordId: id,
+      summary: `Deleted contact #${id}`,
+    })
     setDeleteId(null)
     fetchContacts()
   }

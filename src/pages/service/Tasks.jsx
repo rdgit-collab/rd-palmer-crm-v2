@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import { logActivity } from '../../lib/activityLog'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -211,6 +212,15 @@ export default function Tasks() {
       const { error: err } = await supabase.from('task').insert([payload])
       if (err) { setError(err.message); setSaving(false); return }
     }
+    logActivity({
+      module: 'tasks',
+      action: editId ? 'update' : 'create',
+      recordTable: 'task',
+      recordId: editId || null,
+      recordLabel: form.servicetype || form.description,
+      summary: `${editId ? 'Updated' : 'Created'} task${form.ticket_id ? ` for ticket #${form.ticket_id}` : ''}`,
+      metadata: { ticket_id: form.ticket_id || null, assigned_to: form.assigned_to || null },
+    })
 
     // ── Notify assigned user ──────────────────────────────────────
     const newAssignee = form.assigned_to || ''
@@ -237,6 +247,13 @@ export default function Tasks() {
   // ── Mark complete ─────────────────────────────────────────────────
   const markComplete = async (id) => {
     await supabase.from('task').update({ is_completed: 1 }).eq('id', id)
+    logActivity({
+      module: 'tasks',
+      action: 'complete',
+      recordTable: 'task',
+      recordId: id,
+      summary: `Marked task #${id} complete`,
+    })
     setCompleteId(null)
     fetchTasks()
   }
@@ -244,6 +261,13 @@ export default function Tasks() {
   // ── Delete ────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
     await supabase.from('task').delete().eq('id', id)
+    logActivity({
+      module: 'tasks',
+      action: 'delete',
+      recordTable: 'task',
+      recordId: id,
+      summary: `Deleted task #${id}`,
+    })
     setDeleteId(null)
     fetchTasks()
   }

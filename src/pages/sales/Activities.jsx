@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { isSalesManagerRole, isSalesRole } from '../../lib/roles'
+import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
@@ -270,6 +271,14 @@ export default function Activities() {
     }
     const { error: err } = await supabase.from('activity').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
+    logActivity({
+      module: 'activities',
+      action: 'create',
+      recordTable: 'activity',
+      recordLabel: form.type,
+      summary: `Created activity ${form.type}`,
+      metadata: { lead_id: form.lead_id || null, company_id: payload.company_id || null, assigned_to: payload.assigned_to || null },
+    })
     setSaving(false)
     await fetchRows()
     setView('list')
@@ -277,6 +286,13 @@ export default function Activities() {
 
   const handleDelete = async (id) => {
     await supabase.from('activity').delete().eq('id', id)
+    logActivity({
+      module: 'activities',
+      action: 'delete',
+      recordTable: 'activity',
+      recordId: id,
+      summary: `Deleted activity #${id}`,
+    })
     setDeleteId(null)
     fetchRows()
   }

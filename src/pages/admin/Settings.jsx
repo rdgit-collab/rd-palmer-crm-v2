@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { logActivity } from '../../lib/activityLog'
 import { Plus, Edit2, Trash2, Check, X, Save, Bold, Underline } from 'lucide-react'
 
 // Generic CRUD panel for simple name/type lookup tables
@@ -30,6 +31,13 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
     if (hasUserIdInt) payload.user_id = 1          // old Lovable tables use INTEGER user_id
     if (extraField) payload[extraField] = newExtra
     await supabase.from(tableName).insert([payload])
+    logActivity({
+      module: 'settings',
+      action: 'create',
+      recordTable: tableName,
+      recordLabel: newVal.trim(),
+      summary: `Created ${title}: ${newVal.trim()}`,
+    })
     setNewVal(''); setNewExtra(''); setAdding(false); fetch()
   }
 
@@ -37,11 +45,26 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
     const payload = { [valueField]: editVal }
     if (extraField) payload[extraField] = editExtra
     await supabase.from(tableName).update(payload).eq('id', id)
+    logActivity({
+      module: 'settings',
+      action: 'update',
+      recordTable: tableName,
+      recordId: id,
+      recordLabel: editVal,
+      summary: `Updated ${title}: ${editVal}`,
+    })
     setEditId(null); fetch()
   }
 
   const handleDelete = async (id) => {
     await supabase.from(tableName).delete().eq('id', id)
+    logActivity({
+      module: 'settings',
+      action: 'delete',
+      recordTable: tableName,
+      recordId: id,
+      summary: `Deleted ${title} item #${id}`,
+    })
     fetch()
   }
 
@@ -579,6 +602,15 @@ function RolePermissionsPanel() {
     setPerms(prev => ({ ...prev, [key]: next }))
     await supabase.from('module_permission')
       .upsert({ role_id: roleId, module, can_access: next }, { onConflict: 'role_id,module' })
+    logActivity({
+      module: 'settings',
+      action: 'permission_change',
+      recordTable: 'module_permission',
+      recordId: `${roleId}:${module}`,
+      recordLabel: `${module} role ${roleId}`,
+      summary: `${next ? 'Enabled' : 'Disabled'} ${module} access for role ${roleId}`,
+      metadata: { role_id: roleId, permission_module: module, can_access: next },
+    })
     setSaving(null)
   }
 
