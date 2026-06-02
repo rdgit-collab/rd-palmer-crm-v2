@@ -115,13 +115,14 @@ The Admin Users screen also passes role, position, department, and phone into si
 Applied Supabase migration:
 
 - `20260602010501 add_task_timestamp_trigger`
+- `20260602011014 add_ticket_timestamp_triggers`
 
-This migration adds a database trigger for `public.task` so future task records always receive timestamps:
+These migrations add database triggers so future service records always receive timestamps:
 
-- New tasks automatically get `created_at` and `updated_at`.
-- Edited tasks keep their original `created_at` and refresh `updated_at`.
+- New tasks, tickets, and ticket products automatically get `created_at` and `updated_at`.
+- Edited tasks, tickets, and ticket products keep their original `created_at` and refresh `updated_at`.
 
-This fixes the issue where task rows created through the new CRM could have blank timestamp fields.
+This fixes the issue where service rows created through the new CRM could have blank timestamp fields.
 
 ## Remaining Data Cleanup Items
 
@@ -144,6 +145,10 @@ Result after this batch:
 - `calibration_checklist.cid -> calibration.id`: 30 orphan rows
 
 The remaining orphan rows were not automatically changed because they do not have a clear one-to-one parent match in the current database. Review exports or old CRM context before deciding whether to archive, reconnect, or remove them.
+
+Detailed review notes are in:
+
+- `docs/parent-child-orphan-review-2026-06-02.md`
 
 ## Frontend Guardrails Added
 
