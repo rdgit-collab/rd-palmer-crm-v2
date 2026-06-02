@@ -110,6 +110,19 @@ The migration adds database triggers so future staff creation stays aligned:
 
 The Admin Users screen also passes role, position, department, and phone into signup metadata so the database trigger can create a complete profile immediately. This prevents new staff from logging in without a valid legacy assignment id.
 
+## Task Timestamp Guardrail
+
+Applied Supabase migration:
+
+- `20260602010501 add_task_timestamp_trigger`
+
+This migration adds a database trigger for `public.task` so future task records always receive timestamps:
+
+- New tasks automatically get `created_at` and `updated_at`.
+- Edited tasks keep their original `created_at` and refresh `updated_at`.
+
+This fixes the issue where task rows created through the new CRM could have blank timestamp fields.
+
 ## Remaining Data Cleanup Items
 
 The latest audit found parent-child orphan references that should be reviewed before adding foreign keys.
