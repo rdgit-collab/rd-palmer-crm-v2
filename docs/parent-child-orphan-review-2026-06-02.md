@@ -4,12 +4,12 @@ Date: 2026-06-02
 
 ## Current Result
 
-After the safe ticket-child repair batch, the remaining parent-child orphan counts are:
+After the final archive batch, the remaining parent-child orphan counts are:
 
-- `ticket_product.ticket_id -> ticket.id`: 161 rows
-- `quotation_item.qid -> quotation.id`: 79 rows
-- `invoice_item.invoiceid -> invoice.id`: 38 rows
-- `calibration_checklist.cid -> calibration.id`: 30 rows
+- `ticket_product.ticket_id -> ticket.id`: 0 rows
+- `quotation_item.qid -> quotation.id`: 0 rows
+- `invoice_item.invoiceid -> invoice.id`: 0 rows
+- `calibration_checklist.cid -> calibration.id`: 0 rows
 - `task.ticket_id -> ticket.id`: 0 rows
 - `task.ticket_id` blank references: 0 rows
 
@@ -24,6 +24,13 @@ Checked whether remaining orphan rows could be reconnected by exact alternate va
 
 ## Decision
 
-No further automatic reconnect was applied in this batch. The remaining rows likely need old-system cross-check or business approval before archive/delete/rebuild because the current Supabase database does not contain a clear one-to-one parent.
+No further automatic reconnect was applied because the current Supabase database did not contain a clear one-to-one parent for the remaining child rows.
 
 The blank-ticket test task and four June 1 TID1331 development/test task rows were archived to `app_private.task_test_rows_archive_20260602` and removed from live `public.task`.
+
+The remaining orphan child rows were archived to `app_private.parent_child_orphan_archive_20260602` and removed from live child/detail tables:
+
+- `ticket_product`: 161 rows
+- `quotation_item`: 79 rows
+- `invoice_item`: 38 rows
+- `calibration_checklist`: 30 rows

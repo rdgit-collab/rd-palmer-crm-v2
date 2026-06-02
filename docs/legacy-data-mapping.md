@@ -132,6 +132,7 @@ Applied Supabase migration:
 
 - `20260601164854 repair_ticket_child_visible_id_refs`
 - `20260602011455 archive_task_test_rows`
+- `20260602011915 archive_remaining_orphan_child_rows`
 
 This migration fixed the safe ticket child rows where `ticket_product.ticket_id` or `task.ticket_id` had the old visible ticket number instead of the internal `ticket.id`. It backed up the repaired rows to:
 
@@ -140,16 +141,27 @@ This migration fixed the safe ticket child rows where `ticket_product.ticket_id`
 Result after this batch:
 
 - `task.ticket_id -> ticket.id`: 0 orphan rows, 0 blank ticket references
-- `ticket_product.ticket_id -> ticket.id`: 161 orphan rows remaining
-- `quotation_item.qid -> quotation.id`: 79 orphan rows
-- `invoice_item.invoiceid -> invoice.id`: 38 orphan rows
-- `calibration_checklist.cid -> calibration.id`: 30 orphan rows
+- `ticket_product.ticket_id -> ticket.id`: 0 orphan rows, 0 blank ticket references
+- `quotation_item.qid -> quotation.id`: 0 orphan rows, 0 blank quotation references
+- `invoice_item.invoiceid -> invoice.id`: 0 orphan rows, 0 blank invoice references
+- `calibration_checklist.cid -> calibration.id`: 0 orphan rows, 0 blank calibration references
 
 The task test cleanup archived five identified test/manual rows to:
 
 - `app_private.task_test_rows_archive_20260602`
 
-The remaining orphan rows were not automatically changed because they do not have a clear one-to-one parent match in the current database. Review exports or old CRM context before deciding whether to archive, reconnect, or remove them.
+The remaining orphan child rows were archived to:
+
+- `app_private.parent_child_orphan_archive_20260602`
+
+Archive counts:
+
+- `ticket_product`: 161 rows
+- `quotation_item`: 79 rows
+- `invoice_item`: 38 rows
+- `calibration_checklist`: 30 rows
+
+These rows were removed from live tables because their parent record was missing and no safe one-to-one alternate parent match existed in the current database.
 
 Detailed review notes are in:
 
