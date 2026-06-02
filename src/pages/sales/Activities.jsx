@@ -38,11 +38,11 @@ function todayString(offset = 0) {
 }
 
 function isCompleted(status = '') {
-  return status.toLowerCase().includes('complete')
+  return String(status || '').toLowerCase().includes('complete')
 }
 
 function priorityColor(p = '') {
-  const n = p.toLowerCase()
+  const n = String(p || '').toLowerCase()
   if (n.includes('high')) return 'bg-red-100 text-red-700'
   if (n.includes('medium')) return 'bg-yellow-100 text-yellow-700'
   if (n.includes('low')) return 'bg-green-100 text-green-700'
@@ -50,7 +50,7 @@ function priorityColor(p = '') {
 }
 
 function statusColor(s = '') {
-  const n = s.toLowerCase()
+  const n = String(s || '').toLowerCase()
   if (n.includes('complete')) return 'bg-green-100 text-green-700'
   if (n.includes('cancel')) return 'bg-gray-100 text-gray-500'
   if (n.includes('progress')) return 'bg-blue-100 text-blue-700'
@@ -58,7 +58,7 @@ function statusColor(s = '') {
 }
 
 function typeColor(t = '') {
-  const n = t.toLowerCase()
+  const n = String(t || '').toLowerCase()
   if (n.includes('call')) return 'bg-blue-100 text-blue-700'
   if (n.includes('meeting')) return 'bg-purple-100 text-purple-700'
   if (n.includes('follow')) return 'bg-orange-100 text-orange-700'
