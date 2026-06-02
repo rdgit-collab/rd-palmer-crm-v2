@@ -16,7 +16,11 @@ function SpareChecklist({ options, value, onChange }) {
   const [term, setTerm] = useState('')
   const selected = splitCsv(value)
   const selectedSet = new Set(selected)
-  const filtered = options.filter(spare => spare.name.toLowerCase().includes(term.trim().toLowerCase()))
+  const searchTerm = term.trim().toLowerCase()
+  const filtered = options.filter(spare =>
+    spare.name.toLowerCase().includes(searchTerm) ||
+    String(spare.description || '').toLowerCase().includes(searchTerm)
+  )
 
   const toggle = (name) => {
     const next = selectedSet.has(name)
@@ -48,7 +52,10 @@ function SpareChecklist({ options, value, onChange }) {
               onChange={() => toggle(spare.name)}
               className="h-4 w-4 accent-red-600"
             />
-            <span className="text-gray-700">{spare.name}</span>
+            <span className="min-w-0">
+              <span className="block text-gray-700">{spare.name}</span>
+              {spare.description && <span className="block truncate text-xs text-gray-400">{spare.description}</span>}
+            </span>
           </label>
         ))}
       </div>
@@ -566,6 +573,11 @@ export default function Tickets() {
   const removeProdRow = (idx) => setProducts(prev => prev.filter((_, i) => i !== idx))
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+  const catalogueSpareOptions = skuList.map(item => ({
+    id: item.id,
+    name: item.sku,
+    description: stripHtml(item.description || ''),
+  }))
 
   // ══════════════════════════════════════════════════════════════════
   // LIST VIEW
@@ -1233,7 +1245,7 @@ export default function Tickets() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
-                    <SpareChecklist options={spares} value={quickForm.spare || ''} onChange={value => setQuick('spare', value)} />
+                    <SpareChecklist options={catalogueSpareOptions} value={quickForm.spare || ''} onChange={value => setQuick('spare', value)} />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Issue Description</label>
