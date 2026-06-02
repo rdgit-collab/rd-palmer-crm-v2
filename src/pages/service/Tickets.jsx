@@ -12,6 +12,15 @@ const PAGE_SIZE = 30
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
+function LoadingHint({ text = 'Loading options...' }) {
+  return (
+    <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
+      <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-red-600 animate-spin" />
+      {text}
+    </div>
+  )
+}
+
 function SpareChecklist({ options, value, onChange }) {
   const [term, setTerm] = useState('')
   const selected = splitCsv(value)
@@ -155,6 +164,10 @@ export default function Tickets() {
   const [allUsers, setAllUsers]     = useState([])
   const [skuList, setSkuList]       = useState([])
   const [serialOptions, setSerialOptions] = useState({})
+  const [serialLoading, setSerialLoading] = useState({})
+  const [quickSerialOptions, setQuickSerialOptions] = useState([])
+  const [quickSerialLoading, setQuickSerialLoading] = useState(false)
+  const [dropdownLoading, setDropdownLoading] = useState(true)
   const [priorities, setPriorities] = useState([])
   const [serviceTypes, setServiceTypes] = useState([])
   const [spares, setSpares] = useState([])
@@ -166,6 +179,8 @@ export default function Tickets() {
 
   // Track original assigned_to to detect changes during edit
   const origAssignedTo = useRef(null)
+  const serialSearchIds = useRef({})
+  const quickSerialSearchId = useRef(0)
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTickets = useCallback(async () => {
@@ -206,6 +221,7 @@ export default function Tickets() {
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
     const run = async () => {
+      setDropdownLoading(true)
       const [catR, custR, usrR, allUsrR, skuR, prioR, svcR, spareR, vendorR, modeR] = await Promise.all([
         supabase.from('category').select('id, name').order('name'),
         fetchAllRows('customer', 'id, company_name', 'company_name'),
@@ -228,8 +244,9 @@ export default function Tickets() {
       if (!spareR.error) setSpares(spareR.data || [])
       if (!vendorR.error) setVendors(vendorR.data || [])
       if (!modeR.error) setModes(modeR.data || [])
+      setDropdownLoading(false)
     }
-    run()
+    run().catch(() => setDropdownLoading(false))
   }, [])
 
   // ── Helpers ───────────────────────────────────────────────────────
@@ -429,17 +446,47 @@ export default function Tickets() {
     } : p))
   }
   const loadSerialOptions = async (idx, term = '') => {
+    const requestId = (serialSearchIds.current[idx] || 0) + 1
+    serialSearchIds.current[idx] = requestId
+    setSerialLoading(prev => ({ ...prev, [idx]: true }))
     const searchTerm = term.trim()
-    let q = supabase
-      .from('serialnumber')
-      .select('id, serial_number, sku, customername')
-      .order('serial_number')
-      .limit(200)
-    if (searchTerm) {
-      q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
+    try {
+      let q = supabase
+        .from('serialnumber')
+        .select('id, serial_number, sku, customername')
+        .order('serial_number')
+        .limit(200)
+      if (searchTerm) {
+        q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
+      }
+      const { data, error: err } = await q
+      if (serialSearchIds.current[idx] !== requestId) return
+      if (!err) setSerialOptions(prev => ({ ...prev, [idx]: data || [] }))
+    } finally {
+      if (serialSearchIds.current[idx] === requestId) {
+        setSerialLoading(prev => ({ ...prev, [idx]: false }))
+      }
     }
-    const { data, error: err } = await q
-    if (!err) setSerialOptions(prev => ({ ...prev, [idx]: data || [] }))
+  }
+
+  const loadQuickSerialOptions = async (term = '') => {
+    const requestId = quickSerialSearchId.current + 1
+    quickSerialSearchId.current = requestId
+    setQuickSerialLoading(true)
+    const searchTerm = term.trim()
+    try {
+      let q = supabase
+        .from('serialnumber')
+        .select('id, serial_number, sku, customername')
+        .order('serial_number')
+        .limit(200)
+      if (searchTerm) q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
+      const { data, error: err } = await q
+      if (quickSerialSearchId.current !== requestId) return
+      if (!err) setQuickSerialOptions(data || [])
+    } finally {
+      if (quickSerialSearchId.current === requestId) setQuickSerialLoading(false)
+    }
   }
 
   const openQuickAction = (type) => {
@@ -480,6 +527,7 @@ export default function Tickets() {
       },
       remark: { remark: '' },
     }
+    if (type === 'onsite') loadQuickSerialOptions()
     setQuickAction(type)
     setQuickForm(defaults[type] || {})
     setQuickError('')
@@ -885,6 +933,7 @@ export default function Tickets() {
                             />
                           ))}
                         </datalist>
+                        {dropdownLoading && <LoadingHint text="Loading catalogue..." />}
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -920,6 +969,7 @@ export default function Tickets() {
                             />
                           ))}
                         </datalist>
+                        {serialLoading[idx] && <LoadingHint text="Searching serial numbers..." />}
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -1200,6 +1250,7 @@ export default function Tickets() {
                         />
                       ))}
                     </datalist>
+                    {dropdownLoading && <LoadingHint text="Loading catalogue..." />}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Description *</label>
@@ -1237,7 +1288,24 @@ export default function Tickets() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Serial Number</label>
-                    <input value={quickForm.serial_number || ''} onChange={e => setQuick('serial_number', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                    <input
+                      list="ticket-onsite-serial-options"
+                      value={quickForm.serial_number || ''}
+                      onFocus={e => { e.target.select(); loadQuickSerialOptions(quickForm.serial_number || '') }}
+                      onChange={e => { setQuick('serial_number', e.target.value); loadQuickSerialOptions(e.target.value) }}
+                      placeholder="Search serial number"
+                      className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                    />
+                    <datalist id="ticket-onsite-serial-options">
+                      {quickSerialOptions.map(s => (
+                        <option
+                          key={s.id}
+                          value={s.serial_number}
+                          label={`${s.sku || ''}${s.customername ? ` - ${s.customername}` : ''}`}
+                        />
+                      ))}
+                    </datalist>
+                    {quickSerialLoading && <LoadingHint text="Searching serial numbers..." />}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
@@ -1246,6 +1314,7 @@ export default function Tickets() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
                     <SpareChecklist options={catalogueSpareOptions} value={quickForm.spare || ''} onChange={value => setQuick('spare', value)} />
+                    {dropdownLoading && <LoadingHint text="Loading catalogue..." />}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Issue Description</label>
@@ -1270,6 +1339,7 @@ export default function Tickets() {
                       <option value="">Please Select</option>
                       {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>
+                    {dropdownLoading && <LoadingHint text="Loading vendors..." />}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Date Sent</label>
@@ -1281,6 +1351,7 @@ export default function Tickets() {
                       <option value="">Please Select</option>
                       {modes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                     </select>
+                    {dropdownLoading && <LoadingHint text="Loading modes..." />}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Tracking No. Out</label>

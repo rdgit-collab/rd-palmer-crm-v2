@@ -10,6 +10,15 @@ import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRigh
 
 const PAGE_SIZE = 30
 
+function LoadingHint({ text = 'Loading options...' }) {
+  return (
+    <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
+      <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-red-600 animate-spin" />
+      {text}
+    </div>
+  )
+}
+
 function fmtDateTime(value) {
   return value ? new Date(value).toLocaleString('en-GB') : '—'
 }
@@ -54,6 +63,7 @@ export default function Tasks() {
   const [users, setUsers]             = useState([])
   const [allUsers, setAllUsers]       = useState([])
   const [spares, setSpares]           = useState([])
+  const [dropdownLoading, setDropdownLoading] = useState(true)
   const origAssignedTo                = useRef(null)
 
   // ── Fetch list ────────────────────────────────────────────────────
@@ -108,6 +118,7 @@ export default function Tasks() {
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
     const run = async () => {
+      setDropdownLoading(true)
       const [tickR, stR, usrR, allUsrR, sprR, taskSpareR] = await Promise.all([
         fetchAllRows('ticket', 'id, ticket_id, company_name, is_completed', 'id', { ascending: false }),
         supabase.from('service_type').select('id, type').order('type'),
@@ -126,8 +137,9 @@ export default function Tasks() {
         const names = [...new Set((taskSpareR.data || []).map(row => row.spare).filter(Boolean))]
         setSpares(names.map((name, idx) => ({ id: idx + 1, name })))
       }
+      setDropdownLoading(false)
     }
-    run()
+    run().catch(() => setDropdownLoading(false))
   }, [])
 
   // ── Open add ─────────────────────────────────────────────────────
@@ -437,6 +449,7 @@ export default function Tasks() {
                 <option value="">None</option>
                 {spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
+              {dropdownLoading && <LoadingHint text="Loading spare options..." />}
             </div>
           </div>
 

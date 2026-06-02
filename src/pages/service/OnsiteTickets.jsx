@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
@@ -10,6 +10,15 @@ import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRigh
 const PAGE_SIZE = 30
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
+
+function LoadingHint({ text = 'Loading options...' }) {
+  return (
+    <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
+      <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-red-600 animate-spin" />
+      {text}
+    </div>
+  )
+}
 
 function DetailField({ label, children, className = '' }) {
   return (
@@ -104,8 +113,13 @@ export default function OnsiteTickets() {
   const [tickets, setTickets]     = useState([])
   const [users, setUsers]         = useState([])
   const [productOptions, setProductOptions] = useState([])
+  const [productLoading, setProductLoading] = useState(false)
+  const [serialOptions, setSerialOptions] = useState([])
+  const [serialLoading, setSerialLoading] = useState(false)
   const [spares, setSpares]       = useState([])
+  const [dropdownLoading, setDropdownLoading] = useState(true)
   const [uploadFile, setUploadFile] = useState(null)
+  const serialSearchId = useRef(0)
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -123,6 +137,7 @@ export default function OnsiteTickets() {
 
   useEffect(() => {
     const run = async () => {
+      setDropdownLoading(true)
       const [tickR, usrR, spareR] = await Promise.all([
         fetchAllRows('ticket', 'id, ticket_id, company_name, description, assigned_to', 'id', { ascending: false, eq: { is_completed: 0 } }),
         fetchAssignableUsers(supabase),
@@ -131,8 +146,9 @@ export default function OnsiteTickets() {
       setTickets(tickR || [])
       setUsers(usrR || [])
       setSpares(spareR || [])
+      setDropdownLoading(false)
     }
-    run()
+    run().catch(() => setDropdownLoading(false))
   }, [])
 
   const getTicketLabel = (tid) => {
@@ -149,25 +165,53 @@ export default function OnsiteTickets() {
 
   const loadTicketProducts = async (ticketId, selectedProducts = []) => {
     if (!ticketId) { setProductOptions([]); return }
-    const [{ data: products }, { data: ticket }] = await Promise.all([
-      supabase.from('ticket_product').select('id, sku, item_description, serial_number').eq('ticket_id', ticketId).order('id'),
-      supabase.from('ticket').select('description, assigned_to').eq('id', ticketId).maybeSingle(),
-    ])
-    const options = products || []
-    const missingSelected = selectedProducts
-      .filter(sku => sku && !options.some(item => item.sku === sku))
-      .map((sku, idx) => ({ id: `selected-${idx}-${sku}`, sku, item_description: '', serial_number: '' }))
-    setProductOptions([...options, ...missingSelected])
-    setForm(f => ({
-      ...f,
-      issue_description: f.issue_description || ticket?.description || '',
-      assigned_to: f.assigned_to || (ticket?.assigned_to ? String(ticket.assigned_to) : ''),
-    }))
+    setProductLoading(true)
+    try {
+      const [{ data: products }, { data: ticket }] = await Promise.all([
+        supabase.from('ticket_product').select('id, sku, item_description, serial_number').eq('ticket_id', ticketId).order('id'),
+        supabase.from('ticket').select('description, assigned_to').eq('id', ticketId).maybeSingle(),
+      ])
+      const options = products || []
+      const missingSelected = selectedProducts
+        .filter(sku => sku && !options.some(item => item.sku === sku))
+        .map((sku, idx) => ({ id: `selected-${idx}-${sku}`, sku, item_description: '', serial_number: '' }))
+      setProductOptions([...options, ...missingSelected])
+      setForm(f => ({
+        ...f,
+        issue_description: f.issue_description || ticket?.description || '',
+        assigned_to: f.assigned_to || (ticket?.assigned_to ? String(ticket.assigned_to) : ''),
+      }))
+    } finally {
+      setProductLoading(false)
+    }
+  }
+
+  const loadSerialOptions = async (term = '') => {
+    const requestId = serialSearchId.current + 1
+    serialSearchId.current = requestId
+    setSerialLoading(true)
+    const searchTerm = term.trim()
+    try {
+      let q = supabase
+        .from('serialnumber')
+        .select('id, serial_number, sku, customername')
+        .order('serial_number')
+        .limit(200)
+      if (searchTerm) q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
+      const { data, error: err } = await q
+      if (serialSearchId.current !== requestId) return
+      if (!err) setSerialOptions(data || [])
+    } finally {
+      if (serialSearchId.current === requestId) setSerialLoading(false)
+    }
   }
 
   const openAdd = () => {
     setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] })
     setProductOptions([])
+    setSerialOptions([])
+    setProductLoading(false)
+    setSerialLoading(false)
     setUploadFile(null)
     setEditId(null)
     setError('')
@@ -184,6 +228,7 @@ export default function OnsiteTickets() {
     })
     setUploadFile(null)
     await loadTicketProducts(r.ticket_id, productValues(r.product))
+    loadSerialOptions(r.serial_number || '')
     setEditId(r.id); setError(''); setView('form')
   }
 
@@ -317,14 +362,39 @@ export default function OnsiteTickets() {
             setForm(f => ({...f, ticket_id: ticketId, product: ''}))
             await loadTicketProducts(ticketId)
           }} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="">Please Select</option>{tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}</select>],
-          ['Product Description *', <select multiple value={productValues(form.product)} onChange={e => {
-            const selected = Array.from(e.target.selectedOptions).map(option => option.value)
-            setForm(f => ({...f, product: selected.join(',')}))
-          }} required className="w-full min-h-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="" disabled>Please Select</option>{productOptions.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.item_description ? ` - ${stripHtml(p.item_description)}` : ''}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}</select>],
-          ['Serial Number', <input type="text" value={form.serial_number} onChange={e => setForm(f => ({...f, serial_number: e.target.value}))} placeholder="S/N" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
+          ['Product Description *', <div>
+            <select multiple value={productValues(form.product)} onChange={e => {
+              const selected = Array.from(e.target.selectedOptions).map(option => option.value)
+              const selectedProducts = productOptions.filter(option => selected.includes(option.sku))
+              const serials = selectedProducts.map(option => option.serial_number).filter(Boolean)
+              setForm(f => ({...f, product: selected.join(','), serial_number: serials.join(',') || f.serial_number}))
+            }} required className="w-full min-h-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="" disabled>Please Select</option>{productOptions.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.item_description ? ` - ${stripHtml(p.item_description)}` : ''}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}</select>
+            {productLoading && <LoadingHint text="Loading ticket products..." />}
+          </div>],
+          ['Serial Number', <div>
+            <input
+              type="text"
+              list="onsite-serial-options"
+              value={form.serial_number}
+              onFocus={e => { e.target.select(); loadSerialOptions(form.serial_number) }}
+              onChange={e => { setForm(f => ({...f, serial_number: e.target.value})); loadSerialOptions(e.target.value) }}
+              placeholder="Search serial number"
+              className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+            />
+            <datalist id="onsite-serial-options">
+              {serialOptions.map(s => (
+                <option
+                  key={s.id}
+                  value={s.serial_number}
+                  label={`${s.sku || ''}${s.customername ? ` - ${s.customername}` : ''}`}
+                />
+              ))}
+            </datalist>
+            {serialLoading && <LoadingHint text="Searching serial numbers..." />}
+          </div>],
           ['Location', <input type="text" value={form.location} onChange={e => setForm(f => ({...f, location: e.target.value}))} placeholder="Site location" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
           ['Vendor Order Ref', <input type="text" value={form.vandor_order_ref} onChange={e => setForm(f => ({...f, vandor_order_ref: e.target.value}))} placeholder="Vendor reference" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />],
-          ['Spare Used', <SpareChecklist options={spares} value={form.spare} onChange={value => setForm(f => ({...f, spare: value}))} />],
+          ['Spare Used', <div><SpareChecklist options={spares} value={form.spare} onChange={value => setForm(f => ({...f, spare: value}))} />{dropdownLoading && <LoadingHint text="Loading catalogue..." />}</div>],
         ].map(([label, el], i) => (
           <div key={i} className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">{label}</label>
