@@ -379,13 +379,6 @@ function SalesDashboard({ firstName }) {
       .select('id, user_id, invoice_number, date, sales_person, total')
       .gte('date', salesMetricStart)
 
-    if (isSalesRestricted) {
-      allLeadsQuery = allLeadsQuery.eq('assigned_to', currentLegacyUserId)
-      performanceActivitiesQuery = performanceActivitiesQuery.or(`assigned_to.eq.${currentLegacyUserId},user_id.eq.${currentLegacyUserId}`)
-      performanceQuotationsQuery = performanceQuotationsQuery.eq('user_id', currentLegacyUserId)
-      performanceInvoicesQuery = performanceInvoicesQuery.eq('user_id', currentLegacyUserId)
-    }
-
     Promise.all([
       customerCountQuery,
       leadCountQuery,

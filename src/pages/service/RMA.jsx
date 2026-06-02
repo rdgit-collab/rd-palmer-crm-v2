@@ -144,23 +144,19 @@ export default function RMA() {
         <h1 className="text-2xl font-bold text-gray-900">RMA</h1>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New RMA</button>
       </div>
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Search RMA, vendor, ticket number or company..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-            className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
-        </div>
-        <div className="flex border border-gray-200 bg-white text-sm">
-          {[['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => { setTab(id); setPage(1) }}
-              className={`px-4 py-2 ${tab === id ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        {[['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => (
+          <button key={id} onClick={() => { setTab(id); setPage(1) }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >{label}</button>
+        ))}
+      </div>
+      <div className="relative max-w-sm mb-4">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input type="text" placeholder="Search RMA, vendor, ticket number or company..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+          className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
       </div>
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
