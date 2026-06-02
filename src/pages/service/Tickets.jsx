@@ -252,9 +252,9 @@ export default function Tickets() {
 
   // ── Helpers ───────────────────────────────────────────────────────
   const getNextTID = async () => {
-    const { data } = await supabase.from('ticket').select('id').order('id', { ascending: false }).limit(1)
-    const lastId = data?.[0]?.id ?? 0
-    return { display: `TID${100 + lastId + 1}`, num: 100 + lastId + 1 }
+    const { data } = await supabase.from('ticket').select('ticket_id').order('ticket_id', { ascending: false }).limit(1)
+    const lastTicketId = data?.[0]?.ticket_id ?? 100
+    return { display: `TID${lastTicketId + 1}`, num: lastTicketId + 1 }
   }
 
   const loadContacts = async (companyId) => {
