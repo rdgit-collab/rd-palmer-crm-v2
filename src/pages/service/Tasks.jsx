@@ -37,6 +37,8 @@ export default function Tasks() {
   const [total, setTotal]         = useState(0)
   const [page, setPage]           = useState(1)
   const [search, setSearch]       = useState('')
+  const [assignedFilter, setAssignedFilter] = useState('')
+  const [serviceTypeFilter, setServiceTypeFilter] = useState('')
   const [loading, setLoading]     = useState(false)
   const [form, setForm]           = useState(emptyForm)
   const [editId, setEditId]       = useState(null)
@@ -63,14 +65,43 @@ export default function Tasks() {
       .eq('is_completed', tab === 'open' ? 0 : 1)
       .order('id', { ascending: false })
 
-    if (search) q = q.or(`servicetype.ilike.%${search}%,description.ilike.%${search}%`)
+    const term = search.trim()
+    if (term) {
+      const tid = term.replace(/^TID/i, '')
+      const { data: companyTickets, error: companyTicketErr } = await supabase
+        .from('ticket')
+        .select('id')
+        .ilike('company_name', `%${term}%`)
+        .limit(1000)
+      let numberTickets = []
+      if (/^\d+$/.test(tid)) {
+        const { data: numberTicketRows, error: numberTicketErr } = await supabase
+          .from('ticket')
+          .select('id')
+          .eq('ticket_id', parseInt(tid))
+          .limit(1000)
+        if (!numberTicketErr) numberTickets = numberTicketRows || []
+      }
+      const matchingTickets = [
+        ...(!companyTicketErr ? companyTickets || [] : []),
+        ...numberTickets,
+      ]
+      const ticketIds = [...new Set(matchingTickets.map(t => t.id))]
+      if (ticketIds.length > 0) {
+        q = q.in('ticket_id', ticketIds)
+      } else {
+        q = q.eq('id', -1)
+      }
+    }
     if (scope === 'mine') q = q.eq('assigned_to', getLegacyUserId(profile))
+    if (assignedFilter) q = q.eq('assigned_to', parseInt(assignedFilter))
+    if (serviceTypeFilter) q = q.eq('servicetype', serviceTypeFilter)
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
     const { data, count, error: err } = await q
     if (!err) { setTasks(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page, tab, scope, profile])
+  }, [search, page, tab, scope, profile, assignedFilter, serviceTypeFilter])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
@@ -78,7 +109,7 @@ export default function Tasks() {
   useEffect(() => {
     const run = async () => {
       const [tickR, stR, usrR, allUsrR, sprR, taskSpareR] = await Promise.all([
-        fetchAllRows('ticket', 'id, ticket_id, company_name', 'id', { ascending: false, eq: { is_completed: 0 } }),
+        fetchAllRows('ticket', 'id, ticket_id, company_name, is_completed', 'id', { ascending: false }),
         supabase.from('service_type').select('id, type').order('type'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
@@ -245,11 +276,29 @@ export default function Tasks() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search tasks..."
+              placeholder="Search customer or ticket number..."
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400"
             />
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              value={assignedFilter}
+              onChange={e => { setAssignedFilter(e.target.value); setPage(1) }}
+              className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 sm:w-48"
+            >
+              <option value="">All Assigned Users</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+            </select>
+            <select
+              value={serviceTypeFilter}
+              onChange={e => { setServiceTypeFilter(e.target.value); setPage(1) }}
+              className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 sm:w-48"
+            >
+              <option value="">All Service Types</option>
+              {serviceTypes.map(s => <option key={s.id} value={s.type}>{s.type}</option>)}
+            </select>
           </div>
           <div className="flex border border-gray-200 bg-white text-sm">
             {[['all', 'All Tasks'], ['mine', 'My Assigned']].map(([id, label]) => (
@@ -350,7 +399,7 @@ export default function Tasks() {
             <div className="col-span-2">
               <select value={form.ticket_id} onChange={e => setForm(f => ({ ...f, ticket_id: e.target.value }))} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
                 <option value="">Please Select</option>
-                {tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}
+                {tickets.filter(t => t.is_completed != 1).map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}
               </select>
             </div>
           </div>
