@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
@@ -54,11 +54,13 @@ export default function Calibration() {
   const [users, setUsers]           = useState([])
   const [allUsers, setAllUsers]     = useState([])
   const [serialOptions, setSerialOptions] = useState([])
+  const [serialLoading, setSerialLoading] = useState(false)
   const [checklistOptions, setChecklistOptions] = useState([])
   const [termOptions, setTermOptions] = useState([])
   const [checklistRows, setChecklistRows] = useState([])
   const [detailChecklist, setDetailChecklist] = useState([])
   const [uploadFile, setUploadFile] = useState(null)
+  const serialSearchId = useRef(0)
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -143,14 +145,22 @@ export default function Calibration() {
   )
 
   const loadSerialOptions = async (term = '') => {
-    let q = supabase.from('serialnumber')
-      .select('id, serial_number, sku, customername')
-      .not('serial_number', 'is', null)
-      .order('serial_number')
-      .limit(200)
-    if (term.trim()) q = q.ilike('serial_number', `%${term.trim()}%`)
-    const { data, error: err } = await q
-    if (!err) setSerialOptions(data || [])
+    const requestId = serialSearchId.current + 1
+    serialSearchId.current = requestId
+    setSerialLoading(true)
+    try {
+      let q = supabase.from('serialnumber')
+        .select('id, serial_number, sku, customername')
+        .not('serial_number', 'is', null)
+        .order('serial_number')
+        .limit(200)
+      if (term.trim()) q = q.ilike('serial_number', `%${term.trim()}%`)
+      const { data, error: err } = await q
+      if (serialSearchId.current !== requestId) return
+      if (!err) setSerialOptions(data || [])
+    } finally {
+      if (serialSearchId.current === requestId) setSerialLoading(false)
+    }
   }
 
   const loadChecklistForCalibration = async (id) => {
@@ -438,6 +448,12 @@ export default function Calibration() {
             <datalist id="calibration-serial-options">
               {serialOptions.map(item => <option key={item.id} value={item.serial_number}>{[item.sku, item.customername].filter(Boolean).join(' - ')}</option>)}
             </datalist>
+            {serialLoading && (
+              <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
+                <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-red-600 animate-spin" />
+                Searching serial numbers...
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Std. Number</label>
