@@ -7,7 +7,7 @@ import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
 
@@ -154,6 +154,7 @@ export default function Tickets() {
   const [quickError, setQuickError] = useState('')
   const [deleteId, setDeleteId]     = useState(null)
   const [completeId, setCompleteId] = useState(null)
+  const [reopenId, setReopenId]     = useState(null)
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
 
@@ -430,6 +431,20 @@ export default function Tickets() {
       summary: `Marked ticket #${id} complete`,
     })
     setCompleteId(null)
+    fetchTickets()
+  }
+
+  // ── Undo complete (reopen) ────────────────────────────────────────
+  const reopenTicket = async (id) => {
+    await supabase.from('ticket').update({ is_completed: 0, status: 'Open' }).eq('id', id)
+    logActivity({
+      module: 'tickets',
+      action: 'reopen',
+      recordTable: 'ticket',
+      recordId: id,
+      summary: `Reopened ticket #${id}`,
+    })
+    setReopenId(null)
     fetchTickets()
   }
 
@@ -767,6 +782,11 @@ export default function Tickets() {
                             <CheckCircle size={15} />
                           </button>
                         )}
+                        {tab === 'closed' && (
+                          <button onClick={() => setReopenId(t.id)} className="text-amber-600 hover:text-amber-700" title="Undo Complete / Reopen">
+                            <RotateCcw size={15} />
+                          </button>
+                        )}
                         <button onClick={() => setDeleteId(t.id)} className="text-red-500 hover:text-red-700" title="Delete">
                           <Trash2 size={15} />
                         </button>
@@ -790,6 +810,20 @@ export default function Tickets() {
               <div className="flex justify-end gap-3">
                 <button onClick={() => setCompleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
                 <button onClick={() => markComplete(completeId)} className="px-4 py-2 text-sm bg-green-600 text-white hover:bg-green-700">Confirm</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reopen Modal */}
+        {reopenId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white p-6 w-full max-w-sm shadow-lg">
+              <h3 className="font-semibold text-gray-900 mb-2">Reopen this ticket?</h3>
+              <p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={() => reopenTicket(reopenId)} className="px-4 py-2 text-sm bg-amber-600 text-white hover:bg-amber-700">Reopen</button>
               </div>
             </div>
           </div>
@@ -1204,6 +1238,14 @@ export default function Tickets() {
                 className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"
               >
                 <CheckCircle size={14} /> Mark Complete
+              </button>
+            )}
+            {detail.is_completed == 1 && (
+              <button
+                onClick={() => setReopenId(detail.id)}
+                className="flex items-center gap-1.5 bg-amber-600 text-white px-3 py-1.5 text-sm hover:bg-amber-700"
+              >
+                <RotateCcw size={14} /> Undo Complete
               </button>
             )}
           </div>
@@ -1713,6 +1755,25 @@ export default function Tickets() {
                   className="px-4 py-2 text-sm bg-green-600 text-white hover:bg-green-700"
                 >
                   Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reopen Modal */}
+        {reopenId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white p-6 w-full max-w-sm shadow-lg">
+              <h3 className="font-semibold text-gray-900 mb-2">Reopen this ticket?</h3>
+              <p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button
+                  onClick={async () => { await reopenTicket(reopenId); setView('list') }}
+                  className="px-4 py-2 text-sm bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  Reopen
                 </button>
               </div>
             </div>

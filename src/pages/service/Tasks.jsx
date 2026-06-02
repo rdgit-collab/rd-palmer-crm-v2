@@ -7,7 +7,7 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
 
@@ -55,6 +55,7 @@ export default function Tasks() {
   const [detail, setDetail]       = useState(null)
   const [deleteId, setDeleteId]   = useState(null)
   const [completeId, setCompleteId] = useState(null)
+  const [reopenId, setReopenId]     = useState(null)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
   const [uploadFile, setUploadFile] = useState(null)
@@ -258,6 +259,19 @@ export default function Tasks() {
     fetchTasks()
   }
 
+  const reopenTask = async (id) => {
+    await supabase.from('task').update({ is_completed: 0 }).eq('id', id)
+    logActivity({
+      module: 'tasks',
+      action: 'reopen',
+      recordTable: 'task',
+      recordId: id,
+      summary: `Reopened task #${id}`,
+    })
+    setReopenId(null)
+    fetchTasks()
+  }
+
   // ── Delete ────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
     await supabase.from('task').delete().eq('id', id)
@@ -378,6 +392,7 @@ export default function Tasks() {
                       <button onClick={() => { setDetail(t); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                       <button onClick={() => openEdit(t)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                       {tab === 'open' && <button onClick={() => setCompleteId(t.id)} className="text-green-600 hover:text-green-700" title="Mark Complete"><CheckCircle size={15} /></button>}
+                      {tab === 'closed' && <button onClick={() => setReopenId(t.id)} className="text-amber-600 hover:text-amber-700" title="Undo Complete / Reopen"><RotateCcw size={15} /></button>}
                       <button onClick={() => setDeleteId(t.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
                     </div>
                   </td>
@@ -396,6 +411,19 @@ export default function Tasks() {
               <div className="flex justify-end gap-3 mt-4">
                 <button onClick={() => setCompleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
                 <button onClick={() => markComplete(completeId)} className="px-4 py-2 text-sm bg-green-600 text-white hover:bg-green-700">Confirm</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {reopenId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white p-6 w-full max-w-sm shadow-lg">
+              <h3 className="font-semibold text-gray-900 mb-2">Reopen this task?</h3>
+              <p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p>
+              <div className="flex justify-end gap-3 mt-4">
+                <button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={() => reopenTask(reopenId)} className="px-4 py-2 text-sm bg-amber-600 text-white hover:bg-amber-700">Reopen</button>
               </div>
             </div>
           </div>
@@ -544,6 +572,9 @@ export default function Tasks() {
             {detail.is_completed === 0 && (
               <button onClick={() => setCompleteId(detail.id)} className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"><CheckCircle size={14} /> Mark Complete</button>
             )}
+            {detail.is_completed == 1 && (
+              <button onClick={() => setReopenId(detail.id)} className="flex items-center gap-1.5 bg-amber-600 text-white px-3 py-1.5 text-sm hover:bg-amber-700"><RotateCcw size={14} /> Undo Complete</button>
+            )}
           </div>
         </div>
         <div className="bg-white border border-gray-200 p-6 space-y-4 text-sm">
@@ -581,6 +612,18 @@ export default function Tasks() {
               <div className="flex justify-end gap-3 mt-4">
                 <button onClick={() => setCompleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
                 <button onClick={async () => { await markComplete(completeId); setView('list') }} className="px-4 py-2 text-sm bg-green-600 text-white hover:bg-green-700">Confirm</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {reopenId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white p-6 w-full max-w-sm shadow-lg">
+              <h3 className="font-semibold text-gray-900 mb-2">Reopen this task?</h3>
+              <p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p>
+              <div className="flex justify-end gap-3 mt-4">
+                <button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
+                <button onClick={async () => { await reopenTask(reopenId); setView('list') }} className="px-4 py-2 text-sm bg-amber-600 text-white hover:bg-amber-700">Reopen</button>
               </div>
             </div>
           </div>

@@ -6,7 +6,7 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
 
@@ -109,6 +109,7 @@ export default function OnsiteTickets() {
   const [detail, setDetail]       = useState(null)
   const [deleteId, setDeleteId]   = useState(null)
   const [completeId, setCompleteId] = useState(null)
+  const [reopenId, setReopenId]     = useState(null)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
   const [tickets, setTickets]     = useState([])
@@ -280,6 +281,17 @@ export default function OnsiteTickets() {
     })
     setCompleteId(null); fetchRows()
   }
+  const reopenRow = async (id) => {
+    await supabase.from('onsiteticket').update({ is_completed: 0, status: 'Open' }).eq('id', id)
+    logActivity({
+      module: 'onsite-tickets',
+      action: 'reopen',
+      recordTable: 'onsiteticket',
+      recordId: id,
+      summary: `Reopened onsite ticket #${id}`,
+    })
+    setReopenId(null); fetchRows()
+  }
   const handleDelete = async (id) => {
     await supabase.from('onsiteticket').delete().eq('id', id)
     logActivity({
@@ -356,7 +368,8 @@ export default function OnsiteTickets() {
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                     <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
-                    {tab === 'open' && <button onClick={() => setCompleteId(r.id)} className="text-green-600 hover:text-green-700"><CheckCircle size={15} /></button>}
+                    {tab === 'open' && <button onClick={() => setCompleteId(r.id)} className="text-green-600 hover:text-green-700" title="Mark Complete"><CheckCircle size={15} /></button>}
+                    {tab === 'closed' && <button onClick={() => setReopenId(r.id)} className="text-amber-600 hover:text-amber-700" title="Undo Complete / Reopen"><RotateCcw size={15} /></button>}
                     <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
                   </div>
                 </td>
@@ -367,6 +380,7 @@ export default function OnsiteTickets() {
       </div>
       <PaginationControls page={page} totalPages={totalPages} total={total} label="record" onPageChange={setPage} />
       {completeId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Mark as Completed?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setCompleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => markComplete(completeId)} className="px-4 py-2 text-sm bg-green-600 text-white hover:bg-green-700">Confirm</button></div></div></div>}
+      {reopenId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Reopen this onsite ticket?</h3><p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => reopenRow(reopenId)} className="px-4 py-2 text-sm bg-amber-600 text-white hover:bg-amber-700">Reopen</button></div></div></div>}
       {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Delete Onsite Ticket?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700">Delete</button></div></div></div>}
     </div>
   )
@@ -489,6 +503,7 @@ export default function OnsiteTickets() {
         <div className="flex gap-2">
           <button onClick={() => openEdit(detail)} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Edit2 size={14}/> Edit</button>
           {detail.is_completed === 0 && <button onClick={() => setCompleteId(detail.id)} className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"><CheckCircle size={14}/> Mark Complete</button>}
+          {detail.is_completed == 1 && <button onClick={() => setReopenId(detail.id)} className="flex items-center gap-1.5 bg-amber-600 text-white px-3 py-1.5 text-sm hover:bg-amber-700"><RotateCcw size={14}/> Undo Complete</button>}
         </div>
       </div>
       <div className="bg-white border border-gray-200 p-6 space-y-4 text-sm">
@@ -513,6 +528,7 @@ export default function OnsiteTickets() {
         {detail.remark && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Remark</p><p className="whitespace-pre-wrap">{detail.remark}</p></div>}
       </div>
       {completeId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Mark as Completed?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setCompleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={async () => { await markComplete(completeId); setView('list') }} className="px-4 py-2 text-sm bg-green-600 text-white">Confirm</button></div></div></div>}
+      {reopenId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Reopen this onsite ticket?</h3><p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={async () => { await reopenRow(reopenId); setView('list') }} className="px-4 py-2 text-sm bg-amber-600 text-white">Reopen</button></div></div></div>}
     </div>
   )
 
