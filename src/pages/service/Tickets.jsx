@@ -1171,10 +1171,23 @@ export default function Tickets() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
-                    <select value={quickForm.spare || ''} onChange={e => setQuick('spare', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                      <option value="">None</option>
-                      {spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                    </select>
+                    <input
+                      list="ticket-task-spare-catalogue"
+                      value={quickForm.spare || ''}
+                      onFocus={e => e.target.select()}
+                      onChange={e => setQuick('spare', e.target.value)}
+                      placeholder="Search catalogue SKU"
+                      className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                    />
+                    <datalist id="ticket-task-spare-catalogue">
+                      {skuList.map(item => (
+                        <option
+                          key={item.id}
+                          value={item.sku}
+                          label={stripHtml(item.description || '')}
+                        />
+                      ))}
+                    </datalist>
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Description *</label>
