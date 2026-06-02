@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
+import { formatDate } from '../../lib/dateFormat'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -166,9 +167,9 @@ export default function RMA() {
                 <td className="px-4 py-3 font-semibold text-red-600">{r.rma_number || '—'}</td>
                 <td className="px-4 py-3 text-gray-700">{getTicketLabel(r.ticket_id)}</td>
                 <td className="px-4 py-3 text-gray-700">{getVendorName(r.vendor)}</td>
-                <td className="px-4 py-3 text-gray-600">{r.date_sent || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{formatDate(r.date_sent)}</td>
                 <td className="px-4 py-3 text-gray-600">{r.mode || '—'}</td>
-                <td className="px-4 py-3 text-gray-600">{r.date_return || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{formatDate(r.date_return)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
@@ -263,9 +264,9 @@ export default function RMA() {
           <div><span className="font-medium text-gray-500">Ticket: </span>{getTicketLabel(detail.ticket_id)}</div>
           <div><span className="font-medium text-gray-500">Vendor: </span>{getVendorName(detail.vendor)}</div>
           <div><span className="font-medium text-gray-500">Mode: </span>{detail.mode || '—'}</div>
-          <div><span className="font-medium text-gray-500">Date Sent: </span>{detail.date_sent || '—'}</div>
+          <div><span className="font-medium text-gray-500">Date Sent: </span>{formatDate(detail.date_sent)}</div>
           <div><span className="font-medium text-gray-500">Tracking Out: </span>{detail.traking_number_out || '—'}</div>
-          <div><span className="font-medium text-gray-500">Date Return: </span>{detail.date_return || '—'}</div>
+          <div><span className="font-medium text-gray-500">Date Return: </span>{formatDate(detail.date_return)}</div>
           <div><span className="font-medium text-gray-500">Tracking In: </span>{detail.traking_number_in || '—'}</div>
         </div>
         {detail.remark && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Remark</p><p className="whitespace-pre-wrap">{detail.remark}</p></div>}

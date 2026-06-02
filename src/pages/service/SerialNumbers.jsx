@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
+import { formatDate } from '../../lib/dateFormat'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -260,7 +261,7 @@ export default function SerialNumbers() {
                 <td className="px-4 py-3 font-semibold text-red-600">{r.serial_number || '—'}</td>
                 <td className="px-4 py-3 text-gray-700">{r.sku || '—'}</td>
                 <td className="px-4 py-3 text-gray-700">{r.customername || '—'}</td>
-                <td className="px-4 py-3 text-gray-600">{r.date || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{formatDate(r.date)}</td>
                 <td className="px-4 py-3 text-gray-600">{r.ref_number || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.warranty_period || '—'}</td>
                 <td className="px-4 py-3">

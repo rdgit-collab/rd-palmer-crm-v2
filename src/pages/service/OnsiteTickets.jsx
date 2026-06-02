@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
+import { formatDate } from '../../lib/dateFormat'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -359,7 +360,7 @@ export default function OnsiteTickets() {
             : rows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(r.ticket_id)}</td>
-                <td className="px-4 py-3 text-gray-600">{r.date || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{formatDate(r.date)}</td>
                 <td className="px-4 py-3 text-gray-800 max-w-xs truncate">{r.issue_description || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.location || '—'}</td>
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || 'Open'}</span></td>
@@ -509,7 +510,7 @@ export default function OnsiteTickets() {
       <div className="bg-white border border-gray-200 p-6 space-y-4 text-sm">
         <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
           <DetailField label="Ticket"><span className="text-red-600 font-semibold">{getTicketLabel(detail.ticket_id)}</span></DetailField>
-          <DetailField label="Date">{detail.date || '—'}</DetailField>
+          <DetailField label="Date">{formatDate(detail.date)}</DetailField>
           <DetailField label="Product" className="md:col-span-2">{detail.product || '—'}</DetailField>
           <DetailField label="Serial Number" className="md:col-span-2">{detail.serial_number || '—'}</DetailField>
           <DetailField label="Location">{detail.location || '—'}</DetailField>

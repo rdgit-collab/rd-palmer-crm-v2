@@ -5,6 +5,7 @@ import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
+import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -18,10 +19,6 @@ function LoadingHint({ text = 'Loading options...' }) {
       {text}
     </div>
   )
-}
-
-function fmtDateTime(value) {
-  return value ? new Date(value).toLocaleString('en-GB') : '—'
 }
 
 const emptyForm = {
@@ -384,8 +381,8 @@ export default function Tasks() {
                 <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(t.ticket_id)}</td>
                   <td className="px-4 py-3 text-gray-700">{t.servicetype || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{t.startdate || '—'} {t.starttime || ''}</td>
-                  <td className="px-4 py-3 text-gray-600">{t.enddate || '—'} {t.endtime || ''}</td>
+                  <td className="px-4 py-3 text-gray-600">{`${formatDate(t.startdate)}${t.starttime ? ` ${t.starttime}` : ''}`}</td>
+                  <td className="px-4 py-3 text-gray-600">{`${formatDate(t.enddate)}${t.endtime ? ` ${t.endtime}` : ''}`}</td>
                   <td className="px-4 py-3 text-gray-600">{getUserName(t.assigned_to)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
@@ -581,12 +578,12 @@ export default function Tasks() {
           <div className="grid grid-cols-2 gap-x-8 gap-y-3">
             <div><span className="font-medium text-gray-500">Ticket: </span><span className="text-red-600 font-semibold">{getTicketLabel(detail.ticket_id)}</span></div>
             <div><span className="font-medium text-gray-500">Service Type: </span>{detail.servicetype || '—'}</div>
-            <div><span className="font-medium text-gray-500">Start: </span>{detail.startdate || '—'} {detail.starttime || ''}</div>
-            <div><span className="font-medium text-gray-500">End: </span>{detail.enddate || '—'} {detail.endtime || ''}</div>
+            <div><span className="font-medium text-gray-500">Start: </span>{`${formatDate(detail.startdate)}${detail.starttime ? ` ${detail.starttime}` : ''}`}</div>
+            <div><span className="font-medium text-gray-500">End: </span>{`${formatDate(detail.enddate)}${detail.endtime ? ` ${detail.endtime}` : ''}`}</div>
             <div><span className="font-medium text-gray-500">Spare Used: </span>{detail.spare || '—'}</div>
             <div><span className="font-medium text-gray-500">Assigned To: </span>{getUserName(detail.assigned_to)}</div>
             <div><span className="font-medium text-gray-500">Created By: </span>{getUserName(detail.user_id)}</div>
-            <div><span className="font-medium text-gray-500">Date Created: </span>{fmtDateTime(detail.created_at)}</div>
+            <div><span className="font-medium text-gray-500">Date Created: </span>{formatDateTime(detail.created_at)}</div>
             <div>
               <span className="font-medium text-gray-500">Document: </span>
               {detail.file ? (

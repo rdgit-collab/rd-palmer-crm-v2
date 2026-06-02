@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
+import { formatDate } from '../../lib/dateFormat'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
@@ -32,10 +33,6 @@ function checklistResult(value) {
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
-}
-
-function fmtDate(d) {
-  return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
 }
 
 export default function Calibration() {
@@ -356,7 +353,7 @@ export default function Calibration() {
           <div class="doc-title">Calibration Report</div>
           <div class="meta">
             <div class="meta-row"><span>Certificate No.:</span><span class="value">${escapeHtml(detail.certificate_number || '-')}</span></div>
-            <div class="meta-row"><span>Date:</span><span class="value">${fmtDate(detail.created_at)}</span></div>
+            <div class="meta-row"><span>Date:</span><span class="value">${formatDate(detail.created_at, '-')}</span></div>
             <div class="meta-row"><span>Ticket:</span><span class="value">${escapeHtml(getTicketLabel(detail.ticket_id))}</span></div>
             <div class="meta-row"><span>Status:</span><span class="value">${escapeHtml(detail.status || '-')}</span></div>
             <div class="meta-row"><span>Serial Number:</span><span class="value">${escapeHtml(detail.serial_number || '-')}</span></div>

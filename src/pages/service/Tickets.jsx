@@ -6,6 +6,7 @@ import { notifyUser } from '../../lib/notifyUser'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
+import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -74,10 +75,6 @@ function SpareChecklist({ options, value, onChange }) {
       </div>
     </div>
   )
-}
-
-function fmtDateTime(value) {
-  return value ? new Date(value).toLocaleString('en-GB') : '—'
 }
 
 function priorityColor(priority) {
@@ -748,7 +745,7 @@ export default function Tickets() {
                 return (
                   <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-semibold text-red-600">TID{t.ticket_id}</td>
-                    <td className="px-4 py-3 text-gray-600">{t.date || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{formatDate(t.date)}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{t.company_name || '—'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${priorityColor(t.priority)}`}>
@@ -765,7 +762,7 @@ export default function Tickets() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{t.due_date || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{formatDate(t.due_date)}</td>
                     <td className="px-4 py-3 text-gray-600">
                       {formatUserName(users, t.assigned_to)}
                     </td>
@@ -1493,7 +1490,7 @@ export default function Tickets() {
             </div>
             <div>
               <span className="font-medium text-gray-500">Date: </span>
-              {detail.date || '—'}
+              {formatDate(detail.date)}
             </div>
             <div>
               <span className="font-medium text-gray-500">Created By: </span>
@@ -1501,7 +1498,7 @@ export default function Tickets() {
             </div>
             <div>
               <span className="font-medium text-gray-500">Date Created: </span>
-              {fmtDateTime(detail.created_at)}
+              {formatDateTime(detail.created_at)}
             </div>
             <div>
               <span className="font-medium text-gray-500">Company: </span>
@@ -1537,7 +1534,7 @@ export default function Tickets() {
             </div>
             <div>
               <span className="font-medium text-gray-500">Due Date: </span>
-              {detail.due_date || '—'}
+              {formatDate(detail.due_date)}
             </div>
             <div>
               <span className="font-medium text-gray-500">Warranty: </span>
@@ -1584,7 +1581,7 @@ export default function Tickets() {
                       {item.status && (
                         <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(item.status)}`}>{item.status}</span>
                       )}
-                      <span className="ml-auto text-xs text-gray-400">{fmtDateTime(item.date)}</span>
+                      <span className="ml-auto text-xs text-gray-400">{formatDateTime(item.date)}</span>
                     </div>
                     <div className="mt-1 text-xs text-gray-500">
                       {item.owner ? `Owner: ${formatUserName(allUsers.length ? allUsers : users, item.owner)}` : 'Owner: —'}
@@ -1643,7 +1640,7 @@ export default function Tickets() {
                   {detailTasks.map(task => (
                     <tr key={task.id} className="border-b border-gray-100">
                       <td className="px-3 py-2 font-medium">{task.servicetype || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{[task.startdate, task.starttime].filter(Boolean).join(' ') || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{`${formatDate(task.startdate)}${task.starttime ? ` ${task.starttime}` : ''}`}</td>
                       <td className="px-3 py-2 text-gray-600">{formatUserName(users, task.assigned_to)}</td>
                       <td className="px-3 py-2">
                         <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(workStatus(task))}`}>
@@ -1677,7 +1674,7 @@ export default function Tickets() {
                 <tbody>
                   {detailOnsites.map(onsite => (
                     <tr key={onsite.id} className="border-b border-gray-100">
-                      <td className="px-3 py-2 text-gray-600">{onsite.date || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatDate(onsite.date)}</td>
                       <td className="px-3 py-2 font-medium">{onsite.product || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{onsite.serial_number || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{formatUserName(users, onsite.assigned_to)}</td>
@@ -1714,8 +1711,8 @@ export default function Tickets() {
                     <tr key={rma.id} className="border-b border-gray-100">
                       <td className="px-3 py-2 font-medium">{rma.rma_number || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{rma.vendor || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{rma.date_sent || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{rma.date_return || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatDate(rma.date_sent)}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatDate(rma.date_return)}</td>
                       <td className="px-3 py-2 text-gray-600">{rma.remark || '—'}</td>
                     </tr>
                   ))}
@@ -1733,7 +1730,7 @@ export default function Tickets() {
               <div className="space-y-3">
                 {detailRemarks.map(remark => (
                   <div key={remark.id} className="border border-gray-200 px-3 py-2 text-sm">
-                    <div className="text-xs text-gray-400 mb-1">{remark.created_at || '—'}</div>
+                    <div className="text-xs text-gray-400 mb-1">{formatDateTime(remark.created_at)}</div>
                     <div className="text-gray-700 whitespace-pre-wrap">{remark.remark || '—'}</div>
                   </div>
                 ))}
