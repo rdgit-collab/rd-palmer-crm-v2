@@ -12,6 +12,12 @@ import { Plus, Search, Eye, Edit2, Trash2, X, Printer } from 'lucide-react'
 
 const PAGE_SIZE = 30
 
+const SEARCH_FIELDS = [
+  { value: 'certificate_number', label: 'Certificate No.', placeholder: 'Search certificate number...' },
+  { value: 'serial_number', label: 'Serial No.', placeholder: 'Search serial number...' },
+  { value: 'ticket', label: 'Ticket', placeholder: 'Search ticket number...' },
+]
+
 function statusColor(s) {
   if (!s) return 'bg-gray-100 text-gray-600'
   const l = s.toLowerCase()
@@ -41,6 +47,9 @@ export default function Calibration() {
   const [rows, setRows]             = useState([])
   const [page, setPage]             = useState(1)
   const [search, setSearch]         = useState('')
+  const [draftSearch, setDraftSearch] = useState('')
+  const [searchField, setSearchField] = useState('certificate_number')
+  const [draftSearchField, setDraftSearchField] = useState('certificate_number')
   const [loading, setLoading]       = useState(false)
   const [form, setForm]             = useState(emptyForm)
   const [editId, setEditId]         = useState(null)
@@ -123,13 +132,21 @@ export default function Calibration() {
       return Number(b.id || 0) - Number(a.id || 0)
     })
     if (!term) return sorted
-    return sorted.filter(r => [
-      r.certificate_number,
-      r.serial_number,
-      r.conduct_by,
-      ticketInfoById.get(String(r.ticket_id))?.label || r.ticket_id,
-    ].some(value => String(value || '').toLowerCase().includes(term)))
-  }, [rows, search, ticketInfoById])
+    return sorted.filter(r => {
+      if (searchField === 'certificate_number') {
+        return String(r.certificate_number || '').toLowerCase().includes(term)
+      }
+      if (searchField === 'serial_number') {
+        return String(r.serial_number || '').toLowerCase().includes(term)
+      }
+      const ticket = ticketInfoById.get(String(r.ticket_id))
+      const ticketNumber = ticket?.number ? `tid${ticket.number}` : ''
+      const rawTicketNumber = ticket?.number ? String(ticket.number) : ''
+      const ticketLabel = ticket?.label || r.ticket_id
+      return [ticketNumber, rawTicketNumber, ticketLabel]
+        .some(value => String(value || '').toLowerCase().includes(term))
+    })
+  }, [rows, search, searchField, ticketInfoById])
 
   const pagedRows = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
@@ -296,6 +313,20 @@ export default function Calibration() {
 
   const totalRows = filteredRows.length
   const totalPages = Math.ceil(totalRows / PAGE_SIZE)
+  const activeSearchField = SEARCH_FIELDS.find(field => field.value === draftSearchField) || SEARCH_FIELDS[0]
+
+  const applySearch = (e) => {
+    e.preventDefault()
+    setSearchField(draftSearchField)
+    setSearch(draftSearch.trim())
+    setPage(1)
+  }
+
+  const clearSearch = () => {
+    setDraftSearch('')
+    setSearch('')
+    setPage(1)
+  }
 
   const calibrationReportHtml = () => {
     const checklistRowsHtml = detailChecklist.map((item, index) => `
@@ -388,11 +419,27 @@ export default function Calibration() {
         <h1 className="text-2xl font-bold text-gray-900">Calibration</h1>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Calibration</button>
       </div>
-      <div className="relative max-w-sm mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Search certificate or serial number..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
-      </div>
+      <form onSubmit={applySearch} className="flex flex-col sm:flex-row gap-3 mb-4">
+        <select
+          value={draftSearchField}
+          onChange={e => setDraftSearchField(e.target.value)}
+          className="w-full sm:w-48 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+        >
+          {SEARCH_FIELDS.map(field => <option key={field.value} value={field.value}>{field.label}</option>)}
+        </select>
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder={activeSearchField.placeholder}
+            value={draftSearch}
+            onChange={e => setDraftSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400"
+          />
+        </div>
+        <button type="submit" disabled={loading} className="px-4 py-2 bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60">Search</button>
+        {search && <button type="button" onClick={clearSearch} className="px-4 py-2 border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Clear</button>}
+      </form>
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
           <thead>

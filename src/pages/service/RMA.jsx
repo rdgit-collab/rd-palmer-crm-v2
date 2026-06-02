@@ -19,6 +19,7 @@ const emptyForm = {
 export default function RMA() {
   const { profile } = useAuth()
   const [view, setView]         = useState('list')
+  const [tab, setTab]           = useState('open')
   const [rows, setRows]         = useState([])
   const [total, setTotal]       = useState(0)
   const [page, setPage]         = useState(1)
@@ -37,6 +38,7 @@ export default function RMA() {
   const fetchRows = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('rma').select('*', { count: 'exact' }).order('id', { ascending: false })
+    q = tab === 'open' ? q.is('date_return', null) : q.not('date_return', 'is', null)
     if (search) {
       const term = search.trim()
       const tid = term.replace(/^TID/i, '')
@@ -56,7 +58,7 @@ export default function RMA() {
     const { data, count, error: err } = await q
     if (!err) { setRows(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page])
+  }, [search, page, tab])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -134,6 +136,7 @@ export default function RMA() {
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+  const currentTabLabel = tab === 'open' ? 'open' : 'closed'
 
   if (view === 'list') return (
     <div className="p-6">
@@ -141,10 +144,23 @@ export default function RMA() {
         <h1 className="text-2xl font-bold text-gray-900">RMA</h1>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New RMA</button>
       </div>
-      <div className="relative max-w-sm mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Search RMA, vendor, ticket number or company..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Search RMA, vendor, ticket number or company..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+        </div>
+        <div className="flex border border-gray-200 bg-white text-sm">
+          {[['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => { setTab(id); setPage(1) }}
+              className={`px-4 py-2 ${tab === id ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
@@ -161,7 +177,7 @@ export default function RMA() {
           </thead>
           <tbody>
             {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No RMA records found.</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No {currentTabLabel} RMA records found.</td></tr>
             : rows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-semibold text-red-600">{r.rma_number || '—'}</td>
@@ -169,7 +185,14 @@ export default function RMA() {
                 <td className="px-4 py-3 text-gray-700">{getVendorName(r.vendor)}</td>
                 <td className="px-4 py-3 text-gray-600">{formatDate(r.date_sent)}</td>
                 <td className="px-4 py-3 text-gray-600">{r.mode || '—'}</td>
-                <td className="px-4 py-3 text-gray-600">{formatDate(r.date_return)}</td>
+                <td className="px-4 py-3 text-gray-600">
+                  {r.date_return ? (
+                    <span>
+                      {formatDate(r.date_return)}
+                      <span className="ml-2 inline-block px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">Completed</span>
+                    </span>
+                  ) : '—'}
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
@@ -267,6 +290,7 @@ export default function RMA() {
           <div><span className="font-medium text-gray-500">Date Sent: </span>{formatDate(detail.date_sent)}</div>
           <div><span className="font-medium text-gray-500">Tracking Out: </span>{detail.traking_number_out || '—'}</div>
           <div><span className="font-medium text-gray-500">Date Return: </span>{formatDate(detail.date_return)}</div>
+          <div><span className="font-medium text-gray-500">Status: </span>{detail.date_return ? <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">Completed</span> : <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-700">Open</span>}</div>
           <div><span className="font-medium text-gray-500">Tracking In: </span>{detail.traking_number_in || '—'}</div>
         </div>
         {detail.remark && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Remark</p><p className="whitespace-pre-wrap">{detail.remark}</p></div>}
