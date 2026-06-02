@@ -422,12 +422,15 @@ export default function Tickets() {
     } : p))
   }
   const loadSerialOptions = async (idx, term = '') => {
+    const searchTerm = term.trim()
     let q = supabase
       .from('serialnumber')
       .select('id, serial_number, sku, customername')
       .order('serial_number')
       .limit(200)
-    if (term) q = q.ilike('serial_number', `%${term}%`)
+    if (searchTerm) {
+      q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
+    }
     const { data, error: err } = await q
     if (!err) setSerialOptions(prev => ({ ...prev, [idx]: data || [] }))
   }
@@ -852,14 +855,24 @@ export default function Tickets() {
                   {products.map((prod, idx) => (
                     <tr key={idx} className="border-b border-gray-100">
                       <td className="px-3 py-2">
-                        <select
+                        <input
+                          list={`ticket-sku-${idx}`}
+                          type="text"
                           value={prod.sku}
+                          onFocus={e => e.target.select()}
                           onChange={e => applySkuToProd(idx, e.target.value)}
+                          placeholder="Search SKU"
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
-                        >
-                          <option value="">Select SKU</option>
-                          {skuList.map(s => <option key={s.id} value={s.sku}>{s.sku}</option>)}
-                        </select>
+                        />
+                        <datalist id={`ticket-sku-${idx}`}>
+                          {skuList.map(s => (
+                            <option
+                              key={s.id}
+                              value={s.sku}
+                              label={stripHtml(s.description || '')}
+                            />
+                          ))}
+                        </datalist>
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -883,14 +896,16 @@ export default function Tickets() {
                             applySerialToProd(idx, e.target.value)
                             loadSerialOptions(idx, e.target.value)
                           }}
-                          placeholder="S/N"
+                          placeholder="Search S/N"
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
                         />
                         <datalist id={`ticket-serial-${idx}`}>
                           {(serialOptions[idx] || []).map(s => (
-                            <option key={s.id} value={s.serial_number}>
-                              {s.sku}{s.customername ? ` - ${s.customername}` : ''}
-                            </option>
+                            <option
+                              key={s.id}
+                              value={s.serial_number}
+                              label={`${s.sku || ''}${s.customername ? ` - ${s.customername}` : ''}`}
+                            />
                           ))}
                         </datalist>
                       </td>
