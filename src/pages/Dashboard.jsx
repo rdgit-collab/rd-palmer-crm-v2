@@ -9,7 +9,8 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../lib/legacyUsers'
-import { isSalesRole, isServiceRole, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_SERVICE } from '../lib/roles'
+import { fetchAllRows } from '../lib/fetchAllRows'
+import { isSalesRole, isServiceRole, roleLabel, ROLE_SALES, ROLE_SALES_MANAGER } from '../lib/roles'
 
 // ── Shared stat card ──────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color, bg, to }) {
@@ -129,8 +130,7 @@ function isActiveUserStatus(status) {
 }
 
 function serviceDashboardRoleLabel(roleId) {
-  if (Number(roleId) === ROLE_SERVICE) return 'Tech'
-  return '—'
+  return roleLabel(roleId)
 }
 
 function addStaffMetric(map, allowedStaffById, assignee, updates) {
@@ -706,15 +706,15 @@ function ServiceDashboard({ firstName }) {
       supabase.from('rma').select('id', { count: 'exact', head: true }),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
       supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
-      supabase.from('ticket').select('id, ticket_id, company_name, assigned_to, date, due_date, priority, is_completed, status').limit(2000),
-      supabase.from('task').select('id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed').limit(2000),
-      supabase.from('onsiteticket').select('id, ticket_id, issue_description, product, assigned_to, date, is_completed, status').limit(2000),
+      fetchAllRows('ticket', 'id, ticket_id, company_name, assigned_to, date, due_date, priority, is_completed, status', 'id', { ascending: false }),
+      fetchAllRows('task', 'id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed', 'id', { ascending: false }),
+      fetchAllRows('onsiteticket', 'id, ticket_id, issue_description, product, assigned_to, date, is_completed, status', 'id', { ascending: false }),
       fetchAssignableUsers(supabase),
-      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').eq('role_id', ROLE_SERVICE).order('first_name'),
+      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').order('first_name'),
     ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users, serviceStaff]) => {
-      const tickets = allTickets.data || []
-      const tasks = allTasks.data || []
-      const onsites = allOnsites.data || []
+      const tickets = allTickets || []
+      const tasks = allTasks || []
+      const onsites = allOnsites || []
       const activeServiceStaff = (serviceStaff.data || []).filter(user => isActiveUserStatus(user.status))
       const allowedStaffById = buildAllowedServiceStaffMap(activeServiceStaff)
       const ticketNumberById = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticket_id]))
@@ -725,22 +725,38 @@ function ServiceDashboard({ firstName }) {
 
       const staffMap = {}
       seedServiceStaffMetrics(staffMap, activeServiceStaff)
-      tickets.filter(ticket => isServiceWorkInMonth(ticket, 'due_date', 'date')).forEach(ticket => {
-        if (ticket.is_completed == 1) return
+      tickets.forEach(ticket => {
+        if (ticket.is_completed == 1 || ticket.status === 'Completed') {
+          if (isServiceWorkInMonth(ticket, 'due_date', 'date')) {
+            addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, { completed: 1 })
+          }
+          return
+        }
         addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, {
           openTickets: 1,
           overdue: ticket.due_date && ticket.due_date < today ? 1 : 0,
         })
       })
-      tasks.filter(task => isServiceWorkInMonth(task, 'enddate', 'startdate')).forEach(task => {
-        addStaffMetric(staffMap, allowedStaffById, task.assigned_to, task.is_completed == 1
-          ? { completed: 1 }
-          : { openTasks: 1, overdue: task.enddate && task.enddate < today ? 1 : 0 })
+      tasks.forEach(task => {
+        if (task.is_completed == 1) {
+          if (isServiceWorkInMonth(task, 'enddate', 'startdate')) {
+            addStaffMetric(staffMap, allowedStaffById, task.assigned_to, { completed: 1 })
+          }
+          return
+        }
+        addStaffMetric(staffMap, allowedStaffById, task.assigned_to, {
+          openTasks: 1,
+          overdue: task.enddate && task.enddate < today ? 1 : 0,
+        })
       })
-      onsites.filter(onsiteRow => isServiceWorkInMonth(onsiteRow, 'date')).forEach(onsiteRow => {
-        addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed'
-          ? { completed: 1 }
-          : { openOnsites: 1 })
+      onsites.forEach(onsiteRow => {
+        if (onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed') {
+          if (isServiceWorkInMonth(onsiteRow, 'date')) {
+            addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, { completed: 1 })
+          }
+          return
+        }
+        addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, { openOnsites: 1 })
       })
 
       const attention = [
@@ -789,7 +805,7 @@ function ServiceDashboard({ firstName }) {
       setStaffLoadNote(serviceStaff.error
         ? `Unable to load tech users: ${serviceStaff.error.message}`
         : nextStaffRows.length === 0
-          ? 'No active Tech users found. Check user role and active status in Settings > Users.'
+          ? 'No active users found. Check user status in Settings > Users.'
           : '')
       setAttentionItems(attention)
     })
@@ -836,7 +852,7 @@ function ServiceDashboard({ firstName }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-semibold text-[#111111] text-sm">Staff Workload & Performance</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Open work, completed work, and overdue items by assigned staff for {selectedStaffMonthLabel}.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Open work by current assignment, with completed work counted for {selectedStaffMonthLabel}.</p>
           </div>
           <div className="flex items-center gap-3">
             <select
@@ -857,7 +873,7 @@ function ServiceDashboard({ firstName }) {
             <Link to="/tasks" className="text-xs text-red-600 hover:underline">Review work</Link>
           </div>
         </div>
-        {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">{staffLoadNote || 'No active tech users found.'}</p> : (
+        {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">{staffLoadNote || 'No active users found.'}</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

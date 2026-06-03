@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -12,6 +12,7 @@ import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLef
 
 const PAGE_SIZE = 30
 const TICKET_LIST_COLUMNS = 'id, ticket_id, date, warranty, category, company_id, company_name, contact_person, description, priority, due_date, status, is_completed, assigned_to, remark, user_id, created_at, serial_number'
+const TICKET_STATUSES = ['Open', 'Pending', 'Completed']
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
@@ -22,6 +23,35 @@ function LoadingHint({ text = 'Loading options...' }) {
       {text}
     </div>
   )
+}
+
+function monthValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthOptions(count = 12) {
+  const now = new Date()
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1)
+    return {
+      value: monthValue(date),
+      label: date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+    }
+  })
+}
+
+function dateOnly(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function monthRange(value) {
+  const [year, month] = String(value || monthValue()).split('-').map(Number)
+  const start = new Date(year, month - 1, 1)
+  const end = new Date(year, month, 1)
+  return {
+    start: dateOnly(start),
+    end: dateOnly(end),
+  }
 }
 
 function SpareChecklist({ options, value, onChange }) {
@@ -136,6 +166,9 @@ export default function Tickets() {
   const [page, setPage]             = useState(1)
   const [search, setSearch]         = useState('')
   const [priorityFilter, setPF]     = useState('')
+  const [assignedFilter, setAssignedFilter] = useState('')
+  const [monthFilter, setMonthFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [loading, setLoading]       = useState(false)
   const [form, setForm]             = useState(emptyForm)
   const [editId, setEditId]         = useState(null)
@@ -180,8 +213,10 @@ export default function Tickets() {
   // Track original assigned_to to detect changes during edit
   const origAssignedTo = useRef(null)
   const serialSearchIds = useRef({})
+  const serialSearchTimers = useRef({})
   const quickSerialSearchId = useRef(0)
   const formDataLoadedRef = useRef(false)
+  const ticketMonths = useMemo(() => monthOptions(18), [])
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTickets = useCallback(async () => {
@@ -200,12 +235,18 @@ export default function Tickets() {
       q = q.or(filters.join(','))
     }
     if (priorityFilter) q = q.eq('priority', priorityFilter)
+    if (assignedFilter) q = q.eq('assigned_to', parseInt(assignedFilter))
+    if (statusFilter) q = q.eq('status', statusFilter)
+    if (monthFilter) {
+      const range = monthRange(monthFilter)
+      q = q.gte('date', range.start).lt('date', range.end)
+    }
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
     const { data, count, error: err } = await q
     if (!err) { setTickets(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, priorityFilter, page, tab])
+  }, [search, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
 
   useEffect(() => { fetchTickets() }, [fetchTickets])
 
@@ -254,7 +295,7 @@ export default function Tickets() {
     try {
       const [custR, skuR] = await Promise.all([
         fetchAllRows('customer', 'id, company_name', 'company_name'),
-        fetchAllRows('goodsservices', 'id, sku, description', 'sku'),
+        fetchAllRows('goodsservices', 'id, sku, name, description', 'sku'),
       ])
       setCustomers(custR || [])
       setSkuList(skuR || [])
@@ -487,17 +528,7 @@ export default function Tickets() {
     setProducts(prev => prev.map((p, i) => i === idx ? {
       ...p,
       sku,
-      item_description: stripHtml(item?.description || '') || p.item_description || '',
-    } : p))
-  }
-  const applySerialToProd = (idx, serialNumber) => {
-    const serial = (serialOptions[idx] || []).find(s => s.serial_number === serialNumber)
-    const item = serial?.sku ? skuList.find(s => s.sku === serial.sku) : null
-    setProducts(prev => prev.map((p, i) => i === idx ? {
-      ...p,
-      serial_number: serialNumber,
-      sku: serial?.sku || p.sku,
-      item_description: stripHtml(item?.description || '') || p.item_description || '',
+      item_description: stripHtml(item?.description || item?.name || '') || p.item_description || '',
     } : p))
   }
   const applySerialOptionToProd = (idx, serialId) => {
@@ -508,31 +539,70 @@ export default function Tickets() {
       ...p,
       serial_number: serial.serial_number || '',
       sku: serial.sku || p.sku,
-      item_description: stripHtml(item?.description || '') || p.item_description || '',
+      item_description: stripHtml(item?.description || item?.name || '') || p.item_description || '',
     } : p))
   }
+  const fetchSerialMatches = async (term, limit = 50) => {
+    const searchTerm = term.trim()
+    if (!searchTerm) return []
+    const columns = 'id, serial_number, sku, customername'
+    const exactSerial = supabase
+      .from('serialnumber')
+      .select(columns)
+      .eq('serial_number', searchTerm)
+      .order('serial_number')
+      .limit(limit)
+    const serialLike = supabase
+      .from('serialnumber')
+      .select(columns)
+      .ilike('serial_number', `%${searchTerm}%`)
+      .order('serial_number')
+      .limit(limit)
+    const skuLike = supabase
+      .from('serialnumber')
+      .select(columns)
+      .ilike('sku', `%${searchTerm}%`)
+      .order('serial_number')
+      .limit(limit)
+    const results = await Promise.allSettled([exactSerial, serialLike, skuLike])
+    const byId = new Map()
+    results.forEach(result => {
+      if (result.status !== 'fulfilled' || result.value.error) return
+      ;(result.value.data || []).forEach(row => {
+        if (!byId.has(row.id)) byId.set(row.id, row)
+      })
+    })
+    return Array.from(byId.values()).slice(0, limit)
+  }
   const loadSerialOptions = async (idx, term = '') => {
+    const searchTerm = term.trim()
+    if (searchTerm.length < 2) {
+      serialSearchIds.current[idx] = (serialSearchIds.current[idx] || 0) + 1
+      setSerialOptions(prev => ({ ...prev, [idx]: [] }))
+      setSerialLoading(prev => ({ ...prev, [idx]: false }))
+      return
+    }
     const requestId = (serialSearchIds.current[idx] || 0) + 1
     serialSearchIds.current[idx] = requestId
     setSerialLoading(prev => ({ ...prev, [idx]: true }))
-    const searchTerm = term.trim()
     try {
-      let q = supabase
-        .from('serialnumber')
-        .select('id, serial_number, sku, customername')
-        .order('serial_number')
-        .limit(200)
-      if (searchTerm) {
-        q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
-      }
-      const { data, error: err } = await q
+      const data = await fetchSerialMatches(searchTerm, 50)
       if (serialSearchIds.current[idx] !== requestId) return
-      if (!err) setSerialOptions(prev => ({ ...prev, [idx]: data || [] }))
+      setSerialOptions(prev => ({ ...prev, [idx]: data }))
     } finally {
       if (serialSearchIds.current[idx] === requestId) {
         setSerialLoading(prev => ({ ...prev, [idx]: false }))
       }
     }
+  }
+  const scheduleSerialOptions = (idx, term = '') => {
+    clearTimeout(serialSearchTimers.current[idx])
+    const searchTerm = term.trim()
+    if (searchTerm.length < 2) {
+      loadSerialOptions(idx, searchTerm)
+      return
+    }
+    serialSearchTimers.current[idx] = setTimeout(() => loadSerialOptions(idx, searchTerm), 250)
   }
 
   const loadQuickSerialOptions = async (term = '') => {
@@ -541,15 +611,11 @@ export default function Tickets() {
     setQuickSerialLoading(true)
     const searchTerm = term.trim()
     try {
-      let q = supabase
-        .from('serialnumber')
-        .select('id, serial_number, sku, customername')
-        .order('serial_number')
-        .limit(200)
-      if (searchTerm) q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
-      const { data, error: err } = await q
+      const data = searchTerm
+        ? await fetchSerialMatches(searchTerm, 100)
+        : []
       if (quickSerialSearchId.current !== requestId) return
-      if (!err) setQuickSerialOptions(data || [])
+      setQuickSerialOptions(data)
     } finally {
       if (quickSerialSearchId.current === requestId) setQuickSerialLoading(false)
     }
@@ -728,9 +794,9 @@ export default function Tickets() {
           ))}
         </div>
 
-        {/* Search + Priority Filter */}
-        <div className="flex gap-3 mb-4">
-          <div className="relative flex-1 max-w-sm">
+        {/* Search + Filters */}
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div className="relative flex-1 min-w-64 max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -741,12 +807,36 @@ export default function Tickets() {
             />
           </div>
           <select
+            value={assignedFilter}
+            onChange={e => { setAssignedFilter(e.target.value); setPage(1) }}
+            className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+          >
+            <option value="">All Assigned</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+          </select>
+          <select
+            value={monthFilter}
+            onChange={e => { setMonthFilter(e.target.value); setPage(1) }}
+            className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+          >
+            <option value="">All Months</option>
+            {ticketMonths.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <select
             value={priorityFilter}
             onChange={e => { setPF(e.target.value); setPage(1) }}
             className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
           >
             <option value="">All Priorities</option>
             {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+            className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+          >
+            <option value="">All Status</option>
+            {TICKET_STATUSES.map(status => <option key={status} value={status}>{status}</option>)}
           </select>
         </div>
 
@@ -1013,11 +1103,11 @@ export default function Tickets() {
                           value={prod.serial_number}
                           onFocus={e => {
                             e.target.select()
-                            loadSerialOptions(idx, prod.serial_number || '')
+                            if (prod.serial_number) scheduleSerialOptions(idx, prod.serial_number)
                           }}
                           onChange={e => {
                             updateProd(idx, 'serial_number', e.target.value)
-                            loadSerialOptions(idx, e.target.value)
+                            scheduleSerialOptions(idx, e.target.value)
                           }}
                           placeholder="Search serial number"
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
