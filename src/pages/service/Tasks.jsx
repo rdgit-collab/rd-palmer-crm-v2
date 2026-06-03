@@ -22,6 +22,88 @@ function LoadingHint({ text = 'Loading options...' }) {
   )
 }
 
+function stripHtml(value) {
+  return String(value || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function spareLabel(spare) {
+  const sku = spare.sku || spare.name || ''
+  const description = stripHtml(spare.description || spare.name || '')
+  if (sku && description && description !== sku) return `${sku} - ${description}`
+  return sku || description || 'Unnamed item'
+}
+
+function SpareSearchSelect({ options, value, onChange, loading }) {
+  const [term, setTerm] = useState('')
+  const [open, setOpen] = useState(false)
+  const selected = options.find(item =>
+    String(item.sku || item.name || '') === String(value || '') ||
+    String(item.name || '') === String(value || '')
+  )
+  const inputValue = open ? term : (selected ? spareLabel(selected) : value || '')
+  const search = term.trim().toLowerCase()
+  const filtered = search
+    ? options.filter(item => [
+        item.sku,
+        item.name,
+        stripHtml(item.description),
+      ].some(part => String(part || '').toLowerCase().includes(search)))
+    : options
+
+  const choose = (item) => {
+    onChange(item.sku || item.name || '')
+    setTerm('')
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={inputValue}
+        onFocus={() => { setOpen(true); setTerm('') }}
+        onBlur={() => setTimeout(() => setOpen(false), 100)}
+        onChange={e => {
+          setTerm(e.target.value)
+          setOpen(true)
+          if (!e.target.value.trim()) onChange('')
+        }}
+        placeholder="Search SKU or description..."
+        className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+      />
+      {open && (
+        <div className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto border border-gray-200 bg-white shadow-lg">
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); onChange(''); setTerm(''); setOpen(false) }}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+          >
+            None
+          </button>
+          {filtered.length === 0 ? (
+            <div className="px-3 py-3 text-sm text-gray-400">
+              {loading ? 'Loading spare options...' : 'No matching spare found.'}
+            </div>
+          ) : filtered.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); choose(item) }}
+              className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+            >
+              <span className="block font-medium text-gray-800">{item.sku || item.name || '—'}</span>
+              {(item.description || item.name) && (
+                <span className="block truncate text-xs text-gray-500">{stripHtml(item.description || item.name)}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {loading && <LoadingHint text="Loading spare options..." />}
+    </div>
+  )
+}
+
 const emptyForm = {
   ticket_id: '',
   servicetype: '',
@@ -137,22 +219,30 @@ export default function Tasks() {
   useEffect(() => {
     const run = async () => {
       setDropdownLoading(true)
-      const [stR, usrR, allUsrR, sprR, taskSpareR] = await Promise.all([
+      const [stR, usrR, allUsrR, catalogueR, taskSpareR] = await Promise.all([
         supabase.from('service_type').select('id, type').order('type'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
-        fetchAllRows('spare', 'id, name', 'name'),
+        fetchAllRows('goodsservices', 'id, sku, name, description', 'sku'),
         supabase.from('task').select('spare').not('spare', 'is', null).neq('spare', '').limit(1000),
       ])
       if (!stR.error)   setServiceTypes(stR.data || [])
       setUsers(usrR || [])
       setAllUsers(allUsrR || [])
-      if (sprR?.length) {
-        setSpares(sprR || [])
-      } else if (!taskSpareR.error) {
-        const names = [...new Set((taskSpareR.data || []).map(row => row.spare).filter(Boolean))]
-        setSpares(names.map((name, idx) => ({ id: idx + 1, name })))
-      }
+      const catalogue = (catalogueR || []).map(item => ({
+        id: `catalogue-${item.id}`,
+        sku: item.sku || item.name || '',
+        name: item.name || item.sku || '',
+        description: item.description || item.name || '',
+      })).filter(item => item.sku || item.name)
+      const existingTaskSpares = !taskSpareR.error
+        ? [...new Set((taskSpareR.data || []).map(row => row.spare).filter(Boolean))]
+        : []
+      const catalogueValues = new Set(catalogue.map(item => String(item.sku || item.name || '')))
+      const legacyTaskSpares = existingTaskSpares
+        .filter(name => !catalogueValues.has(String(name)))
+        .map((name, idx) => ({ id: `task-spare-${idx}-${name}`, sku: name, name, description: 'Previously used task spare' }))
+      setSpares([...catalogue, ...legacyTaskSpares])
       setDropdownLoading(false)
     }
     run().catch(() => setDropdownLoading(false))
@@ -528,11 +618,12 @@ export default function Tasks() {
           <div className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">Spare Used</label>
             <div className="col-span-2">
-              <select value={form.spare} onChange={e => setForm(f => ({ ...f, spare: e.target.value }))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                <option value="">None</option>
-                {spares.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-              </select>
-              {dropdownLoading && <LoadingHint text="Loading spare options..." />}
+              <SpareSearchSelect
+                options={spares}
+                value={form.spare}
+                onChange={value => setForm(f => ({ ...f, spare: value }))}
+                loading={dropdownLoading}
+              />
             </div>
           </div>
 
