@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { displayText } from '../lib/displayText'
 
 function timeAgo(ts) {
   if (!ts) return ''
@@ -134,8 +135,8 @@ export default function NotificationBell() {
             {items.length === 0 ? (
               <div className="px-4 py-8 text-sm text-gray-400 text-center">No notifications yet.</div>
             ) : items.map(item => {
-              const title = item.reference || item.company_name || 'Notification'
-              const body = item.description || item.status || ''
+              const title = displayText(item.reference || item.company_name, 'Notification')
+              const body = displayText(item.description || item.status, '')
               return (
               <button
                 key={item.id}
@@ -152,7 +153,7 @@ export default function NotificationBell() {
                     <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{body}</p>
                   )}
                   {item.company_name && item.reference && (
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{item.company_name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{displayText(item.company_name, '')}</p>
                   )}
                   <p className="text-xs text-gray-400 mt-1">{timeAgo(item.created_at)}</p>
                 </div>

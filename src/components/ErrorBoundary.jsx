@@ -1,7 +1,7 @@
 import { Component } from 'react'
 
 export default class ErrorBoundary extends Component {
-  state = { error: null }
+  state = { error: null, info: null }
 
   static getDerivedStateFromError(error) {
     return { error }
@@ -9,11 +9,12 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('Page render error', error, info)
+    this.setState({ info })
   }
 
   componentDidUpdate(prevProps) {
     if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
-      this.setState({ error: null })
+      this.setState({ error: null, info: null })
     }
   }
 
@@ -26,9 +27,17 @@ export default class ErrorBoundary extends Component {
             <p className="text-sm text-gray-500 mt-2">
               Please refresh the page. If it happens again, send this message to admin so we can trace the exact page.
             </p>
+            <p className="mt-2 text-xs text-gray-400">
+              Page: {window.location.pathname}
+            </p>
             <pre className="mt-4 bg-red-50 border border-red-100 text-red-700 text-xs p-3 rounded overflow-auto max-h-40">
               {this.state.error?.message || 'Unknown page error'}
             </pre>
+            {this.state.info?.componentStack && (
+              <pre className="mt-2 bg-gray-50 border border-gray-100 text-gray-600 text-xs p-3 rounded overflow-auto max-h-40 whitespace-pre-wrap">
+                {this.state.info.componentStack}
+              </pre>
+            )}
             <button
               onClick={() => window.location.reload()}
               className="mt-4 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"

@@ -7,6 +7,7 @@ import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
+import { displayText } from '../../lib/displayText'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -1758,28 +1759,38 @@ export default function Tickets() {
             ) : (
               <div className="space-y-3">
                 {timelineItems.map((item, idx) => {
-                  const TimelineShell = item.to ? Link : 'div'
+                  const content = (
+                    <>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">{displayText(item.type)}</span>
+                        <span className="text-sm font-medium text-gray-900">{displayText(item.label)}</span>
+                        {item.to && <span className="text-xs text-red-600">View</span>}
+                        {item.status && (
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(displayText(item.status, ''))}`}>{displayText(item.status)}</span>
+                        )}
+                        <span className="ml-auto text-xs text-gray-400">{formatDateTime(item.date)}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {item.owner ? `Owner: ${formatUserName(allUsers.length ? allUsers : users, item.owner)}` : 'Owner: —'}
+                      </div>
+                      {item.text && <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{stripHtml(displayText(item.text, ''))}</p>}
+                    </>
+                  )
                   return (
-                  <TimelineShell
-                    key={`${item.type}-${item.id || idx}`}
-                    to={item.to}
-                    state={item.state}
-                    className={`block border border-gray-200 px-3 py-2 ${item.to ? 'hover:border-red-200 hover:bg-red-50/30' : ''}`}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-semibold text-gray-500 uppercase">{item.type}</span>
-                      <span className="text-sm font-medium text-gray-900">{item.label}</span>
-                      {item.to && <span className="text-xs text-red-600">View</span>}
-                      {item.status && (
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(item.status)}`}>{item.status}</span>
-                      )}
-                      <span className="ml-auto text-xs text-gray-400">{formatDateTime(item.date)}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {item.owner ? `Owner: ${formatUserName(allUsers.length ? allUsers : users, item.owner)}` : 'Owner: —'}
-                    </div>
-                    {item.text && <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{stripHtml(item.text)}</p>}
-                  </TimelineShell>
+                    item.to ? (
+                      <Link
+                        key={`${item.type}-${item.id || idx}`}
+                        to={item.to}
+                        state={item.state}
+                        className="block border border-gray-200 px-3 py-2 hover:border-red-200 hover:bg-red-50/30"
+                      >
+                        {content}
+                      </Link>
+                    ) : (
+                      <div key={`${item.type}-${item.id || idx}`} className="border border-gray-200 px-3 py-2">
+                        {content}
+                      </div>
+                    )
                 )})}
               </div>
             )}

@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../lib/legacyUsers'
 import { fetchAllRows } from '../lib/fetchAllRows'
+import { displayText } from '../lib/displayText'
 import { isSalesRole, isServiceRole, roleLabel, ROLE_SALES, ROLE_SALES_MANAGER } from '../lib/roles'
 
 // ── Shared stat card ──────────────────────────────────────────────
@@ -294,7 +295,7 @@ function AdminDashboard({ firstName }) {
                 <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                   <div>
                     <span className="text-sm font-semibold text-red-600 mr-2">TID{t.ticket_id}</span>
-                    <span className="text-sm text-gray-800">{t.company_name || '—'}</span>
+                    <span className="text-sm text-gray-800">{displayText(t.company_name)}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {t.priority && <span className={`text-xs px-2 py-0.5 rounded ${priorityColor(t.priority)}`}>{t.priority}</span>}
@@ -316,7 +317,7 @@ function AdminDashboard({ firstName }) {
                 <div key={a.id} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
                   <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium mt-0.5 ${activityTypeColor(a.type)}`}>{a.type || '—'}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{a.description || a.company_id || '—'}</p>
+                    <p className="text-sm text-gray-800 truncate">{displayText(a.description || a.company_id)}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{a.date || ''}</p>
                   </div>
                 </div>
@@ -613,7 +614,7 @@ function SalesDashboard({ firstName }) {
                 <Link key={l.id} to="/leads" state={{ leadId: l.id }} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{[l.first_name, l.last_name].filter(Boolean).join(' ') || '—'}</p>
-                    <p className="text-xs text-gray-500">{l.company_name || ''}</p>
+                    <p className="text-xs text-gray-500">{displayText(l.company_name, '')}</p>
                   </div>
                   {l.status_name && <span className={`text-xs px-2 py-0.5 rounded ${leadStatusColor(l.status_name)}`}>{l.status_name}</span>}
                 </Link>
@@ -658,7 +659,7 @@ function SalesDashboard({ firstName }) {
                 <div key={a.id} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
                   <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium mt-0.5 ${activityTypeColor(a.type)}`}>{a.type || '—'}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{a.description || a.company_id || '—'}</p>
+                    <p className="text-sm text-gray-800 truncate">{displayText(a.description || a.company_id)}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{a.date || ''}</p>
                   </div>
                 </div>
@@ -891,8 +892,8 @@ function ServiceDashboard({ firstName }) {
               <tbody>
                 {staffRows.map(row => (
                   <tr key={row.id} className="border-b border-gray-100 last:border-0">
-                    <td className="px-3 py-2 font-medium text-gray-900">{row.name || '—'}</td>
-                    <td className="px-3 py-2 text-gray-500">{row.role || '—'}</td>
+                    <td className="px-3 py-2 font-medium text-gray-900">{displayText(row.name)}</td>
+                    <td className="px-3 py-2 text-gray-500">{displayText(row.role)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openTickets}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openTasks}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openOnsites}</td>
@@ -919,7 +920,7 @@ function ServiceDashboard({ firstName }) {
                 <Link key={t.id} to="/tickets" state={{ ticketId: t.id }} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <div>
                     <span className="text-sm font-semibold text-red-600 mr-2">TID{t.ticket_id}</span>
-                    <span className="text-sm text-gray-800">{t.company_name || '—'}</span>
+                    <span className="text-sm text-gray-800">{displayText(t.company_name)}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {t.priority && <span className={`text-xs px-2 py-0.5 rounded ${priorityColor(t.priority)}`}>{t.priority}</span>}
@@ -946,7 +947,7 @@ function ServiceDashboard({ firstName }) {
                         <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">{item.type}</span>
                         <span className="text-sm font-semibold text-gray-900 truncate">{item.label}</span>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1 truncate">{item.text} · {item.owner}</p>
+                      <p className="text-xs text-gray-500 mt-1 truncate">{displayText(item.text, '')} · {displayText(item.owner, '—')}</p>
                     </div>
                     <span className="text-xs font-medium text-red-600 shrink-0">{fmtDate(item.date)}</span>
                   </div>
@@ -966,7 +967,7 @@ function ServiceDashboard({ firstName }) {
               {recentTasks.map(t => (
                 <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{t.servicetype || 'Task #' + t.id}</p>
+                    <p className="text-sm font-medium text-gray-900">{displayText(t.servicetype, `Task #${t.id}`)}</p>
                     <p className="text-xs text-gray-500">{t.startdate || ''}</p>
                   </div>
                   <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">Open</span>
