@@ -13,6 +13,7 @@ import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLef
 const PAGE_SIZE = 30
 const TICKET_LIST_COLUMNS = 'id, ticket_id, date, warranty, category, company_id, company_name, contact_person, description, priority, due_date, status, is_completed, assigned_to, remark, user_id, created_at, serial_number'
 const TICKET_STATUSES = ['Open', 'Pending', 'Completed']
+const SERIAL_SEARCH_TIMEOUT_MS = 6000
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
@@ -541,30 +542,48 @@ export default function Tickets() {
       sku: serial.sku || p.sku,
       item_description: stripHtml(item?.description || item?.name || '') || p.item_description || '',
     } : p))
+    clearTimeout(serialSearchTimers.current[idx])
+    setSerialOptions(prev => ({ ...prev, [idx]: [] }))
+    setSerialLoading(prev => ({ ...prev, [idx]: false }))
+  }
+  const runSerialQuery = async (query) => {
+    let timer
+    const timeout = new Promise(resolve => {
+      timer = setTimeout(() => resolve({ data: [], error: { message: 'Search timed out' } }), SERIAL_SEARCH_TIMEOUT_MS)
+    })
+    try {
+      return await Promise.race([query, timeout])
+    } finally {
+      clearTimeout(timer)
+    }
   }
   const fetchSerialMatches = async (term, limit = 50) => {
     const searchTerm = term.trim()
     if (!searchTerm) return []
     const columns = 'id, serial_number, sku, customername'
-    const exactSerial = supabase
+    const exactSerial = await runSerialQuery(supabase
       .from('serialnumber')
       .select(columns)
       .eq('serial_number', searchTerm)
       .order('serial_number')
-      .limit(limit)
-    const serialLike = supabase
+      .limit(limit))
+    if (!exactSerial.error && (exactSerial.data || []).length > 0) {
+      return exactSerial.data || []
+    }
+
+    const serialLike = runSerialQuery(supabase
       .from('serialnumber')
       .select(columns)
       .ilike('serial_number', `%${searchTerm}%`)
       .order('serial_number')
-      .limit(limit)
-    const skuLike = supabase
+      .limit(limit))
+    const skuLike = runSerialQuery(supabase
       .from('serialnumber')
       .select(columns)
       .ilike('sku', `%${searchTerm}%`)
       .order('serial_number')
-      .limit(limit)
-    const results = await Promise.allSettled([exactSerial, serialLike, skuLike])
+      .limit(limit))
+    const results = await Promise.allSettled([serialLike, skuLike])
     const byId = new Map()
     results.forEach(result => {
       if (result.status !== 'fulfilled' || result.value.error) return
@@ -585,6 +604,7 @@ export default function Tickets() {
     const requestId = (serialSearchIds.current[idx] || 0) + 1
     serialSearchIds.current[idx] = requestId
     setSerialLoading(prev => ({ ...prev, [idx]: true }))
+    setSerialOptions(prev => ({ ...prev, [idx]: [] }))
     try {
       const data = await fetchSerialMatches(searchTerm, 50)
       if (serialSearchIds.current[idx] !== requestId) return
@@ -1103,7 +1123,6 @@ export default function Tickets() {
                           value={prod.serial_number}
                           onFocus={e => {
                             e.target.select()
-                            if (prod.serial_number) scheduleSerialOptions(idx, prod.serial_number)
                           }}
                           onChange={e => {
                             updateProd(idx, 'serial_number', e.target.value)

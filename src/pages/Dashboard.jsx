@@ -10,7 +10,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../lib/legacyUsers'
 import { fetchAllRows } from '../lib/fetchAllRows'
-import { isSalesRole, isServiceRole, roleLabel, ROLE_SALES, ROLE_SALES_MANAGER } from '../lib/roles'
+import { isSalesRole, isServiceRole, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_SERVICE } from '../lib/roles'
 
 // ── Shared stat card ──────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color, bg, to }) {
@@ -130,7 +130,8 @@ function isActiveUserStatus(status) {
 }
 
 function serviceDashboardRoleLabel(roleId) {
-  return roleLabel(roleId)
+  if (Number(roleId) === ROLE_SERVICE) return 'Tech'
+  return '—'
 }
 
 function addStaffMetric(map, allowedStaffById, assignee, updates) {
@@ -710,7 +711,7 @@ function ServiceDashboard({ firstName }) {
       fetchAllRows('task', 'id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed', 'id', { ascending: false }),
       fetchAllRows('onsiteticket', 'id, ticket_id, issue_description, product, assigned_to, date, is_completed, status', 'id', { ascending: false }),
       fetchAssignableUsers(supabase),
-      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').order('first_name'),
+      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').eq('role_id', ROLE_SERVICE).order('first_name'),
     ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users, serviceStaff]) => {
       const tickets = allTickets || []
       const tasks = allTasks || []
@@ -805,7 +806,7 @@ function ServiceDashboard({ firstName }) {
       setStaffLoadNote(serviceStaff.error
         ? `Unable to load tech users: ${serviceStaff.error.message}`
         : nextStaffRows.length === 0
-          ? 'No active users found. Check user status in Settings > Users.'
+          ? 'No active Tech users found. Check user role and active status in Settings > Users.'
           : '')
       setAttentionItems(attention)
     })
@@ -873,7 +874,7 @@ function ServiceDashboard({ firstName }) {
             <Link to="/tasks" className="text-xs text-red-600 hover:underline">Review work</Link>
           </div>
         </div>
-        {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">{staffLoadNote || 'No active users found.'}</p> : (
+        {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">{staffLoadNote || 'No active tech users found.'}</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
