@@ -74,15 +74,16 @@ function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileU
         @page { size: A4; margin: 0; }
         body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
         .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
-        .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
+        .top { display: grid; grid-template-columns: 1fr 1.45fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
+        .brand-block { text-align: left; }
         .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
         .company { text-align: right; line-height: 1.35; font-size: 11px; }
         .company strong { font-size: 12px; }
-        .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin: 8px 0 10px; }
-        .meta { margin-left: auto; width: 260px; }
+        .doc-title { text-align: left; font-size: 20px; font-weight: 700; margin: 16px 0 8px; }
+        .meta { width: 260px; }
         .meta-row { display: grid; grid-template-columns: 95px 1fr; gap: 8px; line-height: 1.35; }
         .meta-row .value { text-align: right; font-weight: 600; }
-        .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin: 18px 0; border: 1px solid #222; border-radius: 3px; padding: 12px; }
+        .summary { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 8px 34px; margin: 18px 0; border: 1px solid #222; border-radius: 3px; padding: 12px; }
         .summary-row { display: grid; grid-template-columns: 95px 1fr; gap: 8px; line-height: 1.4; }
         .summary-row span:first-child { color: #555; font-weight: 700; }
         .section { margin-top: 14px; line-height: 1.45; break-inside: avoid; page-break-inside: avoid; }
@@ -101,18 +102,20 @@ function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileU
     <body>
       <div class="sheet">
         <div class="top">
-          <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
-          <div class="company">
-            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
-            63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
-            Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
-            Website: www.rd-palmer.com
+          <div class="brand-block">
+            <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
             <div class="doc-title">Task Report</div>
             <div class="meta">
               <div class="meta-row"><span>Task ID:</span><span class="value">#${escapeHtml(task.id || '-')}</span></div>
               <div class="meta-row"><span>Date:</span><span class="value">${formatDate(task.startdate || task.created_at)}</span></div>
               <div class="meta-row"><span>Status:</span><span class="value">${task.is_completed == 1 ? 'Completed' : 'Open'}</span></div>
             </div>
+          </div>
+          <div class="company">
+            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
+            63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
+            Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
+            Website: www.rd-palmer.com
           </div>
         </div>
         <div class="summary">
