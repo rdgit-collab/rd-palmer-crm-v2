@@ -500,6 +500,17 @@ export default function Tickets() {
       item_description: stripHtml(item?.description || '') || p.item_description || '',
     } : p))
   }
+  const applySerialOptionToProd = (idx, serialId) => {
+    const serial = (serialOptions[idx] || []).find(s => String(s.id) === String(serialId))
+    if (!serial) return
+    const item = serial?.sku ? skuList.find(s => s.sku === serial.sku) : null
+    setProducts(prev => prev.map((p, i) => i === idx ? {
+      ...p,
+      serial_number: serial.serial_number || '',
+      sku: serial.sku || p.sku,
+      item_description: stripHtml(item?.description || '') || p.item_description || '',
+    } : p))
+  }
   const loadSerialOptions = async (idx, term = '') => {
     const requestId = (serialSearchIds.current[idx] || 0) + 1
     serialSearchIds.current[idx] = requestId
@@ -986,9 +997,9 @@ export default function Tickets() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-44">SKU</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-52">Serial Number</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Item Description</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-36">Serial Number</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-44">SKU</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Remarks</th>
                     <th className="px-3 py-2 w-8"></th>
                   </tr>
@@ -996,6 +1007,46 @@ export default function Tickets() {
                 <tbody>
                   {products.map((prod, idx) => (
                     <tr key={idx} className="border-b border-gray-100">
+                      <td className="px-3 py-2">
+                        <input
+                          type="text"
+                          value={prod.serial_number}
+                          onFocus={e => {
+                            e.target.select()
+                            loadSerialOptions(idx, prod.serial_number || '')
+                          }}
+                          onChange={e => {
+                            updateProd(idx, 'serial_number', e.target.value)
+                            loadSerialOptions(idx, e.target.value)
+                          }}
+                          placeholder="Search serial number"
+                          className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
+                        />
+                        {(serialOptions[idx] || []).length > 0 && (
+                          <select
+                            value=""
+                            onChange={e => applySerialOptionToProd(idx, e.target.value)}
+                            className="mt-1 w-full border border-gray-200 px-2 py-1 text-xs text-gray-700 focus:outline-none focus:border-red-400"
+                          >
+                            <option value="">Select matching serial...</option>
+                            {(serialOptions[idx] || []).map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.serial_number}{s.sku ? ` - ${s.sku}` : ''}{s.customername ? ` - ${s.customername}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {serialLoading[idx] && <LoadingHint text="Searching serial numbers..." />}
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="text"
+                          value={prod.item_description}
+                          onChange={e => updateProd(idx, 'item_description', e.target.value)}
+                          placeholder="Description"
+                          className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
+                        />
+                      </td>
                       <td className="px-3 py-2">
                         <input
                           list={`ticket-sku-${idx}`}
@@ -1016,42 +1067,6 @@ export default function Tickets() {
                           ))}
                         </datalist>
                         {dropdownLoading && <LoadingHint text="Loading catalogue..." />}
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="text"
-                          value={prod.item_description}
-                          onChange={e => updateProd(idx, 'item_description', e.target.value)}
-                          placeholder="Description"
-                          className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          list={`ticket-serial-${idx}`}
-                          type="text"
-                          value={prod.serial_number}
-                          onFocus={e => {
-                            e.target.select()
-                            loadSerialOptions(idx, '')
-                          }}
-                          onChange={e => {
-                            applySerialToProd(idx, e.target.value)
-                            loadSerialOptions(idx, e.target.value)
-                          }}
-                          placeholder="Search S/N"
-                          className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
-                        />
-                        <datalist id={`ticket-serial-${idx}`}>
-                          {(serialOptions[idx] || []).map(s => (
-                            <option
-                              key={s.id}
-                              value={s.serial_number}
-                              label={`${s.sku || ''}${s.customername ? ` - ${s.customername}` : ''}`}
-                            />
-                          ))}
-                        </datalist>
-                        {serialLoading[idx] && <LoadingHint text="Searching serial numbers..." />}
                       </td>
                       <td className="px-3 py-2">
                         <input
