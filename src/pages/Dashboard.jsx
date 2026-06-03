@@ -230,7 +230,7 @@ function AdminDashboard({ firstName }) {
       supabase.from('invoice').select('id', { count: 'estimated', head: true }),
       supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
       supabase.from('sales_lead').select('id', { count: 'estimated', head: true }),
-      supabase.from('invoice').select('id', { count: 'exact', head: true }).eq('status', 'Unpaid').lt('due_date', today),
+      supabase.from('invoice').select('id', { count: 'exact', head: true }).lt('due_date', today),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
       supabase.from('activity').select('id, type, date, description, company_id').order('date', { ascending: false }).limit(6),
     ]).then(([c, t, q, inv, tsk, l, ov, rTick, rAct]) => {
