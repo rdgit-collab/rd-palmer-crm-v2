@@ -4,6 +4,7 @@ import {
   Building2, Ticket, FileText, Receipt,
   ClipboardList, Users, AlertTriangle, Activity,
   TrendingUp, MapPin, RotateCcw, Gauge, CheckCircle2,
+  Download,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -95,6 +96,26 @@ function isInMonth(value, range) {
 
 function earlierDate(a, b) {
   return String(a) < String(b) ? a : b
+}
+
+function csvValue(value) {
+  const text = String(value ?? '')
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function downloadCsv(filename, headers, rows) {
+  const csv = [headers, ...rows]
+    .map(row => row.map(csvValue).join(','))
+    .join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 function isClosedLeadStatus(status) {
@@ -669,9 +690,14 @@ function ServiceDashboard({ firstName }) {
   const [staffRows, setStaffRows] = useState([])
   const [staffLoadNote, setStaffLoadNote] = useState('')
   const [attentionItems, setAttentionItems] = useState([])
+  const [staffMonth, setStaffMonth] = useState(monthValue())
+  const staffMonths = useMemo(() => monthOptions(12), [])
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
+    const selectedRange = monthRange(staffMonth)
+    const serviceWorkDate = (row, ...fields) => fields.map(field => row?.[field]).find(Boolean)
+    const isServiceWorkInMonth = (row, ...fields) => isInMonth(serviceWorkDate(row, ...fields), selectedRange)
     Promise.all([
       supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
       supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
@@ -680,7 +706,7 @@ function ServiceDashboard({ firstName }) {
       supabase.from('rma').select('id', { count: 'exact', head: true }),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
       supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
-      supabase.from('ticket').select('id, ticket_id, company_name, assigned_to, due_date, priority, is_completed, status').limit(2000),
+      supabase.from('ticket').select('id, ticket_id, company_name, assigned_to, date, due_date, priority, is_completed, status').limit(2000),
       supabase.from('task').select('id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed').limit(2000),
       supabase.from('onsiteticket').select('id, ticket_id, issue_description, product, assigned_to, date, is_completed, status').limit(2000),
       fetchAssignableUsers(supabase),
@@ -699,19 +725,19 @@ function ServiceDashboard({ firstName }) {
 
       const staffMap = {}
       seedServiceStaffMetrics(staffMap, activeServiceStaff)
-      tickets.forEach(ticket => {
+      tickets.filter(ticket => isServiceWorkInMonth(ticket, 'due_date', 'date')).forEach(ticket => {
         if (ticket.is_completed == 1) return
         addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, {
           openTickets: 1,
           overdue: ticket.due_date && ticket.due_date < today ? 1 : 0,
         })
       })
-      tasks.forEach(task => {
+      tasks.filter(task => isServiceWorkInMonth(task, 'enddate', 'startdate')).forEach(task => {
         addStaffMetric(staffMap, allowedStaffById, task.assigned_to, task.is_completed == 1
           ? { completed: 1 }
           : { openTasks: 1, overdue: task.enddate && task.enddate < today ? 1 : 0 })
       })
-      onsites.forEach(onsiteRow => {
+      onsites.filter(onsiteRow => isServiceWorkInMonth(onsiteRow, 'date')).forEach(onsiteRow => {
         addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed'
           ? { completed: 1 }
           : { openOnsites: 1 })
@@ -767,9 +793,27 @@ function ServiceDashboard({ firstName }) {
           : '')
       setAttentionItems(attention)
     })
-  }, [])
+  }, [staffMonth])
 
   const today = new Date().toISOString().split('T')[0]
+  const selectedStaffMonthLabel = staffMonths.find(option => option.value === staffMonth)?.label || staffMonth
+  const exportStaffRows = () => {
+    downloadCsv(
+      `staff-workload-performance-${staffMonth}.csv`,
+      ['Month', 'Staff', 'Role', 'Tickets', 'Tasks', 'Onsite', 'Pending', 'Completed', 'Overdue'],
+      staffRows.map(row => [
+        selectedStaffMonthLabel,
+        row.name || '',
+        row.role || '',
+        row.openTickets,
+        row.openTasks,
+        row.openOnsites,
+        row.pending,
+        row.completed,
+        row.overdue,
+      ])
+    )
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -792,9 +836,26 @@ function ServiceDashboard({ firstName }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-semibold text-[#111111] text-sm">Staff Workload & Performance</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Open work, completed work, and overdue items by assigned staff.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Open work, completed work, and overdue items by assigned staff for {selectedStaffMonthLabel}.</p>
           </div>
-          <Link to="/tasks" className="text-xs text-red-600 hover:underline">Review work</Link>
+          <div className="flex items-center gap-3">
+            <select
+              value={staffMonth}
+              onChange={e => setStaffMonth(e.target.value)}
+              className="border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-red-400"
+            >
+              {staffMonths.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={exportStaffRows}
+              disabled={staffRows.length === 0}
+              className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download size={13} /> CSV
+            </button>
+            <Link to="/tasks" className="text-xs text-red-600 hover:underline">Review work</Link>
+          </div>
         </div>
         {staffRows.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">{staffLoadNote || 'No active tech users found.'}</p> : (
           <div className="overflow-x-auto">
