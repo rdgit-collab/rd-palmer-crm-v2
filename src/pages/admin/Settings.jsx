@@ -496,6 +496,7 @@ function TemplatesPanel() {
     quotation_terms: '',
     invoice_notes: '',
     invoice_terms: '',
+    task_terms: '',
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
@@ -504,7 +505,7 @@ function TemplatesPanel() {
   useEffect(() => {
     supabase.from('app_setting')
       .select('key, value')
-      .in('key', ['quotation_notes', 'quotation_terms', 'invoice_notes', 'invoice_terms'])
+      .in('key', ['quotation_notes', 'quotation_terms', 'invoice_notes', 'invoice_terms', 'task_terms'])
       .then(({ data }) => {
         const map = {}
         ;(data || []).forEach(r => { map[r.key] = r.value || '' })
@@ -547,6 +548,7 @@ function TemplatesPanel() {
         <TextBlock label="Quotation — Terms & Conditions" fieldKey="quotation_terms" placeholder="e.g. 1. Prices are subject to change without notice..." />
         <TextBlock label="Invoice — Notes" fieldKey="invoice_notes" placeholder="e.g. Thank you for your business. Please retain this invoice for your records." />
         <TextBlock label="Invoice — Terms & Conditions" fieldKey="invoice_terms" placeholder="e.g. Payment is due within 30 days of invoice date..." />
+        <TextBlock label="Task — Terms & Conditions" fieldKey="task_terms" placeholder="e.g. Service work is recorded based on findings at site..." />
       </div>
       <div className="flex items-center gap-3">
         <button onClick={handleSave} disabled={saving}

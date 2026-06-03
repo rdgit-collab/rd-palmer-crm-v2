@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
@@ -6,12 +7,16 @@ import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
+import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
 const TASK_LIST_COLUMNS = 'id, ticket_id, servicetype, startdate, starttime, enddate, endtime, spare, description, action_taken, assigned_to, is_completed, user_id, file, created_at'
+const DEFAULT_TASK_TERMS = `1. Work performed is based on information available at the time of service.
+2. Parts used, findings, and service notes are recorded for internal and customer reference.
+3. Any further repair, replacement, or calibration work may require separate approval.`
 
 function LoadingHint({ text = 'Loading options...' }) {
   return (
@@ -24,6 +29,128 @@ function LoadingHint({ text = 'Loading options...' }) {
 
 function stripHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+}
+
+function sanitizeHtml(value = '') {
+  const raw = String(value || '')
+  if (!raw) return ''
+  if (!/<\/?[a-z][\s\S]*>/i.test(raw)) return escapeHtml(raw).replace(/\n/g, '<br>')
+  if (typeof window === 'undefined') return raw
+  const doc = new DOMParser().parseFromString(raw, 'text/html')
+  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(el => el.remove())
+  doc.body.querySelectorAll('*').forEach(el => {
+    ;[...el.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase()
+      const val = attr.value || ''
+      if (name.startsWith('on') || name === 'style' || (['href', 'src'].includes(name) && val.trim().toLowerCase().startsWith('javascript:'))) {
+        el.removeAttribute(attr.name)
+      }
+    })
+  })
+  return doc.body.innerHTML
+}
+
+function isImageFile(path = '') {
+  return /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(path).split('?')[0])
+}
+
+function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileUrl }) {
+  const photoBlock = task.file
+    ? isImageFile(task.file) && fileUrl
+      ? `<div class="section"><h2>Uploaded Photo</h2><img class="task-photo" src="${escapeHtml(fileUrl)}" alt="Uploaded task file"></div>`
+      : `<div class="section"><h2>Uploaded File</h2><div>${escapeHtml(task.file)}</div></div>`
+    : ''
+
+  return `<!doctype html>
+  <html>
+    <head>
+      <title>Task Report</title>
+      <style>
+        @page { size: A4; margin: 0; }
+        body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
+        .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
+        .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
+        .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
+        .company { text-align: right; line-height: 1.35; font-size: 11px; }
+        .company strong { font-size: 12px; }
+        .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin: 8px 0 10px; }
+        .meta { margin-left: auto; width: 260px; }
+        .meta-row { display: grid; grid-template-columns: 95px 1fr; gap: 8px; line-height: 1.35; }
+        .meta-row .value { text-align: right; font-weight: 600; }
+        .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin: 18px 0; border: 1px solid #222; border-radius: 3px; padding: 12px; }
+        .summary-row { display: grid; grid-template-columns: 95px 1fr; gap: 8px; line-height: 1.4; }
+        .summary-row span:first-child { color: #555; font-weight: 700; }
+        .section { margin-top: 14px; line-height: 1.45; break-inside: avoid; page-break-inside: avoid; }
+        .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin: 0 0 6px; }
+        .text-box { border: 1px solid #d4d4d4; min-height: 60px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .terms-box { border: 1px solid #222; min-height: 80px; padding: 10px; line-height: 1.45; }
+        .task-photo { display: block; max-width: 100%; max-height: 105mm; object-fit: contain; border: 1px solid #ddd; margin-top: 8px; }
+        .document-signature { display: grid; grid-template-columns: 270px 270px; gap: 48px; margin-top: 34px; break-inside: avoid; page-break-inside: avoid; }
+        .signature-line { border-top: 1px dotted #111; padding-top: 10px; font-style: italic; min-height: 64px; line-height: 1.45; }
+        @media print {
+          body { background: #fff; }
+          .sheet { width: auto; min-height: 0; margin: 0; padding: 15mm; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="sheet">
+        <div class="top">
+          <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
+          <div class="company">
+            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
+            63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
+            Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
+            Website: www.rd-palmer.com
+            <div class="doc-title">Task Report</div>
+            <div class="meta">
+              <div class="meta-row"><span>Task ID:</span><span class="value">#${escapeHtml(task.id || '-')}</span></div>
+              <div class="meta-row"><span>Date:</span><span class="value">${formatDate(task.startdate || task.created_at)}</span></div>
+              <div class="meta-row"><span>Status:</span><span class="value">${task.is_completed == 1 ? 'Completed' : 'Open'}</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="summary">
+          <div class="summary-row"><span>Ticket:</span><span>${escapeHtml(ticketLabel || '-')}</span></div>
+          <div class="summary-row"><span>Service:</span><span>${escapeHtml(task.servicetype || '-')}</span></div>
+          <div class="summary-row"><span>Start:</span><span>${escapeHtml(`${formatDate(task.startdate)}${task.starttime ? ` ${task.starttime}` : ''}`)}</span></div>
+          <div class="summary-row"><span>End:</span><span>${escapeHtml(`${formatDate(task.enddate)}${task.endtime ? ` ${task.endtime}` : ''}`)}</span></div>
+          <div class="summary-row"><span>Spare Used:</span><span>${escapeHtml(task.spare || '-')}</span></div>
+          <div class="summary-row"><span>Assigned To:</span><span>${escapeHtml(assignedTo || '-')}</span></div>
+          <div class="summary-row"><span>Created By:</span><span>${escapeHtml(createdBy || '-')}</span></div>
+          <div class="summary-row"><span>Created:</span><span>${escapeHtml(formatDateTime(task.created_at))}</span></div>
+        </div>
+        <div class="section">
+          <h2>Description</h2>
+          <div class="text-box">${escapeHtml(task.description || '-')}</div>
+        </div>
+        ${task.action_taken ? `<div class="section"><h2>Action Taken</h2><div class="text-box">${escapeHtml(task.action_taken)}</div></div>` : ''}
+        ${photoBlock}
+        <div class="section">
+          <h2>Terms & Conditions</h2>
+          <div class="terms-box">${sanitizeHtml(terms || DEFAULT_TASK_TERMS)}</div>
+        </div>
+        <div class="document-signature">
+          <div class="signature-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
+          <div class="signature-line">(Co. Stamp)</div>
+        </div>
+      </div>
+    </body>
+  </html>`
+}
+
+function openPrintable(html, autoPrint = false) {
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+  if (autoPrint) {
+    win.onload = () => { win.focus(); win.print() }
+  }
 }
 
 function spareLabel(spare) {
@@ -120,6 +247,7 @@ const emptyForm = {
 
 export default function Tasks() {
   const { user, profile } = useAuth()
+  const location = useLocation()
   const [view, setView]           = useState('list')
   const [tab, setTab]             = useState('open')
   const [scope, setScope]         = useState('all')
@@ -214,6 +342,38 @@ export default function Tasks() {
   }, [search, page, tab, scope, profile, assignedFilter, serviceTypeFilter])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
+
+  const openDetail = useCallback(async (task) => {
+    setDetail(task)
+    setView('detail')
+    if (task.ticket_id && !ticketLabels[task.ticket_id]) {
+      const { data } = await supabase
+        .from('ticket')
+        .select('id, ticket_id, company_name')
+        .eq('id', task.ticket_id)
+        .maybeSingle()
+      if (data) {
+        setTicketLabels(prev => ({
+          ...prev,
+          [data.id]: `TID${data.ticket_id}${data.company_name ? ` - ${data.company_name}` : ''}`,
+        }))
+      }
+    }
+  }, [ticketLabels])
+
+  useEffect(() => {
+    const taskId = location.state?.taskId
+    if (!taskId) return
+    const load = async () => {
+      const { data } = await supabase
+        .from('task')
+        .select(TASK_LIST_COLUMNS)
+        .eq('id', taskId)
+        .maybeSingle()
+      if (data) openDetail(data)
+    }
+    load()
+  }, [location.state?.taskId, openDetail])
 
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
@@ -411,11 +571,31 @@ export default function Tasks() {
 
   // ── Helpers ───────────────────────────────────────────────────────
   const getTicketLabel = (ticketId) => {
-    const t = tickets.find(t => t.id == ticketId || t.ticket_id == ticketId) || ticketLabels[String(ticketId)]
-    return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : ticketId ? `TID${ticketId}` : '—'
+    const t = tickets.find(t => t.id == ticketId || t.ticket_id == ticketId)
+    if (t) return `TID${t.ticket_id} — ${t.company_name || ''}`
+    const label = ticketLabels[String(ticketId)]
+    if (label) return label
+    return ticketId ? `TID${ticketId}` : '—'
   }
   const getUserName = (id) => {
     return formatUserName(allUsers.length ? allUsers : users, id)
+  }
+
+  const printTaskReport = async (task) => {
+    const [{ data: termsRow }, fileResult] = await Promise.all([
+      supabase.from('app_setting').select('value').eq('key', 'task_terms').maybeSingle(),
+      task.file
+        ? supabase.storage.from('crm-uploads').createSignedUrl(task.file, 60 * 10)
+        : Promise.resolve({ data: null }),
+    ])
+    const html = taskReportHtml(task, {
+      ticketLabel: getTicketLabel(task.ticket_id),
+      assignedTo: getUserName(task.assigned_to),
+      createdBy: getUserName(task.user_id),
+      terms: termsRow?.value || DEFAULT_TASK_TERMS,
+      fileUrl: fileResult?.data?.signedUrl || '',
+    })
+    openPrintable(html, true)
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -510,7 +690,7 @@ export default function Tasks() {
                   <td className="px-4 py-3 text-gray-600">{getUserName(t.assigned_to)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => { setDetail(t); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
+                      <button onClick={() => openDetail(t)} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                       <button onClick={() => openEdit(t)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                       {tab === 'open' && <button onClick={() => setCompleteId(t.id)} className="text-green-600 hover:text-green-700" title="Mark Complete"><CheckCircle size={15} /></button>}
                       {tab === 'closed' && <button onClick={() => setReopenId(t.id)} className="text-amber-600 hover:text-amber-700" title="Undo Complete / Reopen"><RotateCcw size={15} /></button>}
@@ -690,6 +870,7 @@ export default function Tasks() {
             <h1 className="text-2xl font-bold text-gray-900">Task Detail</h1>
           </div>
           <div className="flex gap-2">
+            <button onClick={() => printTaskReport(detail)} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Download size={14} /> Print Report</button>
             <button onClick={() => openEdit(detail)} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Edit2 size={14} /> Edit</button>
             {detail.is_completed === 0 && (
               <button onClick={() => setCompleteId(detail.id)} className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-1.5 text-sm hover:bg-green-700"><CheckCircle size={14} /> Mark Complete</button>

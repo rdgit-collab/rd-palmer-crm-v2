@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
@@ -155,7 +155,7 @@ const emptyForm = {
   remark: '',
 }
 
-const emptyProduct = { sku: '', item_description: '', serial_number: '', remark: '' }
+const emptyProduct = { sku: '', item_description: '', serial_number: '', serial_date: '', warranty_period: '', remark: '' }
 
 export default function Tickets() {
   const { user, profile } = useAuth()
@@ -314,6 +314,29 @@ export default function Tickets() {
     return { display: `TID${lastTicketId + 1}`, num: lastTicketId + 1 }
   }
 
+  const enrichProductSerialMeta = async (rows = []) => {
+    const serials = [...new Set(rows.map(row => row.serial_number).filter(Boolean))]
+    if (serials.length === 0) return rows
+    const { data } = await supabase
+      .from('serialnumber')
+      .select('serial_number, sku, date, warranty_period')
+      .in('serial_number', serials)
+      .limit(1000)
+    const meta = new Map()
+    ;(data || []).forEach(row => {
+      meta.set(`${row.serial_number}||${row.sku || ''}`, row)
+      if (!meta.has(row.serial_number)) meta.set(row.serial_number, row)
+    })
+    return rows.map(row => {
+      const serial = meta.get(`${row.serial_number}||${row.sku || ''}`) || meta.get(row.serial_number)
+      return {
+        ...row,
+        serial_date: serial?.date || row.serial_date || '',
+        warranty_period: serial?.warranty_period || row.warranty_period || '',
+      }
+    })
+  }
+
   const loadContacts = async (companyId) => {
     if (!companyId) { setContacts([]); return }
     const { data } = await supabase
@@ -361,16 +384,17 @@ export default function Tickets() {
       assigned_to:    String(t.assigned_to   || ''),
       remark:         t.remark               || '',
     })
-    setProducts(
-      prods && prods.length > 0
-        ? prods.map(p => ({
+    const productRows = prods && prods.length > 0
+      ? await enrichProductSerialMeta(prods.map(p => ({
             sku:              p.sku              || '',
             item_description: p.item_description || '',
             serial_number:    p.serial_number    || '',
+            serial_date:      '',
+            warranty_period:  '',
             remark:           p.remark           || '',
-          }))
-        : [{ ...emptyProduct }]
-    )
+          })))
+      : [{ ...emptyProduct }]
+    setProducts(productRows)
     origAssignedTo.current = String(t.assigned_to || '')
     setEditId(t.id)
     setError('')
@@ -388,7 +412,7 @@ export default function Tickets() {
       supabase.from('ticket_remark').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
     ])
     setDetail(t)
-    setDetailProds(prodR.data || [])
+    setDetailProds(await enrichProductSerialMeta(prodR.data || []))
     setDetailContact(contactR.data || null)
     setDetailTasks(taskR.data || [])
     setDetailOnsites(onsiteR.data || [])
@@ -524,6 +548,13 @@ export default function Tickets() {
   // ── Product row helpers ───────────────────────────────────────────
   const updateProd = (idx, field, val) =>
     setProducts(prev => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p))
+  const updateProductSerialInput = (idx, val) =>
+    setProducts(prev => prev.map((p, i) => i === idx ? {
+      ...p,
+      serial_number: val,
+      serial_date: '',
+      warranty_period: '',
+    } : p))
   const applySkuToProd = (idx, sku) => {
     const item = skuList.find(s => s.sku === sku)
     setProducts(prev => prev.map((p, i) => i === idx ? {
@@ -541,6 +572,8 @@ export default function Tickets() {
       serial_number: serial.serial_number || '',
       sku: serial.sku || p.sku,
       item_description: stripHtml(item?.description || item?.name || '') || p.item_description || '',
+      serial_date: serial.date || '',
+      warranty_period: serial.warranty_period || '',
     } : p))
     clearTimeout(serialSearchTimers.current[idx])
     setSerialOptions(prev => ({ ...prev, [idx]: [] }))
@@ -560,7 +593,7 @@ export default function Tickets() {
   const fetchSerialMatches = async (term, limit = 50) => {
     const searchTerm = term.trim()
     if (!searchTerm) return []
-    const columns = 'id, serial_number, sku, customername'
+    const columns = 'id, serial_number, sku, customername, date, warranty_period'
     const exactSerial = await runSerialQuery(supabase
       .from('serialnumber')
       .select(columns)
@@ -1108,6 +1141,8 @@ export default function Tickets() {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="text-left px-3 py-2 font-medium text-gray-700 w-52">Serial Number</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-32">Date</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-36">Warranty</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Item Description</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700 w-44">SKU</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Remarks</th>
@@ -1125,7 +1160,7 @@ export default function Tickets() {
                             e.target.select()
                           }}
                           onChange={e => {
-                            updateProd(idx, 'serial_number', e.target.value)
+                            updateProductSerialInput(idx, e.target.value)
                             scheduleSerialOptions(idx, e.target.value)
                           }}
                           placeholder="Search serial number"
@@ -1146,6 +1181,12 @@ export default function Tickets() {
                           </select>
                         )}
                         {serialLoading[idx] && <LoadingHint text="Searching serial numbers..." />}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-600">
+                        {formatDate(prod.serial_date)}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-600">
+                        {prod.warranty_period || '—'}
                       </td>
                       <td className="px-3 py-2">
                         <input
@@ -1341,7 +1382,7 @@ export default function Tickets() {
     const readyToClose = workTotal > 0 && workDoneTotal === workTotal && detail.is_completed == 0
     const timelineItems = [
       { type: 'Ticket', label: `Ticket ${detail.status || 'Open'}`, date: detail.created_at || detail.date, owner: detail.assigned_to, text: detail.description },
-      ...detailTasks.map(task => ({ type: 'Task', label: task.servicetype || 'Task', date: timelineDate(task), owner: task.assigned_to, status: workStatus(task), text: task.action_taken || task.description })),
+      ...detailTasks.map(task => ({ type: 'Task', id: task.id, label: task.servicetype || 'Task', date: timelineDate(task), owner: task.assigned_to, status: workStatus(task), text: task.action_taken || task.description, to: '/tasks', state: { taskId: task.id } })),
       ...detailOnsites.map(onsite => ({ type: 'Onsite', label: onsite.product || onsite.issue_description || 'Onsite ticket', date: timelineDate(onsite), owner: onsite.assigned_to, status: workStatus(onsite), text: onsite.workdone || onsite.issue_description || onsite.remark })),
       ...detailRmas.map(rma => ({ type: 'RMA', label: rma.rma_number || 'RMA', date: rma.date_sent || rma.created_at, owner: null, status: rma.date_return ? 'Returned' : 'Sent', text: [rma.vendor, rma.remark].filter(Boolean).join(' - ') })),
       ...detailRemarks.map(remark => ({ type: 'Remark', label: 'Remark', date: remark.created_at, owner: remark.user_id, status: '', text: remark.remark })),
@@ -1716,11 +1757,19 @@ export default function Tickets() {
               <p className="text-sm text-gray-400">No progress updates yet.</p>
             ) : (
               <div className="space-y-3">
-                {timelineItems.map((item, idx) => (
-                  <div key={`${item.type}-${idx}`} className="border border-gray-200 px-3 py-2">
+                {timelineItems.map((item, idx) => {
+                  const TimelineShell = item.to ? Link : 'div'
+                  return (
+                  <TimelineShell
+                    key={`${item.type}-${item.id || idx}`}
+                    to={item.to}
+                    state={item.state}
+                    className={`block border border-gray-200 px-3 py-2 ${item.to ? 'hover:border-red-200 hover:bg-red-50/30' : ''}`}
+                  >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-semibold text-gray-500 uppercase">{item.type}</span>
                       <span className="text-sm font-medium text-gray-900">{item.label}</span>
+                      {item.to && <span className="text-xs text-red-600">View</span>}
                       {item.status && (
                         <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(item.status)}`}>{item.status}</span>
                       )}
@@ -1730,8 +1779,8 @@ export default function Tickets() {
                       {item.owner ? `Owner: ${formatUserName(allUsers.length ? allUsers : users, item.owner)}` : 'Owner: —'}
                     </div>
                     {item.text && <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{stripHtml(item.text)}</p>}
-                  </div>
-                ))}
+                  </TimelineShell>
+                )})}
               </div>
             )}
           </div>
@@ -1746,6 +1795,8 @@ export default function Tickets() {
                     <th className="text-left px-3 py-2 font-medium text-gray-700">SKU</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Description</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Serial Number</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Date</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Warranty</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Remark</th>
                   </tr>
                 </thead>
@@ -1755,6 +1806,8 @@ export default function Tickets() {
                       <td className="px-3 py-2 font-medium">{p.sku || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{stripHtml(p.item_description || '') || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{p.serial_number || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatDate(p.serial_date || p.date)}</td>
+                      <td className="px-3 py-2 text-gray-600">{p.warranty_period || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{p.remark || '—'}</td>
                     </tr>
                   ))}
