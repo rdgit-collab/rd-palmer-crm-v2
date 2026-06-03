@@ -7,6 +7,7 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 15
+const CATALOGUE_LIST_COLUMNS = 'id, type, name, sku, price, qty, remark, description, category, model, manufacture, item_type, tax'
 
 const emptyForm = {
   type: 'Goods', name: '', sku: '', price: '',
@@ -59,7 +60,7 @@ export default function Catalogue() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('goodsservices').select('*', { count: 'exact' }).order('name')
+    let q = supabase.from('goodsservices').select(CATALOGUE_LIST_COLUMNS, { count: 'estimated' }).order('name')
     if (search)     q = q.or(`name.ilike.%${search}%,sku.ilike.%${search}%`)
     if (typeFilter) q = q.eq('type', typeFilter)
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)

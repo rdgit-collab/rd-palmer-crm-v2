@@ -11,6 +11,7 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
+const TASK_LIST_COLUMNS = 'id, ticket_id, servicetype, startdate, starttime, enddate, endtime, spare, description, action_taken, assigned_to, is_completed, user_id, file, created_at'
 
 function LoadingHint({ text = 'Loading options...' }) {
   return (
@@ -72,7 +73,7 @@ export default function Tasks() {
     setLoading(true)
     let q = supabase
       .from('task')
-      .select('*', { count: 'exact' })
+      .select(TASK_LIST_COLUMNS, { count: 'estimated' })
       .eq('is_completed', tab === 'open' ? 0 : 1)
       .order('id', { ascending: false })
 

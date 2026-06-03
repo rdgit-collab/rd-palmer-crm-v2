@@ -9,6 +9,7 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
+const RMA_LIST_COLUMNS = 'id, ticket_id, rma_number, vendor, date_sent, mode, traking_number_out, date_return, traking_number_in, remark, user_id'
 
 const emptyForm = {
   ticket_id: '', rma_number: '', vendor: '', date_sent: '',
@@ -37,7 +38,7 @@ export default function RMA() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('rma').select('*', { count: 'exact' }).order('id', { ascending: false })
+    let q = supabase.from('rma').select(RMA_LIST_COLUMNS, { count: 'estimated' }).order('id', { ascending: false })
     q = tab === 'open' ? q.is('date_return', null) : q.not('date_return', 'is', null)
     if (search) {
       const term = search.trim()

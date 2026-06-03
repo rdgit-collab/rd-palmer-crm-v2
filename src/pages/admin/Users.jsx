@@ -53,7 +53,7 @@ export default function Users() {
     setLoading(true)
     let q = supabase
       .from('users')
-      .select('id, first_name, last_name, email, role_id, position, department, phone, status, created_at', { count: 'exact' })
+      .select('id, first_name, last_name, email, role_id, position, department, phone, status, created_at', { count: 'estimated' })
       .order('first_name')
     if (search) q = q.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`)
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)

@@ -12,6 +12,7 @@ import {
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const PAGE_SIZE = 30
+const CONTACT_LIST_COLUMNS = 'id, company_id, Salutation, first_name, last_name, department_id, position, mobile_number, email, address, user_id, created_at, updated_at'
 
 // ─── Contact Form (Add / Edit) ─────────────────────────────────────────────────
 function ContactForm({ contact, onSave, onCancel }) {
@@ -185,7 +186,7 @@ export default function Contacts() {
     setLoading(true)
     let q = supabase
       .from('contact')
-      .select('*', { count: 'exact' })
+      .select(CONTACT_LIST_COLUMNS, { count: 'estimated' })
 
     if (search.trim()) {
       q = q.or(

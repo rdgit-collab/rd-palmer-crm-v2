@@ -29,7 +29,7 @@ export default function ActivityLog() {
 
     let query = supabase
       .from('activity_log')
-      .select('id, created_at, actor_name, actor_role_id, module, action, record_table, record_id, record_label, summary', { count: 'exact' })
+      .select('id, created_at, actor_name, actor_role_id, module, action, record_table, record_id, record_label, summary', { count: 'estimated' })
       .order('created_at', { ascending: false })
 
     if (moduleFilter.trim()) query = query.ilike('module', `%${moduleFilter.trim()}%`)

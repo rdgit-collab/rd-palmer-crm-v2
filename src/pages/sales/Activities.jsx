@@ -138,7 +138,7 @@ export default function Activities() {
 
     let activityQuery = supabase
       .from('activity')
-      .select(ACTIVITY_COLUMNS, { count: 'exact' })
+      .select(ACTIVITY_COLUMNS, { count: 'estimated' })
       .order('id', { ascending: false })
 
     if (isSalesRestricted && !isSalesManager) {

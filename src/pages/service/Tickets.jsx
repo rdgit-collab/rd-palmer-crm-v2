@@ -11,6 +11,7 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
+const TICKET_LIST_COLUMNS = 'id, ticket_id, date, warranty, category, company_id, company_name, contact_person, description, priority, due_date, status, is_completed, assigned_to, remark, user_id, created_at, serial_number'
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
@@ -187,7 +188,7 @@ export default function Tickets() {
     setLoading(true)
     let q = supabase
       .from('ticket')
-      .select('*', { count: 'exact' })
+      .select(TICKET_LIST_COLUMNS, { count: 'estimated' })
       .eq('is_completed', tab === 'open' ? 0 : 1)
       .order('id', { ascending: false })
 

@@ -10,6 +10,7 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
+const ONSITE_LIST_COLUMNS = 'id, ticket_id, product, issue_description, serial_number, location, vandor_order_ref, spare, remark, assigned_to, status, is_completed, workdone, date, user_id, file'
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
@@ -128,7 +129,7 @@ export default function OnsiteTickets() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('onsiteticket').select('*', { count: 'exact' })
+    let q = supabase.from('onsiteticket').select(ONSITE_LIST_COLUMNS, { count: 'estimated' })
       .eq('is_completed', tab === 'open' ? 0 : 1).order('id', { ascending: false })
     if (search) q = q.or(`product.ilike.%${search}%,location.ilike.%${search}%`)
     if (scope === 'mine') q = q.eq('assigned_to', getLegacyUserId(profile))

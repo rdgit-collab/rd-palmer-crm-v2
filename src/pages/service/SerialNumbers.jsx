@@ -97,7 +97,7 @@ export default function SerialNumbers() {
 
       const fuzzyResult = await supabase
         .from('serialnumber')
-        .select(SERIAL_COLUMNS, { count: 'exact' })
+        .select(SERIAL_COLUMNS, { count: 'estimated' })
         .ilike(searchField, `%${term}%`)
         .order('id', { ascending: false })
         .range(from, to)

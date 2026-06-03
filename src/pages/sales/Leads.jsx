@@ -14,6 +14,7 @@ import {
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const PAGE_SIZE = 30
 const LOOKUP_PAGE_SIZE = 1000
+const LEAD_LIST_COLUMNS = 'id, lead_source, status, type, company_id, contact_id, company_name, industry, account_type, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, salutation, first_name, last_name, position, department_id, contact_mobile_number, contact_email, assigned_to, created_at, updated_at'
 
 const lookupName = (items, id, fallbackPrefix) => {
   if (!id) return '—'
@@ -962,7 +963,7 @@ export default function Leads() {
   const fetchLeads = useCallback(async () => {
     if (!profile) return
     setLoading(true)
-    let q = supabase.from('sales_lead').select('*', { count: 'exact' })
+    let q = supabase.from('sales_lead').select(LEAD_LIST_COLUMNS, { count: 'estimated' })
     const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
 

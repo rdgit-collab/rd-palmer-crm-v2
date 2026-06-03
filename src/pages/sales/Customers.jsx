@@ -11,6 +11,7 @@ import {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const CUSTOMER_LIST_COLUMNS = 'id, industry, account_type, company_name, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, assigned, assignto, created_at, updated_at'
 
 
 // ─── Customer Form (Add / Edit) ────────────────────────────────────────────────
@@ -554,7 +555,7 @@ export default function Customers() {
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('customer').select('*', { count: 'exact' })
+    let q = supabase.from('customer').select(CUSTOMER_LIST_COLUMNS, { count: 'estimated' })
     if (search.trim()) q = q.ilike('company_name', `%${search.trim()}%`)
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q
