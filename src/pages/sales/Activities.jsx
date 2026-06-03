@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -81,6 +81,7 @@ export default function Activities() {
   const [rows, setRows]         = useState([])
   const [rawActivities, setRawActivities] = useState([])
   const [page, setPage]         = useState(1)
+  const [total, setTotal]       = useState(0)
   const [search, setSearch]     = useState('')
   const [typeFilter, setTF]     = useState('')
   const [assignedFilter, setAssignedFilter] = useState('')
@@ -99,6 +100,7 @@ export default function Activities() {
   const [activityTypes, setActivityTypes] = useState([])
   const [priorities, setPriorities] = useState([])
   const [activityStatuses, setActivityStatuses] = useState([])
+  const leadsLoadedRef = useRef(false)
 
   const leadsById = useMemo(() => Object.fromEntries(leads.map(l => [String(l.id), l])), [leads])
   const customersById = useMemo(() => Object.fromEntries(customers.map(c => [String(c.id), c])), [customers])
@@ -117,13 +119,7 @@ export default function Activities() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    const [leadR, activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
-      fetchAllRows(
-        'sales_lead',
-        'id, company_name, first_name, last_name, assigned_to, status',
-        'company_name',
-        isSalesRestricted && !isSalesManager ? { eq: { assigned_to: currentLegacyUserId } } : {}
-      ),
+    const [activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
       fetchAssignableUsers(supabase),
       fetchLegacyUsers(supabase),
       supabase.from('activity_type').select('id, type').order('type'),
@@ -131,9 +127,21 @@ export default function Activities() {
       supabase.from('activity_status').select('id, name').order('name'),
     ])
 
-    let activityQuery = supabase.from('activity').select(ACTIVITY_COLUMNS).order('id', { ascending: false }).limit(5000)
+    let ownedLeadIds = []
     if (isSalesRestricted && !isSalesManager) {
-      const ownedLeadIds = (leadR || []).map(lead => lead.id).filter(Boolean)
+      const { data: ownedLeads } = await supabase
+        .from('sales_lead')
+        .select('id')
+        .eq('assigned_to', currentLegacyUserId)
+      ownedLeadIds = (ownedLeads || []).map(lead => lead.id).filter(Boolean)
+    }
+
+    let activityQuery = supabase
+      .from('activity')
+      .select(ACTIVITY_COLUMNS, { count: 'exact' })
+      .order('id', { ascending: false })
+
+    if (isSalesRestricted && !isSalesManager) {
       const ownershipFilters = [
         `assigned_to.eq.${currentLegacyUserId}`,
         `user_id.eq.${currentLegacyUserId}`,
@@ -141,25 +149,80 @@ export default function Activities() {
       if (ownedLeadIds.length) ownershipFilters.push(`lead_id.in.(${ownedLeadIds.join(',')})`)
       activityQuery = activityQuery.or(ownershipFilters.join(','))
     }
+
+    if (tab === 'completed') activityQuery = activityQuery.ilike('status', '%complete%')
+    if (tab === 'today') activityQuery = activityQuery.eq('date', todayString())
+    if (tab === 'tomorrow') activityQuery = activityQuery.eq('date', todayString(1))
+    if (tab === 'overdue') activityQuery = activityQuery.lt('date', todayString())
+    if (tab === 'upcoming') activityQuery = activityQuery.gt('date', todayString(1))
+    if (tab === 'open') activityQuery = activityQuery.not('status', 'ilike', '%complete%')
+    if (typeFilter) activityQuery = activityQuery.eq('type', typeFilter)
+    if (assignedFilter) activityQuery = activityQuery.eq('assigned_to', assignedFilter)
+
+    const text = search.trim()
+    if (text) {
+      const [leadSearchR, customerSearchR] = await Promise.all([
+        supabase
+          .from('sales_lead')
+          .select('id')
+          .or(`company_name.ilike.%${text}%,first_name.ilike.%${text}%,last_name.ilike.%${text}%`)
+          .limit(200),
+        supabase
+          .from('customer')
+          .select('id')
+          .ilike('company_name', `%${text}%`)
+          .limit(200),
+      ])
+      const leadIds = (leadSearchR.data || []).map(row => row.id).filter(Boolean)
+      const customerIds = (customerSearchR.data || []).map(row => row.id).filter(Boolean)
+      const searchFilters = [
+        `type.ilike.%${text}%`,
+        `status.ilike.%${text}%`,
+        `priority.ilike.%${text}%`,
+        `description.ilike.%${text}%`,
+      ]
+      if (leadIds.length) searchFilters.push(`lead_id.in.(${leadIds.join(',')})`)
+      if (customerIds.length) searchFilters.push(`company_id.in.(${customerIds.join(',')})`)
+      activityQuery = activityQuery.or(searchFilters.join(','))
+    }
+
+    activityQuery = activityQuery.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const actR = await activityQuery
     const activityRows = actR.data || []
+    const leadIds = [...new Set(activityRows.map(row => row.lead_id).filter(Boolean))]
     const customerIds = [...new Set(activityRows.map(row => row.company_id).filter(Boolean))]
+    const leadR = leadIds.length
+      ? await supabase.from('sales_lead').select('id, company_name, first_name, last_name, assigned_to, status').in('id', leadIds)
+      : { data: [] }
     const custR = customerIds.length
       ? await supabase.from('customer').select('id, company_name').in('id', customerIds)
       : { data: [] }
 
-    setLeads(leadR || [])
+    if (!leadsLoadedRef.current) setLeads(leadR.data || [])
     setCustomers(custR.data || [])
     if (!actR.error) setRawActivities(activityRows)
+    setTotal(actR.count || 0)
     setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
     setAssignableUsers(activeUsers || [])
     if (!atR.error) setActivityTypes(atR.data || [])
     if (!prioR.error) setPriorities(prioR.data || [])
     if (!statusR.error) setActivityStatuses(statusR.data || [])
     setLoading(false)
-  }, [currentLegacyUserId, isSalesRestricted, isSalesManager])
+  }, [currentLegacyUserId, isSalesRestricted, isSalesManager, tab, search, typeFilter, assignedFilter, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
+
+  const ensureLeadData = async () => {
+    if (leadsLoadedRef.current) return
+    leadsLoadedRef.current = true
+    const leadR = await fetchAllRows(
+      'sales_lead',
+      'id, company_name, first_name, last_name, assigned_to, status',
+      'company_name',
+      isSalesRestricted && !isSalesManager ? { eq: { assigned_to: currentLegacyUserId } } : {}
+    )
+    setLeads(leadR || [])
+  }
 
   useEffect(() => {
     const latest = new Map()
@@ -204,8 +267,8 @@ export default function Activities() {
       })
   }, [rows, search, typeFilter, assignedFilter, tab, currentLegacyUserId, isSalesRestricted, isSalesManager])
 
-  const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE)
+  const pagedRows = filteredRows
+  const totalPages = Math.ceil(total / PAGE_SIZE)
 
   const getUserName = (id) => formatUserName(users, id)
   const currentUserOption = users.find(u => String(u.id) === String(currentLegacyUserId))
@@ -225,7 +288,8 @@ export default function Activities() {
       .sort((a, b) => b.id - a.id)
   }
 
-  const openAdd = () => {
+  const openAdd = async () => {
+    await ensureLeadData()
     setForm({
       ...emptyForm,
       date: new Date().toISOString().split('T')[0],
@@ -235,7 +299,8 @@ export default function Activities() {
     setView('form')
   }
 
-  const openUpdate = (activity) => {
+  const openUpdate = async (activity) => {
+    await ensureLeadData()
     setForm({
       ...emptyForm,
       date: new Date().toISOString().split('T')[0],
@@ -431,7 +496,7 @@ export default function Activities() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Activity Follow Ups</h1>
-          <p className="text-sm text-gray-500 mt-1">{filteredRows.length} lead follow up{filteredRows.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-gray-500 mt-1">{total} lead follow up{total !== 1 ? 's' : ''}</p>
         </div>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Update</button>
       </div>
@@ -529,7 +594,7 @@ export default function Activities() {
         </table>
       </div>
 
-      <PaginationControls page={page} totalPages={totalPages} total={filteredRows.length} label="follow up" onPageChange={setPage} />
+      <PaginationControls page={page} totalPages={totalPages} total={total} label="follow up" onPageChange={setPage} />
 
       {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Latest Update?</h3><p className="text-sm text-gray-600">Only this activity row will be removed. Older lead history stays unchanged.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
     </div>

@@ -180,6 +180,7 @@ export default function Tickets() {
   const origAssignedTo = useRef(null)
   const serialSearchIds = useRef({})
   const quickSerialSearchId = useRef(0)
+  const formDataLoadedRef = useRef(false)
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTickets = useCallback(async () => {
@@ -221,12 +222,10 @@ export default function Tickets() {
   useEffect(() => {
     const run = async () => {
       setDropdownLoading(true)
-      const [catR, custR, usrR, allUsrR, skuR, prioR, svcR, spareR, vendorR, modeR] = await Promise.all([
+      const [catR, usrR, allUsrR, prioR, svcR, spareR, vendorR, modeR] = await Promise.all([
         supabase.from('category').select('id, name').order('name'),
-        fetchAllRows('customer', 'id, company_name', 'company_name'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
-        fetchAllRows('goodsservices', 'id, sku, description', 'sku'),
         supabase.from('priority').select('id, name').order('name'),
         supabase.from('service_type').select('id, type').order('type'),
         supabase.from('spare').select('id, name').order('name'),
@@ -234,10 +233,8 @@ export default function Tickets() {
         supabase.from('mode').select('id, name').order('name'),
       ])
       if (!catR.error)  setCategories(catR.data  || [])
-      setCustomers(custR || [])
       setUsers(usrR || [])
       setAllUsers(allUsrR || [])
-      setSkuList(skuR || [])
       if (!prioR.error) setPriorities(prioR.data || [])
       if (!svcR.error) setServiceTypes(svcR.data || [])
       if (!spareR.error) setSpares(spareR.data || [])
@@ -249,6 +246,25 @@ export default function Tickets() {
   }, [])
 
   // ── Helpers ───────────────────────────────────────────────────────
+  const ensureFormData = async () => {
+    if (formDataLoadedRef.current) return
+    formDataLoadedRef.current = true
+    setDropdownLoading(true)
+    try {
+      const [custR, skuR] = await Promise.all([
+        fetchAllRows('customer', 'id, company_name', 'company_name'),
+        fetchAllRows('goodsservices', 'id, sku, description', 'sku'),
+      ])
+      setCustomers(custR || [])
+      setSkuList(skuR || [])
+    } catch (err) {
+      formDataLoadedRef.current = false
+      throw err
+    } finally {
+      setDropdownLoading(false)
+    }
+  }
+
   const getNextTID = async () => {
     const { data } = await supabase.from('ticket').select('ticket_id').order('ticket_id', { ascending: false }).limit(1)
     const lastTicketId = data?.[0]?.ticket_id ?? 100
@@ -272,6 +288,7 @@ export default function Tickets() {
 
   // ── Open add form ─────────────────────────────────────────────────
   const openAdd = async () => {
+    await ensureFormData()
     const { display } = await getNextTID()
     setForm({ ...emptyForm, ticket_number: display, date: new Date().toISOString().split('T')[0] })
     setProducts([{ ...emptyProduct }])
@@ -283,6 +300,7 @@ export default function Tickets() {
 
   // ── Open edit form ────────────────────────────────────────────────
   const openEdit = async (t) => {
+    await ensureFormData()
     if (t.company_id) await loadContacts(t.company_id)
     const { data: prods } = await supabase.from('ticket_product').select('*').eq('ticket_id', t.id)
     setForm({

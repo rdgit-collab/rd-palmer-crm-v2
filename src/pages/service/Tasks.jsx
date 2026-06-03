@@ -58,12 +58,14 @@ export default function Tasks() {
   const [uploadFile, setUploadFile] = useState(null)
 
   const [tickets, setTickets]         = useState([])
+  const [ticketLabels, setTicketLabels] = useState({})
   const [serviceTypes, setServiceTypes] = useState([])
   const [users, setUsers]             = useState([])
   const [allUsers, setAllUsers]       = useState([])
   const [spares, setSpares]           = useState([])
   const [dropdownLoading, setDropdownLoading] = useState(true)
   const origAssignedTo                = useRef(null)
+  const ticketDataLoadedRef           = useRef(false)
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
@@ -108,7 +110,23 @@ export default function Tasks() {
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
     const { data, count, error: err } = await q
-    if (!err) { setTasks(data || []); setTotal(count || 0) }
+    if (!err) {
+      const pageRows = data || []
+      setTasks(pageRows)
+      setTotal(count || 0)
+      const ticketIds = [...new Set(pageRows.map(row => row.ticket_id).filter(Boolean))]
+      if (ticketIds.length) {
+        const { data: ticketRows, error: ticketErr } = await supabase
+          .from('ticket')
+          .select('id, ticket_id, company_name')
+          .in('id', ticketIds)
+        if (!ticketErr) {
+          setTicketLabels(Object.fromEntries((ticketRows || []).map(t => [String(t.id), t])))
+        }
+      } else {
+        setTicketLabels({})
+      }
+    }
     setLoading(false)
   }, [search, page, tab, scope, profile, assignedFilter, serviceTypeFilter])
 
@@ -118,15 +136,13 @@ export default function Tasks() {
   useEffect(() => {
     const run = async () => {
       setDropdownLoading(true)
-      const [tickR, stR, usrR, allUsrR, sprR, taskSpareR] = await Promise.all([
-        fetchAllRows('ticket', 'id, ticket_id, company_name, is_completed', 'id', { ascending: false }),
+      const [stR, usrR, allUsrR, sprR, taskSpareR] = await Promise.all([
         supabase.from('service_type').select('id, type').order('type'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
         fetchAllRows('spare', 'id, name', 'name'),
         supabase.from('task').select('spare').not('spare', 'is', null).neq('spare', '').limit(1000),
       ])
-      setTickets(tickR || [])
       if (!stR.error)   setServiceTypes(stR.data || [])
       setUsers(usrR || [])
       setAllUsers(allUsrR || [])
@@ -141,8 +157,24 @@ export default function Tasks() {
     run().catch(() => setDropdownLoading(false))
   }, [])
 
+  const ensureTicketData = async () => {
+    if (ticketDataLoadedRef.current) return
+    ticketDataLoadedRef.current = true
+    setDropdownLoading(true)
+    try {
+      const tickR = await fetchAllRows('ticket', 'id, ticket_id, company_name, is_completed', 'id', { ascending: false })
+      setTickets(tickR || [])
+    } catch (err) {
+      ticketDataLoadedRef.current = false
+      throw err
+    } finally {
+      setDropdownLoading(false)
+    }
+  }
+
   // ── Open add ─────────────────────────────────────────────────────
-  const openAdd = () => {
+  const openAdd = async () => {
+    await ensureTicketData()
     setForm({ ...emptyForm, startdate: new Date().toISOString().split('T')[0] })
     setUploadFile(null)
     setEditId(null)
@@ -151,7 +183,8 @@ export default function Tasks() {
   }
 
   // ── Open edit ─────────────────────────────────────────────────────
-  const openEdit = (t) => {
+  const openEdit = async (t) => {
+    await ensureTicketData()
     setForm({
       ticket_id:   String(t.ticket_id   || ''),
       servicetype: t.servicetype        || '',
@@ -287,7 +320,7 @@ export default function Tasks() {
 
   // ── Helpers ───────────────────────────────────────────────────────
   const getTicketLabel = (ticketId) => {
-    const t = tickets.find(t => t.id == ticketId || t.ticket_id == ticketId)
+    const t = tickets.find(t => t.id == ticketId || t.ticket_id == ticketId) || ticketLabels[String(ticketId)]
     return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : ticketId ? `TID${ticketId}` : '—'
   }
   const getUserName = (id) => {

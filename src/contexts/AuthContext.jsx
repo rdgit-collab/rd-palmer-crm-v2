@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { effectivePermissionRoleId, hasAdminAccess } from '../lib/roles'
 
@@ -10,17 +10,44 @@ export function AuthProvider({ children }) {
   const [permissions, setPermissions] = useState(null) // null = not loaded yet
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState('')
+  const userIdRef = useRef(null)
+  const profileRef = useRef(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+      const nextUser = session?.user ?? null
+      userIdRef.current = nextUser?.id ?? null
+      setUser(nextUser)
       if (session?.user) fetchProfile(session.user.id)
       else setLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setPermissions(null); setAuthError(''); setLoading(false) }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const nextUser = session?.user ?? null
+      const nextUserId = nextUser?.id ?? null
+      const currentUserId = userIdRef.current
+      const hasLoadedProfile = Boolean(profileRef.current)
+
+      if (event === 'TOKEN_REFRESHED') {
+        userIdRef.current = nextUserId
+        setUser(nextUser)
+        return
+      }
+
+      if (event === 'SIGNED_IN' && nextUserId === currentUserId && hasLoadedProfile) {
+        setUser(nextUser)
+        return
+      }
+
+      userIdRef.current = nextUserId
+      setUser(nextUser)
+      if (nextUser) fetchProfile(nextUser.id)
+      else {
+        profileRef.current = null
+        setProfile(null)
+        setPermissions(null)
+        setAuthError('')
+        setLoading(false)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -28,6 +55,7 @@ export function AuthProvider({ children }) {
   async function fetchProfile(userId) {
     setLoading(true)
     setAuthError('')
+    profileRef.current = null
 
     const { data: prof, error: profileError } = await supabase
       .from('users')
@@ -44,6 +72,7 @@ export function AuthProvider({ children }) {
       return
     }
 
+    profileRef.current = prof
     setProfile(prof)
 
     // Admin and Super Admin have access to everything — no DB lookup needed

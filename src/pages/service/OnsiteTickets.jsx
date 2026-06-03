@@ -114,6 +114,7 @@ export default function OnsiteTickets() {
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
   const [tickets, setTickets]     = useState([])
+  const [ticketLabels, setTicketLabels] = useState({})
   const [users, setUsers]         = useState([])
   const [productOptions, setProductOptions] = useState([])
   const [productLoading, setProductLoading] = useState(false)
@@ -123,6 +124,7 @@ export default function OnsiteTickets() {
   const [dropdownLoading, setDropdownLoading] = useState(true)
   const [uploadFile, setUploadFile] = useState(null)
   const serialSearchId = useRef(0)
+  const formDataLoadedRef = useRef(false)
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -132,7 +134,23 @@ export default function OnsiteTickets() {
     if (scope === 'mine') q = q.eq('assigned_to', getLegacyUserId(profile))
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
-    if (!err) { setRows(data || []); setTotal(count || 0) }
+    if (!err) {
+      const pageRows = data || []
+      setRows(pageRows)
+      setTotal(count || 0)
+      const ticketIds = [...new Set(pageRows.map(row => row.ticket_id).filter(Boolean))]
+      if (ticketIds.length) {
+        const { data: ticketRows, error: ticketErr } = await supabase
+          .from('ticket')
+          .select('id, ticket_id, company_name')
+          .in('id', ticketIds)
+        if (!ticketErr) {
+          setTicketLabels(Object.fromEntries((ticketRows || []).map(t => [String(t.id), t])))
+        }
+      } else {
+        setTicketLabels({})
+      }
+    }
     setLoading(false)
   }, [search, page, tab, scope, profile])
 
@@ -141,21 +159,36 @@ export default function OnsiteTickets() {
   useEffect(() => {
     const run = async () => {
       setDropdownLoading(true)
-      const [tickR, usrR, spareR] = await Promise.all([
-        fetchAllRows('ticket', 'id, ticket_id, company_name, description, assigned_to', 'id', { ascending: false, eq: { is_completed: 0 } }),
+      const [usrR] = await Promise.all([
         fetchAssignableUsers(supabase),
-        fetchAllRows('goodsservices', 'id, name', 'name'),
       ])
-      setTickets(tickR || [])
       setUsers(usrR || [])
-      setSpares(spareR || [])
       setDropdownLoading(false)
     }
     run().catch(() => setDropdownLoading(false))
   }, [])
 
+  const ensureFormData = async () => {
+    if (formDataLoadedRef.current) return
+    formDataLoadedRef.current = true
+    setDropdownLoading(true)
+    try {
+      const [tickR, spareR] = await Promise.all([
+        fetchAllRows('ticket', 'id, ticket_id, company_name, description, assigned_to', 'id', { ascending: false, eq: { is_completed: 0 } }),
+        fetchAllRows('goodsservices', 'id, name', 'name'),
+      ])
+      setTickets(tickR || [])
+      setSpares(spareR || [])
+    } catch (err) {
+      formDataLoadedRef.current = false
+      throw err
+    } finally {
+      setDropdownLoading(false)
+    }
+  }
+
   const getTicketLabel = (tid) => {
-    const t = tickets.find(t => t.id == tid)
+    const t = tickets.find(t => t.id == tid) || ticketLabels[String(tid)]
     return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : tid ? `#${tid}` : '—'
   }
   const getUserName = (id) => {
@@ -209,7 +242,8 @@ export default function OnsiteTickets() {
     }
   }
 
-  const openAdd = () => {
+  const openAdd = async () => {
+    await ensureFormData()
     setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] })
     setProductOptions([])
     setSerialOptions([])
@@ -221,6 +255,7 @@ export default function OnsiteTickets() {
     setView('form')
   }
   const openEdit = async (r) => {
+    await ensureFormData()
     setForm({
       ticket_id: String(r.ticket_id || ''), product: r.product || '',
       issue_description: r.issue_description || '', serial_number: r.serial_number || '',
