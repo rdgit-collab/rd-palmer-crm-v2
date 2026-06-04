@@ -18,6 +18,12 @@ const SEARCH_FIELDS = [
   { value: 'ref_number', label: 'Ref Number', placeholder: 'Search ref number...' },
 ]
 
+const SORT_OPTIONS = [
+  { value: 'latest', label: 'Latest Record' },
+  { value: 'date_desc', label: 'Date Newest' },
+  { value: 'date_asc', label: 'Date Oldest' },
+]
+
 const WARRANTY_PERIODS = [
   { value: '0', label: 'No Warranty' },
   { value: '1', label: '1 Year' },
@@ -41,6 +47,7 @@ export default function SerialNumbers() {
   const [draftSearch, setDraftSearch] = useState('')
   const [searchField, setSearchField] = useState('serial_number')
   const [draftSearchField, setDraftSearchField] = useState('serial_number')
+  const [sortMode, setSortMode] = useState('latest')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
@@ -56,6 +63,15 @@ export default function SerialNumbers() {
     const term = search.trim()
     const from = (page - 1) * PAGE_SIZE
     const to = page * PAGE_SIZE - 1
+    const applySort = (query) => {
+      if (sortMode === 'date_asc') {
+        return query.order('date', { ascending: true, nullsFirst: false }).order('id', { ascending: false })
+      }
+      if (sortMode === 'date_desc') {
+        return query.order('date', { ascending: false, nullsFirst: false }).order('id', { ascending: false })
+      }
+      return query.order('id', { ascending: false })
+    }
 
     if (term) {
       const exactCountResult = await supabase
@@ -74,11 +90,10 @@ export default function SerialNumbers() {
       const exactCount = exactCountResult.count || 0
 
       if (exactCount > 0) {
-        const exactResult = await supabase
+        const exactResult = await applySort(supabase
           .from('serialnumber')
           .select(SERIAL_COLUMNS)
-          .eq(searchField, term)
-          .order('id', { ascending: false })
+          .eq(searchField, term))
           .range(from, to)
 
         if (exactResult.error) {
@@ -95,11 +110,10 @@ export default function SerialNumbers() {
         return
       }
 
-      const fuzzyResult = await supabase
+      const fuzzyResult = await applySort(supabase
         .from('serialnumber')
         .select(SERIAL_COLUMNS, { count: 'estimated' })
-        .ilike(searchField, `%${term}%`)
-        .order('id', { ascending: false })
+        .ilike(searchField, `%${term}%`))
         .range(from, to)
 
       if (fuzzyResult.error) {
@@ -120,8 +134,8 @@ export default function SerialNumbers() {
     let q = supabase
       .from('serialnumber')
       .select(SERIAL_COLUMNS, { count: 'estimated' })
-      .order('id', { ascending: false })
 
+    q = applySort(q)
     q = q.range(from, to)
     const { data, count, error: err } = await q
     if (err) {
@@ -133,7 +147,7 @@ export default function SerialNumbers() {
       setTotal(count || 0)
     }
     setLoading(false)
-  }, [search, searchField, page])
+  }, [search, searchField, sortMode, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -210,6 +224,11 @@ export default function SerialNumbers() {
     setPage(1)
   }
 
+  const changeSortMode = (value) => {
+    setSortMode(value)
+    setPage(1)
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const activeSearchField = SEARCH_FIELDS.find(field => field.value === draftSearchField) || SEARCH_FIELDS[0]
   const hasCurrentCustomerOption = !form.customername || customerList.some(c => c.company_name === form.customername)
@@ -236,6 +255,15 @@ export default function SerialNumbers() {
           <input type="text" placeholder={activeSearchField.placeholder} value={draftSearch} onChange={e => setDraftSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
         </div>
+        <select
+          value={sortMode}
+          onChange={e => changeSortMode(e.target.value)}
+          className="w-full sm:w-40 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+        >
+          {SORT_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
         <button type="submit" disabled={loading} className="px-4 py-2 bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60">Search</button>
         {search && <button type="button" onClick={clearSearch} className="px-4 py-2 border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Clear</button>}
       </form>
