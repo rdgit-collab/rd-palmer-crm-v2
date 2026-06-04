@@ -1,8 +1,9 @@
 export async function fetchAssignableUsers(supabase) {
   const { data, error } = await supabase
-    .from('legacy_users')
+    .from('users')
     .select('old_user_id, first_name, last_name, status')
-    .eq('status', '1')
+    .eq('status', 'Active')
+    .not('old_user_id', 'is', null)
     .order('first_name')
 
   if (error) return []
