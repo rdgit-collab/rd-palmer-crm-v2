@@ -15,11 +15,20 @@ function timeAgo(ts) {
 }
 
 function notificationLink(item) {
-  const ref = String(item.reference || '')
+  if (item.link) return item.link
+  const ref = String([item.reference, item.status, item.description].filter(Boolean).join(' '))
   if (/lead/i.test(ref)) return '/leads'
+  if (/activit/i.test(ref)) return '/activities'
+  if (/onsite/i.test(ref)) return '/onsite-tickets'
   if (/task/i.test(ref)) return '/tasks'
   if (/ticket/i.test(ref)) return '/tickets'
   return ''
+}
+
+function notificationTime(item) {
+  if (item.created_at) return item.created_at
+  if (item.date && item.time) return `${item.date}T${item.time}`
+  return item.date || ''
 }
 
 export default function NotificationBell() {
@@ -38,7 +47,8 @@ export default function NotificationBell() {
       .from('notification')
       .select('*')
       .or(`assigned_to.eq.${notificationUserId},user_id.eq.${notificationUserId}`)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: false })
       .limit(20)
     const list = data || []
     setItems(list)
@@ -105,7 +115,13 @@ export default function NotificationBell() {
     <div className="relative" ref={panelRef}>
       {/* Bell button */}
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => {
+          setOpen(o => {
+            const next = !o
+            if (next) fetchNotifications()
+            return next
+          })
+        }}
         className="relative p-1.5 text-gray-400 hover:text-[#CC0000] transition-colors"
         title="Notifications"
       >
@@ -135,8 +151,10 @@ export default function NotificationBell() {
             {items.length === 0 ? (
               <div className="px-4 py-8 text-sm text-gray-400 text-center">No notifications yet.</div>
             ) : items.map(item => {
-              const title = displayText(item.reference || item.company_name, 'Notification')
+              const title = displayText(item.status || item.reference || item.company_name, 'Notification')
+              const reference = item.reference && item.reference !== item.status ? displayText(item.reference, '') : ''
               const body = displayText(item.description || item.status, '')
+              const company = displayText(item.company_name, '')
               return (
               <button
                 key={item.id}
@@ -149,13 +167,16 @@ export default function NotificationBell() {
                   <p className={`text-sm leading-snug ${!item.is_read ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                     {title}
                   </p>
+                  {company && (
+                    <p className="text-xs text-gray-600 mt-0.5 truncate">{company}</p>
+                  )}
+                  {reference && (
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">{reference}</p>
+                  )}
                   {body && (
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{body}</p>
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-4 whitespace-pre-line">{body}</p>
                   )}
-                  {item.company_name && item.reference && (
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{displayText(item.company_name, '')}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">{timeAgo(item.created_at)}</p>
+                  <p className="text-xs text-gray-400 mt-1">{timeAgo(notificationTime(item))}</p>
                 </div>
               </button>
             )})}

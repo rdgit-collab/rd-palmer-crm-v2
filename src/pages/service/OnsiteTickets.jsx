@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
+import { notifyUser } from '../../lib/notifyUser'
 import { formatDate } from '../../lib/dateFormat'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
@@ -126,6 +127,7 @@ export default function OnsiteTickets() {
   const [uploadFile, setUploadFile] = useState(null)
   const serialSearchId = useRef(0)
   const formDataLoadedRef = useRef(false)
+  const origAssignedTo = useRef('')
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -252,6 +254,7 @@ export default function OnsiteTickets() {
     setSerialLoading(false)
     setUploadFile(null)
     setEditId(null)
+    origAssignedTo.current = ''
     setError('')
     setView('form')
   }
@@ -268,6 +271,7 @@ export default function OnsiteTickets() {
     setUploadFile(null)
     await loadTicketProducts(r.ticket_id, productValues(r.product))
     loadSerialOptions(r.serial_number || '')
+    origAssignedTo.current = String(r.assigned_to || '')
     setEditId(r.id); setError(''); setView('form')
   }
 
@@ -304,6 +308,34 @@ export default function OnsiteTickets() {
       summary: `${editId ? 'Updated' : 'Created'} onsite ticket${form.ticket_id ? ` for ticket #${form.ticket_id}` : ''}`,
       metadata: { ticket_id: form.ticket_id || null, assigned_to: form.assigned_to || null },
     })
+    const newAssignee = form.assigned_to || ''
+    const oldAssignee = editId ? String(origAssignedTo.current || '') : ''
+    const currentLegacyUserId = getLegacyUserId(profile)
+    const isNewAssignment = newAssignee && String(newAssignee) !== '0' &&
+      String(newAssignee) !== String(currentLegacyUserId || '') &&
+      (!editId || String(newAssignee) !== oldAssignee)
+
+    if (isNewAssignment) {
+      const ticket = tickets.find(t => String(t.id) === String(form.ticket_id))
+      await notifyUser(supabase, {
+        userId: parseInt(newAssignee),
+        actorUserId: currentLegacyUserId,
+        title: 'Onsite ticket assigned to you',
+        reference: ticket ? `Onsite for TID${ticket.ticket_id}` : 'Onsite ticket',
+        companyName: ticket?.company_name || '',
+        body: `You have been assigned an onsite ticket${ticket?.company_name ? ' for ' + ticket.company_name : ''}.`,
+        details: [
+          ['Ticket', ticket ? `TID${ticket.ticket_id}` : form.ticket_id],
+          ['Company', ticket?.company_name || ''],
+          ['Product', form.product || ''],
+          ['Serial Number', form.serial_number || ''],
+          ['Issue', form.issue_description || ticket?.description || ''],
+          ['Location', form.location || ''],
+          ['Assigned By', getUserName(currentLegacyUserId)],
+        ],
+        link: '/onsite-tickets',
+      })
+    }
     setSaving(false); setUploadFile(null); fetchRows(); setView('list')
   }
 

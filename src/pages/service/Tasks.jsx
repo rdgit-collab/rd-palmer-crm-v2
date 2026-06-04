@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
-import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
+import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
@@ -250,7 +250,7 @@ const emptyForm = {
 }
 
 export default function Tasks() {
-  const { user, profile } = useAuth()
+  const { profile } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [view, setView]           = useState('list')
@@ -511,16 +511,31 @@ export default function Tasks() {
 
     // ── Notify assigned user ──────────────────────────────────────
     const newAssignee = form.assigned_to || ''
-    const oldAssignee = editId ? (origAssignedTo.current || '') : ''
-    const isNewAssignment = isUuid(newAssignee) && newAssignee !== user?.id &&
-      (!editId || newAssignee !== oldAssignee)
+    const oldAssignee = editId ? String(origAssignedTo.current || '') : ''
+    const currentLegacyUserId = getLegacyUserId(profile)
+    const isNewAssignment = newAssignee && String(newAssignee) !== '0' &&
+      String(newAssignee) !== String(currentLegacyUserId || '') &&
+      (!editId || String(newAssignee) !== oldAssignee)
 
     if (isNewAssignment) {
       const tickRef = tickets.find(t => String(t.id) === String(form.ticket_id))
+      const assignedBy = getUserName(currentLegacyUserId)
       await notifyUser(supabase, {
-        userId: newAssignee,
+        userId: parseInt(newAssignee),
+        actorUserId: currentLegacyUserId,
         title:  'Task assigned to you',
-        body:   `You have been assigned a task${tickRef ? ' for ' + tickRef.company_name : ''}`,
+        reference: tickRef ? `Task for TID${tickRef.ticket_id}` : 'Task',
+        companyName: tickRef?.company_name || '',
+        body:   `You have been assigned a task${tickRef ? ' for ' + tickRef.company_name : ''}.`,
+        details: [
+          ['Ticket', tickRef ? `TID${tickRef.ticket_id}` : form.ticket_id],
+          ['Company', tickRef?.company_name || ''],
+          ['Service Type', form.servicetype || ''],
+          ['Description', form.description || ''],
+          ['Spare Used', form.spare || 'NIL'],
+          ['Due/End Date', form.enddate || ''],
+          ['Assigned By', assignedBy],
+        ],
         link:   '/tasks',
       })
     }

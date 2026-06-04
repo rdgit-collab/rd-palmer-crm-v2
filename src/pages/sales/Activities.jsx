@@ -6,6 +6,7 @@ import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { isSalesManagerRole, isSalesRole } from '../../lib/roles'
 import { logActivity } from '../../lib/activityLog'
+import { notifyUser } from '../../lib/notifyUser'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
@@ -344,6 +345,27 @@ export default function Activities() {
       summary: `Created activity ${form.type}`,
       metadata: { lead_id: form.lead_id || null, company_id: payload.company_id || null, assigned_to: payload.assigned_to || null },
     })
+    const assignee = payload.assigned_to ? String(payload.assigned_to) : ''
+    const company = selectedLead || (form.company_id ? customersById[String(form.company_id)] : null)
+    if (assignee && assignee !== String(currentLegacyUserId || '')) {
+      await notifyUser(supabase, {
+        userId: parseInt(assignee),
+        actorUserId: currentLegacyUserId,
+        title: 'Activity assigned to you',
+        reference: form.type || 'Activity',
+        companyName: company?.company_name || '',
+        body: `You have been assigned an activity${company?.company_name ? ' for ' + company.company_name : ''}.`,
+        details: [
+          ['Company', company?.company_name || ''],
+          ['Activity Type', form.type],
+          ['Description', form.description],
+          ['Date', form.date || ''],
+          ['Time', form.time || ''],
+          ['Assigned By', getUserName(currentLegacyUserId)],
+        ],
+        link: '/activities',
+      })
+    }
     setSaving(false)
     await fetchRows()
     setView('list')

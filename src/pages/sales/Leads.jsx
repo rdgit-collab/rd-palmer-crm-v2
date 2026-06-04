@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
+import { notifyUser } from '../../lib/notifyUser'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { isSalesRole } from '../../lib/roles'
@@ -665,6 +666,30 @@ function LeadForm({ lead, onSave, onCancel }) {
       summary: `${isEdit ? 'Updated' : 'Created'} sales lead ${form.company_name}`,
       metadata: { assigned_to: payload.assigned_to || null, company_id: result.data.company_id || null },
     })
+
+    const newAssignee = payload.assigned_to ? String(payload.assigned_to) : ''
+    const oldAssignee = lead?.assigned_to ? String(lead.assigned_to) : ''
+    const isNewAssignment = newAssignee && String(newAssignee) !== String(currentLegacyUserId || '') &&
+      (!isEdit || newAssignee !== oldAssignee)
+
+    if (isNewAssignment) {
+      const stageName = stages.find(s => String(s.id) === String(form.status))?.name || form.status
+      await notifyUser(supabase, {
+        userId: parseInt(newAssignee),
+        actorUserId: currentLegacyUserId,
+        title: 'Lead assigned to you',
+        reference: `Lead #${result.data.id}`,
+        companyName: form.company_name,
+        body: `You have been assigned a lead for ${form.company_name}.`,
+        details: [
+          ['Company', form.company_name],
+          ['Contact', [form.salutation, form.first_name, form.last_name].filter(Boolean).join(' ')],
+          ['Stage', stageName],
+          ['Assigned By', getUserName(users, currentLegacyUserId)],
+        ],
+        link: '/leads',
+      })
+    }
 
     onSave(result.data)
   }

@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
-import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName, isUuid } from '../../lib/legacyUsers'
+import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
@@ -237,7 +237,7 @@ const emptyForm = {
 const emptyProduct = { sku: '', item_description: '', serial_number: '', serial_date: '', warranty_period: '', remark: '' }
 
 export default function Tickets() {
-  const { user, profile } = useAuth()
+  const { profile } = useAuth()
   const location = useLocation()
   const [view, setView]             = useState('list')
   const [tab, setTab]               = useState('open')
@@ -563,15 +563,28 @@ export default function Tickets() {
 
     // ── Notify assigned user ──────────────────────────────────────
     const newAssignee = form.assigned_to || ''
-    const oldAssignee = editId ? (origAssignedTo.current || '') : ''
-    const isNewAssignment = isUuid(newAssignee) && newAssignee !== user?.id &&
-      (!editId || newAssignee !== oldAssignee)
+    const oldAssignee = editId ? String(origAssignedTo.current || '') : ''
+    const currentLegacyUserId = getLegacyUserId(profile)
+    const isNewAssignment = newAssignee && String(newAssignee) !== '0' &&
+      String(newAssignee) !== String(currentLegacyUserId || '') &&
+      (!editId || String(newAssignee) !== oldAssignee)
 
     if (isNewAssignment) {
       await notifyUser(supabase, {
-        userId: newAssignee,
+        userId: parseInt(newAssignee),
+        actorUserId: currentLegacyUserId,
         title:  'Ticket assigned to you',
-        body:   `You have been assigned ${form.ticket_number}${form.company_name ? ' — ' + form.company_name : ''}`,
+        reference: form.ticket_number || `Ticket #${ticketId}`,
+        companyName: form.company_name || '',
+        body:   `You have been assigned ${form.ticket_number}${form.company_name ? ' for ' + form.company_name : ''}.`,
+        details: [
+          ['Ticket', form.ticket_number || `#${ticketId}`],
+          ['Company', form.company_name || ''],
+          ['Issue', form.description || ''],
+          ['Due Date', form.due_date || ''],
+          ['Priority', form.priority || ''],
+          ['Assigned By', formatUserName(users, currentLegacyUserId)],
+        ],
         link:   '/tickets',
       })
     }
@@ -887,6 +900,41 @@ export default function Tickets() {
       summary: `Added ${quickAction === 'rma' ? 'RMA' : quickAction === 'onsite' ? 'onsite ticket' : quickAction === 'remark' ? 'remark' : 'task'} to TID${detail.ticket_id}`,
       metadata: { ticket_id: detail.id, ticket_number: detail.ticket_id },
     })
+
+    if ((quickAction === 'task' || quickAction === 'onsite') && payload.assigned_to) {
+      const currentLegacyUserId = getLegacyUserId(profile)
+      if (String(payload.assigned_to) !== String(currentLegacyUserId || '')) {
+        await notifyUser(supabase, {
+          userId: payload.assigned_to,
+          actorUserId: currentLegacyUserId,
+          title: quickAction === 'task' ? 'Task assigned to you' : 'Onsite ticket assigned to you',
+          reference: quickAction === 'task' ? `Task for TID${detail.ticket_id}` : `Onsite for TID${detail.ticket_id}`,
+          companyName: detail.company_name || '',
+          body: `You have been assigned ${quickAction === 'task' ? 'a task' : 'an onsite ticket'} for TID${detail.ticket_id}${detail.company_name ? ' - ' + detail.company_name : ''}.`,
+          details: quickAction === 'task'
+            ? [
+                ['Ticket', `TID${detail.ticket_id}`],
+                ['Company', detail.company_name || ''],
+                ['Issue', detail.description || ''],
+                ['Service Type', quickForm.servicetype || ''],
+                ['Description', quickForm.description || ''],
+                ['Spare Used', quickForm.spare || 'NIL'],
+                ['Due/End Date', quickForm.enddate || ''],
+                ['Assigned By', formatUserName(users, currentLegacyUserId)],
+              ]
+            : [
+                ['Ticket', `TID${detail.ticket_id}`],
+                ['Company', detail.company_name || ''],
+                ['Issue', quickForm.issue_description || detail.description || ''],
+                ['Product', quickForm.product || ''],
+                ['Serial Number', quickForm.serial_number || ''],
+                ['Location', quickForm.location || ''],
+                ['Assigned By', formatUserName(users, currentLegacyUserId)],
+              ],
+          link: quickAction === 'task' ? '/tasks' : '/onsite-tickets',
+        })
+      }
+    }
 
     await openDetail(detail)
     setQuickSaving(false)
