@@ -110,6 +110,84 @@ function SpareChecklist({ options, value, onChange }) {
   )
 }
 
+function spareLabel(spare) {
+  const sku = spare.sku || spare.name || ''
+  const description = String(spare.description || spare.name || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  if (sku && description && description !== sku) return `${sku} - ${description}`
+  return sku || description || 'Unnamed item'
+}
+
+function SpareSearchSelect({ options, value, onChange, loading }) {
+  const [term, setTerm] = useState('')
+  const [open, setOpen] = useState(false)
+  const selected = options.find(item =>
+    String(item.sku || item.name || '') === String(value || '') ||
+    String(item.name || '') === String(value || '')
+  )
+  const inputValue = open ? term : (selected ? spareLabel(selected) : value || '')
+  const search = term.trim().toLowerCase()
+  const filtered = search
+    ? options.filter(item => [
+        item.sku,
+        item.name,
+        String(item.description || '').replace(/<[^>]*>/g, ' '),
+      ].some(part => String(part || '').toLowerCase().includes(search)))
+    : options
+
+  const choose = (item) => {
+    onChange(item.sku || item.name || '')
+    setTerm('')
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={inputValue}
+        onFocus={() => { setOpen(true); setTerm('') }}
+        onBlur={() => setTimeout(() => setOpen(false), 100)}
+        onChange={e => {
+          setTerm(e.target.value)
+          setOpen(true)
+          if (!e.target.value.trim()) onChange('')
+        }}
+        placeholder="Search SKU or description..."
+        className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+      />
+      {open && (
+        <div className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto border border-gray-200 bg-white shadow-lg">
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); onChange(''); setTerm(''); setOpen(false) }}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+          >
+            None
+          </button>
+          {filtered.length === 0 ? (
+            <div className="px-3 py-3 text-sm text-gray-400">
+              {loading ? 'Loading spare options...' : 'No matching spare found.'}
+            </div>
+          ) : filtered.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); choose(item) }}
+              className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+            >
+              <span className="block font-medium text-gray-800">{item.sku || item.name || '—'}</span>
+              {(item.description || item.name) && (
+                <span className="block truncate text-xs text-gray-500">{String(item.description || item.name).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {loading && <LoadingHint text="Loading spare options..." />}
+    </div>
+  )
+}
+
 function priorityColor(priority) {
   switch (priority) {
     case 'High':   return 'bg-red-100 text-red-700'
@@ -675,7 +753,8 @@ export default function Tickets() {
     }
   }
 
-  const openQuickAction = (type) => {
+  const openQuickAction = async (type) => {
+    if (type === 'task' || type === 'onsite') await ensureFormData()
     const today = new Date().toISOString().split('T')[0]
     const defaults = {
       task: {
@@ -694,6 +773,7 @@ export default function Tickets() {
         product: '',
         serial_number: '',
         location: '',
+        vandor_order_ref: '',
         spare: '',
         issue_description: detail?.description || '',
         workdone: '',
@@ -759,6 +839,7 @@ export default function Tickets() {
         product: quickForm.product || null,
         serial_number: quickForm.serial_number || null,
         location: quickForm.location || null,
+        vandor_order_ref: quickForm.vandor_order_ref || null,
         spare: quickForm.spare || null,
         issue_description: quickForm.issue_description || null,
         workdone: quickForm.workdone || null,
@@ -1498,24 +1579,12 @@ export default function Tickets() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
-                    <input
-                      list="ticket-task-spare-catalogue"
+                    <SpareSearchSelect
+                      options={catalogueSpareOptions}
                       value={quickForm.spare || ''}
-                      onFocus={e => e.target.select()}
-                      onChange={e => setQuick('spare', e.target.value)}
-                      placeholder="Search catalogue SKU"
-                      className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                      onChange={value => setQuick('spare', value)}
+                      loading={dropdownLoading}
                     />
-                    <datalist id="ticket-task-spare-catalogue">
-                      {skuList.map(item => (
-                        <option
-                          key={item.id}
-                          value={item.sku}
-                          label={stripHtml(item.description || '')}
-                        />
-                      ))}
-                    </datalist>
-                    {dropdownLoading && <LoadingHint text="Loading catalogue..." />}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Description *</label>
@@ -1548,7 +1617,7 @@ export default function Tickets() {
                       setQuickForm(prev => ({ ...prev, product: e.target.value, serial_number: product?.serial_number || prev.serial_number || '' }))
                     }} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
                       <option value="">Please Select</option>
-                      {detailProds.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}
+                      {detailProds.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.item_description ? ` - ${stripHtml(p.item_description)}` : ''}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1577,6 +1646,10 @@ export default function Tickets() {
                     <input value={quickForm.location || ''} onChange={e => setQuick('location', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Order Ref</label>
+                    <input value={quickForm.vandor_order_ref || ''} onChange={e => setQuick('vandor_order_ref', e.target.value)} placeholder="Vendor reference" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Spare Used</label>
                     <SpareChecklist options={catalogueSpareOptions} value={quickForm.spare || ''} onChange={value => setQuick('spare', value)} />
                     {dropdownLoading && <LoadingHint text="Loading catalogue..." />}
@@ -1584,6 +1657,10 @@ export default function Tickets() {
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Issue Description</label>
                     <textarea rows={3} value={quickForm.issue_description || ''} onChange={e => setQuick('issue_description', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Work Done</label>
+                    <textarea rows={2} value={quickForm.workdone || ''} onChange={e => setQuick('workdone', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Remark</label>
@@ -1625,6 +1702,10 @@ export default function Tickets() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Date Return</label>
                     <input type="date" value={quickForm.date_return || ''} onChange={e => setQuick('date_return', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tracking No. In</label>
+                    <input value={quickForm.traking_number_in || ''} onChange={e => setQuick('traking_number_in', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Remark</label>
