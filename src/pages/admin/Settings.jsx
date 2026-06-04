@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import { logActivity } from '../../lib/activityLog'
+import { isSuperAdminRole } from '../../lib/roles'
 import { Plus, Edit2, Trash2, Check, X, Save, Bold, Underline } from 'lucide-react'
 
 // Generic CRUD panel for simple name/type lookup tables
@@ -688,7 +690,14 @@ const TABS = [
 ]
 
 export default function Settings() {
+  const { profile } = useAuth()
   const [tab, setTab] = useState('sales')
+  const canManageRolePermissions = isSuperAdminRole(profile?.role_id)
+  const tabs = TABS.filter(t => t.id !== 'roles' || canManageRolePermissions)
+
+  useEffect(() => {
+    if (tab === 'roles' && !canManageRolePermissions) setTab('sales')
+  }, [tab, canManageRolePermissions])
 
   return (
     <div className="p-6">
@@ -696,7 +705,7 @@ export default function Settings() {
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-1 mb-6 border-b border-gray-200">
-        {TABS.map(t => (
+        {tabs.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -760,7 +769,7 @@ export default function Settings() {
 
       {tab === 'templates' && <TemplatesPanel />}
 
-      {tab === 'roles' && <RolePermissionsPanel />}
+      {tab === 'roles' && canManageRolePermissions && <RolePermissionsPanel />}
     </div>
   )
 }
