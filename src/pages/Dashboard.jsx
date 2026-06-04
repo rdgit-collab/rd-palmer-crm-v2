@@ -32,11 +32,42 @@ function DashboardSpinner({ label }) {
 }
 
 // ── Shared stat card ──────────────────────────────────────────────
-function StatCard({ label, value, icon: Icon, color, bg, to }) {
+function StatInfo({ text }) {
+  const [open, setOpen] = useState(false)
+  if (!text) return null
+  const toggleOpen = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setOpen(current => !current)
+  }
+  return (
+    <span className="relative inline-flex group" title={text} aria-label={text} onMouseLeave={() => setOpen(false)}>
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={toggleOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') toggleOpen(event)
+        }}
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-[10px] font-bold text-gray-400 leading-none hover:border-gray-400 hover:text-gray-500"
+      >
+        !
+      </span>
+      <span className={`pointer-events-none absolute left-0 top-5 z-20 w-56 rounded border border-gray-200 bg-white px-3 py-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-gray-600 shadow-lg ${open ? 'block' : 'hidden group-hover:block group-focus-within:block'}`}>
+        {text}
+      </span>
+    </span>
+  )
+}
+
+function StatCard({ label, value, icon: Icon, color, bg, to, info }) {
   const inner = (
     <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 hover:border-gray-300 transition-colors">
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">{label}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">{label}</span>
+          <StatInfo text={info} />
+        </div>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: bg }}>
           <Icon size={15} style={{ color }} />
         </div>
@@ -118,6 +149,29 @@ function downloadCsv(filename, headers, rows) {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
+}
+
+const salesStatInfo = {
+  customers: 'Total customers visible to your sales dashboard permission.',
+  leads: 'Open sales leads that are still active.',
+  newLeadsThisMonth: 'Leads created in the selected/current month.',
+  quotations: 'Total quotation records visible to your dashboard permission.',
+  quoteValueThisMonth: 'Total quotation value counted for the selected/current month.',
+  invoiceValueThisMonth: 'Total invoice value counted for the selected/current month.',
+  quoteConversion: 'Percentage of quotations converted to invoice or won business.',
+  invoices: 'Total invoice records visible to your dashboard permission.',
+  overdueInvoices: 'Invoices past due date and not yet settled.',
+}
+
+const serviceStatInfo = {
+  openTickets: 'Tickets that are not completed yet.',
+  closedTickets: 'Tickets closed during the month selected in Staff Workload & Performance.',
+  openTasks: 'Tasks that are not completed yet.',
+  onsiteTickets: 'Onsite tickets that are not completed yet.',
+  overdueTickets: 'Open tickets with due date before today.',
+  dueToday: 'Open tickets and tasks with due date today.',
+  completionRate: 'Completed service work divided by completed plus pending work for the selected month.',
+  rmaCount: 'RMA records that have not been returned yet.',
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -301,15 +355,15 @@ function SalesDashboard({ firstName }) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard label="Customers"        value={stats.customers}       icon={Building2}     color="#2563EB" bg="#EFF6FF" to="/customers" />
-        <StatCard label="Open Leads"       value={stats.leads}           icon={TrendingUp}    color="#BE185D" bg="#FDF2F8" to="/leads" />
-        <StatCard label="New Leads This Month" value={stats.newLeadsThisMonth} icon={Users} color="#7C3AED" bg="#F5F3FF" to="/leads" />
-        <StatCard label="Quotations"       value={stats.quotations}      icon={FileText}      color="#7C3AED" bg="#F5F3FF" to="/quotations" />
-        <StatCard label="Quotation Value"  value={fmtCurrency(stats.quoteValueThisMonth)} icon={FileText} color="#0891B2" bg="#ECFEFF" to="/quotations" />
-        <StatCard label="Invoice Value"    value={fmtCurrency(stats.invoiceValueThisMonth)} icon={Receipt} color="#059669" bg="#ECFDF5" to="/invoices" />
-        <StatCard label="Quote Conversion" value={`${stats.quoteConversion ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" />
-        <StatCard label="Invoices"         value={stats.invoices}         icon={Receipt}       color="#D97706" bg="#FFFBEB" to="/invoices" />
-        <StatCard label="Overdue Invoices" value={stats.overdueInvoices} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/invoices" />
+        <StatCard label="Customers"        value={stats.customers}       icon={Building2}     color="#2563EB" bg="#EFF6FF" to="/customers" info={salesStatInfo.customers} />
+        <StatCard label="Open Leads"       value={stats.leads}           icon={TrendingUp}    color="#BE185D" bg="#FDF2F8" to="/leads" info={salesStatInfo.leads} />
+        <StatCard label="New Leads This Month" value={stats.newLeadsThisMonth} icon={Users} color="#7C3AED" bg="#F5F3FF" to="/leads" info={salesStatInfo.newLeadsThisMonth} />
+        <StatCard label="Quotations"       value={stats.quotations}      icon={FileText}      color="#7C3AED" bg="#F5F3FF" to="/quotations" info={salesStatInfo.quotations} />
+        <StatCard label="Quotation Value"  value={fmtCurrency(stats.quoteValueThisMonth)} icon={FileText} color="#0891B2" bg="#ECFEFF" to="/quotations" info={salesStatInfo.quoteValueThisMonth} />
+        <StatCard label="Invoice Value"    value={fmtCurrency(stats.invoiceValueThisMonth)} icon={Receipt} color="#059669" bg="#ECFDF5" to="/invoices" info={salesStatInfo.invoiceValueThisMonth} />
+        <StatCard label="Quote Conversion" value={`${stats.quoteConversion ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" info={salesStatInfo.quoteConversion} />
+        <StatCard label="Invoices"         value={stats.invoices}         icon={Receipt}       color="#D97706" bg="#FFFBEB" to="/invoices" info={salesStatInfo.invoices} />
+        <StatCard label="Overdue Invoices" value={stats.overdueInvoices} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/invoices" info={salesStatInfo.overdueInvoices} />
       </div>
 
       <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
@@ -501,14 +555,14 @@ function ServiceDashboard({ firstName }) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard label="Open Tickets"     value={stats.openTickets}    icon={Ticket}        color="#D97706" bg="#FFFBEB" to="/tickets" />
-        <StatCard label="Closed Tickets"   value={stats.closedTickets}  icon={CheckCircle2}  color="#059669" bg="#ECFDF5" to="/tickets" />
-        <StatCard label="Open Tasks"       value={stats.openTasks}      icon={ClipboardList} color="#0891B2" bg="#ECFEFF" to="/tasks" />
-        <StatCard label="Onsite Tickets"   value={stats.onsiteTickets}  icon={MapPin}        color="#7C3AED" bg="#F5F3FF" to="/onsite-tickets" />
-        <StatCard label="Overdue Tickets"  value={stats.overdueTickets} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/tickets" />
-        <StatCard label="Due Today"        value={stats.dueToday}       icon={Gauge}         color="#2563EB" bg="#EFF6FF" to="/tasks" />
-        <StatCard label="Work Completion"  value={`${stats.completionRate ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" />
-        <StatCard label="Open RMA"          value={stats.rmaCount}       icon={RotateCcw}     color="#059669" bg="#ECFDF5" to="/rma" />
+        <StatCard label="Open Tickets"     value={stats.openTickets}    icon={Ticket}        color="#D97706" bg="#FFFBEB" to="/tickets" info={serviceStatInfo.openTickets} />
+        <StatCard label="Closed Tickets"   value={stats.closedTickets}  icon={CheckCircle2}  color="#059669" bg="#ECFDF5" to="/tickets" info={serviceStatInfo.closedTickets} />
+        <StatCard label="Open Tasks"       value={stats.openTasks}      icon={ClipboardList} color="#0891B2" bg="#ECFEFF" to="/tasks" info={serviceStatInfo.openTasks} />
+        <StatCard label="Onsite Tickets"   value={stats.onsiteTickets}  icon={MapPin}        color="#7C3AED" bg="#F5F3FF" to="/onsite-tickets" info={serviceStatInfo.onsiteTickets} />
+        <StatCard label="Overdue Tickets"  value={stats.overdueTickets} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/tickets" info={serviceStatInfo.overdueTickets} />
+        <StatCard label="Due Today"        value={stats.dueToday}       icon={Gauge}         color="#2563EB" bg="#EFF6FF" to="/tasks" info={serviceStatInfo.dueToday} />
+        <StatCard label="Work Completion"  value={`${stats.completionRate ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" info={serviceStatInfo.completionRate} />
+        <StatCard label="Open RMA"          value={stats.rmaCount}       icon={RotateCcw}     color="#059669" bg="#ECFDF5" to="/rma" info={serviceStatInfo.rmaCount} />
       </div>
 
       <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
