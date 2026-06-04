@@ -59,10 +59,13 @@ const stageColor = (name = '') => {
   if (n.startsWith('closed'))  return 'bg-gray-200 text-gray-700'
   if (n.includes('won'))       return 'bg-green-100 text-green-700'
   if (n.includes('lost'))      return 'bg-red-100 text-red-700'
+  if (n.includes('open'))      return 'bg-blue-100 text-blue-700'
   if (n.includes('new'))       return 'bg-blue-100 text-blue-700'
   if (n.includes('contact'))   return 'bg-cyan-100 text-cyan-700'
   if (n.includes('follow'))    return 'bg-yellow-100 text-yellow-700'
   if (n.includes('qualif'))    return 'bg-indigo-100 text-indigo-700'
+  if (n.includes('negotiation')) return 'bg-orange-100 text-orange-700'
+  if (n.includes('propose') || n.includes('quote')) return 'bg-purple-100 text-purple-700'
   if (n.includes('proposal'))  return 'bg-purple-100 text-purple-700'
   if (n.includes('complete'))  return 'bg-emerald-100 text-emerald-700'
   return 'bg-gray-100 text-gray-600'
@@ -263,13 +266,6 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           <h1 className="text-xl font-semibold text-gray-900">Lead Information</h1>
         </div>
         <div className="flex items-center gap-2">
-          {lead.status && (
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${stageColor(statusName)}`}>{statusName}</span>
-          )}
-          <button onClick={() => setShowActivityForm(v => !v)}
-            className="flex items-center gap-2 px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
-            <Plus size={14} /> Update Progress
-          </button>
           <button onClick={onEdit}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
             <Pencil size={14} /> Edit
@@ -304,14 +300,78 @@ function LeadDetail({ leadId, onBack, onEdit }) {
         </div>
         <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Activity Status</p>
-          <p className="mt-1 text-sm font-semibold text-gray-900">{latestActivity?.status || '—'}</p>
+          <p className="mt-1">
+            {latestActivity?.status ? (
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activityStatusColor(latestActivity.status)}`}>{latestActivity.status}</span>
+            ) : (
+              <span className="text-sm font-semibold text-gray-900">—</span>
+            )}
+          </p>
         </div>
+      </div>
+
+      {/* Lead Info */}
+      <div className="bg-white rounded-lg border border-gray-200 mb-4">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Lead Information</h2>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-10">
+          <table className="text-sm w-full">
+            <tbody>
+              {[
+                ['Company Name', lead.company_name || '—'],
+                ['Address', [lead.address1, lead.address2].filter(Boolean).join(', ') || '—'],
+                ['City', lead.city || '—'],
+                ['State', lead.state || '—'],
+                ['Country', lead.country || '—'],
+                ['Postcode', lead.zipcode || '—'],
+                ['Phone', phone],
+                ['Email', lead.email || '—'],
+                ['Website', lead.website || '—'],
+              ].map(([label, val]) => (
+                <tr key={label} className="border-b border-gray-50 last:border-0">
+                  <td className="py-2 pr-4 text-gray-500 font-medium w-36 align-top">{label}</td>
+                  <td className="py-2 text-gray-800">{val}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <table className="text-sm w-full">
+            <tbody>
+              {[
+                ['Lead Source', sourceName],
+                ['Status', lead.status ? <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${stageColor(statusName)}`}>{statusName}</span> : '—'],
+                ['Type', lead.type === 1 ? 'Existing' : 'New'],
+                ['Industry', lead.industry || '—'],
+                ['Account Type', lead.account_type || '—'],
+                ['Assigned To', getUserName(users, lead.assigned_to)],
+                ['Created By', getUserName(users, lead.user_id)],
+                ['Contact Name', [lead.salutation, lead.first_name, lead.last_name].filter(Boolean).join(' ') || '—'],
+                ['Contact Mobile', lead.contact_mobile_number || '—'],
+                ['Contact Email', lead.contact_email || '—'],
+                ['Created', fmt(lead.created_at)],
+              ].map(([label, val]) => (
+                <tr key={label} className="border-b border-gray-50 last:border-0">
+                  <td className="py-2 pr-4 text-gray-500 font-medium w-36 align-top">{label}</td>
+                  <td className="py-2 text-gray-800">{val}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mb-4 flex justify-end">
+        <button onClick={() => setShowActivityForm(v => !v)}
+          className="flex items-center gap-2 px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+          <Plus size={14} /> New Update
+        </button>
       </div>
 
       {showActivityForm && (
         <form onSubmit={saveActivity} className="bg-white rounded-lg border border-gray-200 p-5 mb-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Update Lead Progress</h2>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">New Activity Update</h2>
             <button type="button" onClick={() => setShowActivityForm(false)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
           </div>
           {activityError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{activityError}</div>}
@@ -369,57 +429,6 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           </div>
         </form>
       )}
-
-      {/* Lead Info */}
-      <div className="bg-white rounded-lg border border-gray-200 mb-4">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Lead Information</h2>
-        </div>
-        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-10">
-          <table className="text-sm w-full">
-            <tbody>
-              {[
-                ['Company Name', lead.company_name || '—'],
-                ['Address', [lead.address1, lead.address2].filter(Boolean).join(', ') || '—'],
-                ['City', lead.city || '—'],
-                ['State', lead.state || '—'],
-                ['Country', lead.country || '—'],
-                ['Postcode', lead.zipcode || '—'],
-                ['Phone', phone],
-                ['Email', lead.email || '—'],
-                ['Website', lead.website || '—'],
-              ].map(([label, val]) => (
-                <tr key={label} className="border-b border-gray-50 last:border-0">
-                  <td className="py-2 pr-4 text-gray-500 font-medium w-36 align-top">{label}</td>
-                  <td className="py-2 text-gray-800">{val}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <table className="text-sm w-full">
-            <tbody>
-              {[
-                ['Lead Source', sourceName],
-                ['Status', statusName],
-                ['Type', lead.type === 1 ? 'Existing' : 'New'],
-                ['Industry', lead.industry || '—'],
-                ['Account Type', lead.account_type || '—'],
-                ['Assigned To', getUserName(users, lead.assigned_to)],
-                ['Created By', getUserName(users, lead.user_id)],
-                ['Contact Name', [lead.salutation, lead.first_name, lead.last_name].filter(Boolean).join(' ') || '—'],
-                ['Contact Mobile', lead.contact_mobile_number || '—'],
-                ['Contact Email', lead.contact_email || '—'],
-                ['Created', fmt(lead.created_at)],
-              ].map(([label, val]) => (
-                <tr key={label} className="border-b border-gray-50 last:border-0">
-                  <td className="py-2 pr-4 text-gray-500 font-medium w-36 align-top">{label}</td>
-                  <td className="py-2 text-gray-800">{val}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       {/* Activity History */}
       <div className="bg-white rounded-lg border border-gray-200">
