@@ -8,10 +8,9 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../lib/legacyUsers'
-import { fetchAllRows } from '../lib/fetchAllRows'
+import { getLegacyUserId } from '../lib/legacyUsers'
 import { displayText } from '../lib/displayText'
-import { isSalesRole, isServiceRole, roleLabel, ROLE_SALES, ROLE_SALES_MANAGER } from '../lib/roles'
+import { isSalesRole, isServiceRole } from '../lib/roles'
 
 // ── Shared loading spinner ────────────────────────────────────────
 function DashboardSpinner({ label }) {
@@ -74,19 +73,6 @@ function fmtCurrency(value) {
   return `MYR ${Number(value || 0).toLocaleString('en-MY', { maximumFractionDigits: 0 })}`
 }
 
-function dateOnly(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function monthStartIso() {
-  const now = new Date()
-  return dateOnly(new Date(now.getFullYear(), now.getMonth(), 1))
-}
-
-function isThisMonth(value, start = monthStartIso()) {
-  return String(value || '').slice(0, 10) >= start
-}
-
 function monthValue(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
@@ -100,23 +86,6 @@ function monthOptions(count = 12) {
       label: date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
     }
   })
-}
-
-function monthRange(value) {
-  const [year, month] = String(value || monthValue()).split('-').map(Number)
-  return {
-    start: dateOnly(new Date(year, month - 1, 1)),
-    end: dateOnly(new Date(year, month, 1)),
-  }
-}
-
-function isInMonth(value, range) {
-  const date = String(value || '').slice(0, 10)
-  return date >= range.start && date < range.end
-}
-
-function earlierDate(a, b) {
-  return String(a) < String(b) ? a : b
 }
 
 function csvValue(value) {
@@ -137,119 +106,6 @@ function downloadCsv(filename, headers, rows) {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
-}
-
-function isClosedLeadStatus(status) {
-  const value = String(status || '').toLowerCase()
-  return value.includes('closed') || ['won', 'lost', 'complete', 'completed'].includes(value)
-}
-
-function isActiveUserStatus(status) {
-  const value = String(status ?? '').trim().toLowerCase()
-  return !['inactive', 'resigned', 'disabled', '0', 'false'].includes(value)
-}
-
-function serviceDashboardRoleLabel(roleId) {
-  return roleLabel(roleId)
-}
-
-function addStaffMetric(map, allowedStaffById, assignee, updates) {
-  const key = assignee ? String(assignee) : ''
-  if (!key || !allowedStaffById.has(key)) return
-  if (!map[key]) map[key] = { ...allowedStaffById.get(key) }
-  Object.entries(updates).forEach(([field, value]) => {
-    map[key][field] += value
-  })
-}
-
-function seedServiceStaffMetrics(map, staffUsers) {
-  staffUsers.forEach(user => {
-    const key = String(user.old_user_id || user.id || '')
-    if (!key) return
-    if (!map[key]) {
-      map[key] = {
-        id: key,
-        name: `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—',
-        role: serviceDashboardRoleLabel(user.role_id),
-        openTickets: 0,
-        openTasks: 0,
-        openOnsites: 0,
-        completed: 0,
-        overdue: 0,
-      }
-    } else {
-      map[key].role = serviceDashboardRoleLabel(user.role_id)
-      if (map[key].name === '—') {
-        map[key].name = `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—'
-      }
-    }
-  })
-}
-
-function buildAllowedServiceStaffMap(staffUsers) {
-  return new Map(staffUsers.map(user => {
-    const key = String(user.old_user_id || user.id || '')
-    return [key, {
-      id: key,
-      name: `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '—',
-      role: serviceDashboardRoleLabel(user.role_id),
-      openTickets: 0,
-      openTasks: 0,
-      openOnsites: 0,
-      completed: 0,
-      overdue: 0,
-    }]
-  }).filter(([key]) => key))
-}
-
-function normalizePersonName(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function buildSalesUserIndex(users) {
-  const byId = new Map()
-  const byName = new Map()
-  users.forEach(user => {
-    const name = `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim()
-    const commaName = `${user.first_name || ''}, ${user.last_name || ''}`.replace(/\s+/g, ' ').trim()
-    const record = { ...user, name }
-    byId.set(String(user.id), record)
-    if (normalizePersonName(name)) byName.set(normalizePersonName(name), record)
-    if (normalizePersonName(commaName)) byName.set(normalizePersonName(commaName), record)
-  })
-  return { byId, byName }
-}
-
-function resolveSalesUser(index, owner) {
-  const raw = String(owner || '').trim()
-  if (!raw) return null
-  return index.byId.get(raw) || index.byName.get(normalizePersonName(raw)) || null
-}
-
-function addSalesMetric(map, salesIndex, owner, updates) {
-  const salesUser = resolveSalesUser(salesIndex, owner)
-  if (!salesUser) return
-  const key = String(salesUser.id)
-  if (!map[key]) {
-    map[key] = {
-      id: key,
-      name: salesUser.name,
-      openLeads: 0,
-      wonLeads: 0,
-      lostLeads: 0,
-      activities: 0,
-      quotations: 0,
-      quotationValue: 0,
-      converted: 0,
-      invoiceValue: 0,
-    }
-  }
-  Object.entries(updates).forEach(([field, value]) => {
-    map[key][field] += value
-  })
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -378,173 +234,37 @@ function SalesDashboard({ firstName }) {
 
   useEffect(() => {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
-    const monthStart = monthStartIso()
-    const selectedRange = monthRange(performanceMonth)
-    const staleDate = new Date()
-    staleDate.setDate(staleDate.getDate() - 7)
-    const staleIso = staleDate.toISOString().split('T')[0]
-    const salesMetricStart = earlierDate(selectedRange.start, monthStart)
-    const activityMetricStart = earlierDate(selectedRange.start, staleIso)
     const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
 
-    let customerCountQuery = supabase.from('customer').select('id', { count: 'exact', head: true })
-    let leadCountQuery = supabase.from('sales_lead').select('id', { count: 'exact', head: true })
-    let quotationCountQuery = supabase.from('quotation').select('id', { count: 'exact', head: true })
-    let invoiceCountQuery = supabase.from('invoice').select('id', { count: 'exact', head: true })
-    let overdueInvoiceQuery = supabase.from('invoice').select('id', { count: 'exact', head: true }).lt('due_date', today)
+    const dashboardSummaryQuery = supabase.rpc('get_sales_dashboard_summary', {
+      p_month: performanceMonth,
+      p_current_user_id: currentLegacyUserId || null,
+      p_restricted: isSalesRestricted,
+    })
     let recentActivitiesQuery = supabase.from('activity').select('id, user_id, assigned_to, type, date, description, company_id').order('date', { ascending: false }).limit(8)
     let recentLeadsQuery = supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').order('id', { ascending: false }).limit(5)
 
     if (isSalesRestricted) {
-      customerCountQuery = customerCountQuery.or(`assignto.eq.${currentLegacyUserId},user_id.eq.${currentLegacyUserId}`)
-      leadCountQuery = leadCountQuery.eq('assigned_to', currentLegacyUserId)
-      quotationCountQuery = quotationCountQuery.eq('user_id', currentLegacyUserId)
-      invoiceCountQuery = invoiceCountQuery.eq('user_id', currentLegacyUserId)
-      overdueInvoiceQuery = overdueInvoiceQuery.eq('user_id', currentLegacyUserId)
       recentActivitiesQuery = recentActivitiesQuery.or(`assigned_to.eq.${currentLegacyUserId},user_id.eq.${currentLegacyUserId}`)
       recentLeadsQuery = recentLeadsQuery.eq('assigned_to', currentLegacyUserId)
     }
 
-    let allLeadsQuery = supabase
-      .from('sales_lead')
-      .select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at')
-
-    let performanceActivitiesQuery = supabase
-      .from('activity')
-      .select('id, lead_id, user_id, assigned_to, type, status, date, description, created_at')
-      .gte('created_at', activityMetricStart)
-
-    let performanceQuotationsQuery = supabase
-      .from('quotation')
-      .select('id, user_id, number, date, sales_person, total, isconvert')
-      .gte('date', salesMetricStart)
-
-    let performanceInvoicesQuery = supabase
-      .from('invoice')
-      .select('id, user_id, invoice_number, date, sales_person, total')
-      .gte('date', salesMetricStart)
-
     Promise.all([
-      customerCountQuery,
-      leadCountQuery,
-      quotationCountQuery,
-      invoiceCountQuery,
-      overdueInvoiceQuery,
+      dashboardSummaryQuery,
       recentActivitiesQuery,
       recentLeadsQuery,
-      allLeadsQuery,
-      performanceActivitiesQuery,
-      performanceQuotationsQuery,
-      performanceInvoicesQuery,
       supabase.from('stage').select('id, name').order('name'),
-      fetchAssignableUsers(supabase),
-      supabase.from('users').select('old_user_id, first_name, last_name').in('role_id', [ROLE_SALES, ROLE_SALES_MANAGER]).neq('status', 'Inactive').order('first_name'),
-    ]).then(([cust, leads, quot, unpaidInv, overdue, acts, rLeads, allLeads, allActivities, allQuotations, allInvoices, stageRows, users, salesUsersResult]) => {
-      const usersList = users || []
-      const salesUsers = (salesUsersResult.data || []).map(user => ({
-        id: user.old_user_id,
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-      }))
-      const salesIndex = buildSalesUserIndex(salesUsers)
-      const leadRows = allLeads.data || []
-      const activityRows = allActivities.data || []
-      const quotationRows = allQuotations.data || []
-      const invoiceRows = allInvoices.data || []
+    ]).then(([summaryResult, acts, rLeads, stageRows]) => {
+      const summary = summaryResult.data || {}
       const stageLookup = Object.fromEntries((stageRows.data || []).map(stage => [String(stage.id), stage.name]))
       const getLeadStatusName = (status) => status ? (stageLookup[String(status)] || String(status)) : 'Open'
-      const scopedLeadRows = isSalesRestricted ? leadRows.filter(lead => String(lead.assigned_to) === String(currentLegacyUserId)) : leadRows
-      const scopedLeadIds = new Set(scopedLeadRows.map(lead => String(lead.id)))
-      const scopedActivityRows = isSalesRestricted
-        ? activityRows.filter(activity =>
-          String(activity.assigned_to) === String(currentLegacyUserId) ||
-          String(activity.user_id) === String(currentLegacyUserId) ||
-          scopedLeadIds.has(String(activity.lead_id || '')))
-        : activityRows
-      const scopedQuotationRows = isSalesRestricted ? quotationRows.filter(row => String(row.user_id) === String(currentLegacyUserId)) : quotationRows
-      const scopedInvoiceRows = isSalesRestricted ? invoiceRows.filter(row => String(row.user_id) === String(currentLegacyUserId)) : invoiceRows
-      const openLeads = scopedLeadRows.filter(lead => !isClosedLeadStatus(getLeadStatusName(lead.status)))
-      const newLeadsThisMonth = scopedLeadRows.filter(lead => isThisMonth(lead.created_at, monthStart)).length
-      const quoteValueThisMonth = scopedQuotationRows
-        .filter(row => isThisMonth(row.date, monthStart))
-        .reduce((sum, row) => sum + Number(row.total || 0), 0)
-      const invoiceValueThisMonth = scopedInvoiceRows
-        .filter(row => isThisMonth(row.date, monthStart))
-        .reduce((sum, row) => sum + Number(row.total || 0), 0)
-      const convertedQuotes = scopedQuotationRows.filter(row => row.isconvert === 1).length
-      const salesMap = {}
 
-      leadRows.forEach(lead => {
-        const status = getLeadStatusName(lead.status).toLowerCase()
-        addSalesMetric(salesMap, salesIndex, lead.assigned_to, {
-          openLeads: isClosedLeadStatus(status) ? 0 : 1,
-          wonLeads: status.includes('won') ? 1 : 0,
-          lostLeads: status.includes('lost') ? 1 : 0,
-        })
-      })
-      activityRows
-        .filter(activity => isInMonth(activity.date || activity.created_at, selectedRange))
-        .forEach(activity => {
-          addSalesMetric(salesMap, salesIndex, activity.assigned_to, { activities: 1 })
-        })
-      quotationRows
-        .filter(row => isInMonth(row.date, selectedRange))
-        .forEach(row => {
-          addSalesMetric(salesMap, salesIndex, row.sales_person || row.user_id, {
-            quotations: 1,
-            quotationValue: Number(row.total || 0),
-            converted: row.isconvert === 1 ? 1 : 0,
-          })
-        })
-      invoiceRows
-        .filter(row => isInMonth(row.date, selectedRange))
-        .forEach(row => {
-          addSalesMetric(salesMap, salesIndex, row.sales_person || row.user_id, { invoiceValue: Number(row.total || 0) })
-        })
-
-      const lastActivityByLead = {}
-      scopedActivityRows.forEach(activity => {
-        if (!activity.lead_id) return
-        const date = String(activity.date || activity.created_at || '').slice(0, 10)
-        if (!lastActivityByLead[activity.lead_id] || date > lastActivityByLead[activity.lead_id]) {
-          lastActivityByLead[activity.lead_id] = date
-        }
-      })
-      const followUps = openLeads
-        .map(lead => {
-          const lastActivity = lastActivityByLead[lead.id] || String(lead.updated_at || lead.created_at || '').slice(0, 10)
-          return {
-            id: lead.id,
-            name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || 'Unnamed lead',
-            company: lead.company_name || '—',
-            owner: formatUserName(usersList, lead.assigned_to),
-            status: getLeadStatusName(lead.status),
-            lastActivity,
-          }
-        })
-        .filter(lead => !lead.lastActivity || lead.lastActivity <= staleIso)
-        .sort((a, b) => String(a.lastActivity).localeCompare(String(b.lastActivity)))
-        .slice(0, 8)
-
-      setStats({
-        customers:      cust.count    || 0,
-        leads:          openLeads.length,
-        newLeadsThisMonth,
-        quotations:     quot.count    || 0,
-        invoices: unpaidInv.count || 0,
-        overdueInvoices: overdue.count || 0,
-        quoteValueThisMonth,
-        invoiceValueThisMonth,
-        quoteConversion: scopedQuotationRows.length > 0 ? Math.round((convertedQuotes / scopedQuotationRows.length) * 100) : 0,
-      })
+      setStats(summary.stats || {})
       setRecentActivities(acts.data || [])
       setRecentLeads((rLeads.data || []).map(lead => ({ ...lead, status_name: getLeadStatusName(lead.status) })))
-      setSalesRows(Object.values(salesMap)
-        .sort((a, b) => (b.invoiceValue + b.quotationValue + b.openLeads) - (a.invoiceValue + a.quotationValue + a.openLeads))
-        .slice(0, 8))
-      setFollowUpItems(followUps)
+      setSalesRows(summary.salesRows || [])
+      setFollowUpItems(summary.followUpItems || [])
     }).finally(() => setLoading(false))
   }, [performanceMonth, profile])
 
@@ -724,122 +444,19 @@ function ServiceDashboard({ firstName }) {
 
   useEffect(() => {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
-    const selectedRange = monthRange(staffMonth)
-    const serviceWorkDate = (row, ...fields) => fields.map(field => row?.[field]).find(Boolean)
-    const isServiceWorkInMonth = (row, ...fields) => isInMonth(serviceWorkDate(row, ...fields), selectedRange)
     Promise.all([
-      supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('onsiteticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0).lt('due_date', today),
-      supabase.from('rma').select('id', { count: 'exact', head: true }).is('date_return', null),
+      supabase.rpc('get_service_dashboard_summary', { p_month: staffMonth }),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
       supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
-      fetchAllRows('ticket', 'id, ticket_id, company_name, assigned_to, date, due_date, priority, is_completed, status', 'id', { ascending: false }),
-      fetchAllRows('task', 'id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed', 'id', { ascending: false }),
-      fetchAllRows('onsiteticket', 'id, ticket_id, issue_description, product, assigned_to, date, is_completed, status', 'id', { ascending: false }),
-      fetchAssignableUsers(supabase),
-      supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').order('first_name'),
-    ]).then(([tick, tsk, onsite, overdue, rma, rTick, rTask, allTickets, allTasks, allOnsites, users, serviceStaff]) => {
-      const tickets = allTickets || []
-      const tasks = allTasks || []
-      const onsites = allOnsites || []
-      const activeServiceStaff = (serviceStaff.data || []).filter(user => isActiveUserStatus(user.status))
-      const allowedStaffById = buildAllowedServiceStaffMap(activeServiceStaff)
-      const ticketNumberById = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticket_id]))
-      const completedWork = tasks.filter(t => t.is_completed == 1 && isServiceWorkInMonth(t, 'enddate', 'startdate')).length
-        + onsites.filter(o => (o.is_completed == 1 || o.status === 'Completed') && isServiceWorkInMonth(o, 'date')).length
-        + tickets.filter(t => (t.is_completed == 1 || t.status === 'Completed') && isServiceWorkInMonth(t, 'due_date', 'date')).length
-      const pendingWork = tasks.filter(t => t.is_completed != 1).length + onsites.filter(o => o.is_completed != 1 && o.status !== 'Completed').length
-      const dueToday = tasks.filter(t => t.is_completed != 1 && t.enddate === today).length
-        + tickets.filter(t => t.is_completed != 1 && t.due_date === today).length
-
-      const staffMap = {}
-      seedServiceStaffMetrics(staffMap, activeServiceStaff)
-      tickets.forEach(ticket => {
-        if (ticket.is_completed == 1 || ticket.status === 'Completed') {
-          if (isServiceWorkInMonth(ticket, 'due_date', 'date')) {
-            addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, { completed: 1 })
-          }
-          return
-        }
-        addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, {
-          openTickets: 1,
-          overdue: ticket.due_date && ticket.due_date < today ? 1 : 0,
-        })
-      })
-      tasks.forEach(task => {
-        if (task.is_completed == 1) {
-          if (isServiceWorkInMonth(task, 'enddate', 'startdate')) {
-            addStaffMetric(staffMap, allowedStaffById, task.assigned_to, { completed: 1 })
-          }
-          return
-        }
-        addStaffMetric(staffMap, allowedStaffById, task.assigned_to, {
-          openTasks: 1,
-          overdue: task.enddate && task.enddate < today ? 1 : 0,
-        })
-      })
-      onsites.forEach(onsiteRow => {
-        if (onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed') {
-          if (isServiceWorkInMonth(onsiteRow, 'date')) {
-            addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, { completed: 1 })
-          }
-          return
-        }
-        addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, { openOnsites: 1 })
-      })
-
-      const attention = [
-        ...tickets
-          .filter(ticket => ticket.is_completed != 1 && ticket.due_date && ticket.due_date < today)
-          .map(ticket => ({
-            key: `ticket-${ticket.id}`,
-            type: 'Ticket',
-            label: `TID${ticket.ticket_id}`,
-            text: ticket.company_name || ticket.status || 'Open ticket',
-            date: ticket.due_date,
-            owner: formatUserName(users, ticket.assigned_to),
-            to: '/tickets',
-            state: { ticketId: ticket.id },
-          })),
-        ...tasks
-          .filter(task => task.is_completed != 1 && task.enddate && task.enddate < today)
-          .map(task => ({
-            key: `task-${task.id}`,
-            type: 'Task',
-            label: task.servicetype || `Task #${task.id}`,
-            text: task.ticket_id ? `TID${ticketNumberById[task.ticket_id] || task.ticket_id}` : 'Open task',
-            date: task.enddate,
-            owner: formatUserName(users, task.assigned_to),
-            to: '/tasks',
-          })),
-      ].sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(0, 8)
-
-      setStats({
-        openTickets:    tick.count   || 0,
-        openTasks:      tsk.count    || 0,
-        onsiteTickets:  onsite.count || 0,
-        overdueTickets: overdue.count || 0,
-        rmaCount:       rma.count    || 0,
-        completedWork,
-        pendingWork,
-        dueToday,
-        completionRate: completedWork + pendingWork > 0 ? Math.round((completedWork / (completedWork + pendingWork)) * 100) : 0,
-      })
+    ]).then(([summaryResult, rTick, rTask]) => {
+      const summary = summaryResult.data || {}
+      setStats(summary.stats || {})
       setRecentTickets(rTick.data || [])
       setRecentTasks(rTask.data || [])
-      const nextStaffRows = Object.values(staffMap)
-        .map(row => ({ ...row, pending: row.openTickets + row.openTasks + row.openOnsites }))
-        .sort((a, b) => (b.pending + b.overdue) - (a.pending + a.overdue))
+      const nextStaffRows = summary.staffRows || []
       setStaffRows(nextStaffRows)
-      setStaffLoadNote(serviceStaff.error
-        ? `Unable to load users: ${serviceStaff.error.message}`
-        : nextStaffRows.length === 0
-          ? 'No active users found. Check user status in Settings > Users.'
-          : '')
-      setAttentionItems(attention)
+      setStaffLoadNote(nextStaffRows.length === 0 ? 'No active users found. Check user status in Settings > Users.' : '')
+      setAttentionItems(summary.attentionItems || [])
     }).finally(() => setLoading(false))
   }, [staffMonth])
 
