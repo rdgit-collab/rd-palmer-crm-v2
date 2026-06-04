@@ -106,6 +106,7 @@ function formatDaysOverdue(days) {
 }
 
 function formatDaysLeft(days) {
+  if (days === null || days === undefined || days === '') return 'Nil'
   const value = Number(days ?? 0)
   if (value < 0) return `${Math.abs(value)} ${Math.abs(value) === 1 ? 'day' : 'days'} overdue`
   if (value === 0) return 'Due today'
@@ -640,8 +641,8 @@ function ServiceDashboard({ firstName }) {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-xs text-gray-500">{displayText(t.assignedTo, 'Unassigned')}</p>
-                    <p className={`text-xs font-medium ${Number(t.daysLeft) < 0 ? 'text-red-600' : 'text-gray-700'}`}>
-                      {fmtDate(t.dueDate || t.due_date)} · {formatDaysLeft(t.daysLeft)}
+                    <p className={`text-xs font-medium ${t.daysLeft !== null && t.daysLeft !== undefined && Number(t.daysLeft) < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+                      {(t.dueDate || t.due_date) ? `${fmtDate(t.dueDate || t.due_date)} · ${formatDaysLeft(t.daysLeft)}` : 'Nil'}
                     </p>
                   </div>
                 </Link>

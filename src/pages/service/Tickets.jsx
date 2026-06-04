@@ -14,6 +14,7 @@ import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLef
 const PAGE_SIZE = 30
 const TICKET_LIST_COLUMNS = 'id, ticket_id, date, warranty, category, company_id, company_name, contact_person, description, priority, due_date, status, is_completed, assigned_to, remark, user_id, created_at, serial_number'
 const TICKET_STATUSES = ['Open', 'Pending', 'Completed']
+const TICKET_STATUS_FILTERS = [...TICKET_STATUSES, 'Overdue']
 const SERIAL_SEARCH_TIMEOUT_MS = 6000
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
@@ -316,7 +317,11 @@ export default function Tickets() {
     }
     if (priorityFilter) q = q.eq('priority', priorityFilter)
     if (assignedFilter) q = q.eq('assigned_to', parseInt(assignedFilter))
-    if (statusFilter) q = q.eq('status', statusFilter)
+    if (statusFilter === 'Overdue') {
+      q = q.lt('due_date', new Date().toISOString().split('T')[0])
+    } else if (statusFilter) {
+      q = q.eq('status', statusFilter)
+    }
     if (monthFilter) {
       const range = monthRange(monthFilter)
       q = q.gte('date', range.start).lt('date', range.end)
@@ -1015,11 +1020,15 @@ export default function Tickets() {
           </select>
           <select
             value={statusFilter}
-            onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+            onChange={e => {
+              setStatusFilter(e.target.value)
+              if (e.target.value === 'Overdue') setTab('open')
+              setPage(1)
+            }}
             className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
           >
             <option value="">All Status</option>
-            {TICKET_STATUSES.map(status => <option key={status} value={status}>{status}</option>)}
+            {TICKET_STATUS_FILTERS.map(status => <option key={status} value={status}>{status}</option>)}
           </select>
         </div>
 
