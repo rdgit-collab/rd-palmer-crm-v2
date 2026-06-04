@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
@@ -252,6 +252,7 @@ const emptyForm = {
 export default function Tasks() {
   const { user, profile } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   const [view, setView]           = useState('list')
   const [tab, setTab]             = useState('open')
   const [scope, setScope]         = useState('all')
@@ -527,6 +528,15 @@ export default function Tasks() {
     setSaving(false)
     setUploadFile(null)
     fetchTasks()
+    setView('list')
+  }
+
+  const handleDetailBack = () => {
+    const returnToTicketId = location.state?.returnToTicketId
+    if (returnToTicketId) {
+      navigate('/tickets', { state: { ticketId: returnToTicketId } })
+      return
+    }
     setView('list')
   }
 
@@ -883,7 +893,7 @@ export default function Tasks() {
       <div className="p-6 max-w-3xl">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
+            <button onClick={handleDetailBack} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
             <h1 className="text-2xl font-bold text-gray-900">Task Detail</h1>
           </div>
           <div className="flex gap-2">
