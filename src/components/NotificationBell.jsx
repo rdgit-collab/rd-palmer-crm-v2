@@ -7,11 +7,18 @@ import { displayText } from '../lib/displayText'
 
 function timeAgo(ts) {
   if (!ts) return ''
-  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000)
+  const diff = Math.floor((Date.now() - parseNotificationTime(ts).getTime()) / 1000)
   if (diff < 60)   return 'just now'
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   return `${Math.floor(diff / 86400)}d ago`
+}
+
+function parseNotificationTime(value) {
+  const text = String(value || '').trim()
+  if (!text) return new Date(NaN)
+  if (/[zZ]|[+-]\d\d:?\d\d$/.test(text)) return new Date(text)
+  return new Date(`${text.replace(' ', 'T')}Z`)
 }
 
 function notificationLink(item) {
