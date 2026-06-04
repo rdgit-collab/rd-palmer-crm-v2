@@ -13,6 +13,25 @@ import { fetchAllRows } from '../lib/fetchAllRows'
 import { displayText } from '../lib/displayText'
 import { isSalesRole, isServiceRole, roleLabel, ROLE_SALES, ROLE_SALES_MANAGER } from '../lib/roles'
 
+// ── Shared loading spinner ────────────────────────────────────────
+function DashboardSpinner({ label }) {
+  return (
+    <div className="p-6 space-y-6">
+      {label && (
+        <div>
+          <h2 className="text-xl font-bold text-[#111111]">{label}</h2>
+        </div>
+      )}
+      <div className="flex items-center justify-center py-24">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#CC0000] border-t-transparent rounded-full animate-spin" />
+          <span className="text-gray-400 text-sm">Loading…</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Shared stat card ──────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color, bg, to }) {
   const inner = (
@@ -241,9 +260,11 @@ function AdminDashboard({ firstName }) {
   const [stats, setStats] = useState({})
   const [recentTickets, setRecentTickets] = useState([])
   const [recentActivities, setRecentActivities] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!profile) return
+    setLoading(true)
     const today = new Date().toISOString().split('T')[0]
     Promise.all([
       supabase.from('customer').select('id', { count: 'estimated', head: true }),
@@ -259,10 +280,12 @@ function AdminDashboard({ firstName }) {
       setStats({ customers: c.count||0, openTickets: t.count||0, quotations: q.count||0, invoices: inv.count||0, openTasks: tsk.count||0, leads: l.count||0, overdueInvoices: ov.count||0 })
       setRecentTickets(rTick.data || [])
       setRecentActivities(rAct.data || [])
-    })
-  }, [])
+    }).finally(() => setLoading(false))
+  }, [profile])
 
   const today = new Date().toISOString().split('T')[0]
+
+  if (loading) return <DashboardSpinner label={`Good day, ${firstName}!`} />
 
   return (
     <div className="p-6 space-y-6">
@@ -350,9 +373,11 @@ function SalesDashboard({ firstName }) {
   const [salesRows, setSalesRows] = useState([])
   const [followUpItems, setFollowUpItems] = useState([])
   const [performanceMonth, setPerformanceMonth] = useState(monthValue())
+  const [loading, setLoading] = useState(true)
   const performanceMonths = useMemo(() => monthOptions(12), [])
 
   useEffect(() => {
+    setLoading(true)
     const today = new Date().toISOString().split('T')[0]
     const monthStart = monthStartIso()
     const selectedRange = monthRange(performanceMonth)
@@ -520,7 +545,7 @@ function SalesDashboard({ firstName }) {
         .sort((a, b) => (b.invoiceValue + b.quotationValue + b.openLeads) - (a.invoiceValue + a.quotationValue + a.openLeads))
         .slice(0, 8))
       setFollowUpItems(followUps)
-    })
+    }).finally(() => setLoading(false))
   }, [performanceMonth, profile])
 
   function leadStatusColor(s) {
@@ -533,6 +558,8 @@ function SalesDashboard({ firstName }) {
     if (l === 'lost')        return 'bg-red-100 text-red-700'
     return 'bg-gray-100 text-gray-600'
   }
+
+  if (loading) return <DashboardSpinner label={`Good day, ${firstName}!`} />
 
   return (
     <div className="p-6 space-y-6">
@@ -692,9 +719,11 @@ function ServiceDashboard({ firstName }) {
   const [staffLoadNote, setStaffLoadNote] = useState('')
   const [attentionItems, setAttentionItems] = useState([])
   const [staffMonth, setStaffMonth] = useState(monthValue())
+  const [loading, setLoading] = useState(true)
   const staffMonths = useMemo(() => monthOptions(12), [])
 
   useEffect(() => {
+    setLoading(true)
     const today = new Date().toISOString().split('T')[0]
     const selectedRange = monthRange(staffMonth)
     const serviceWorkDate = (row, ...fields) => fields.map(field => row?.[field]).find(Boolean)
@@ -704,7 +733,7 @@ function ServiceDashboard({ firstName }) {
       supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
       supabase.from('onsiteticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
       supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0).lt('due_date', today),
-      supabase.from('rma').select('id', { count: 'exact', head: true }),
+      supabase.from('rma').select('id', { count: 'exact', head: true }).is('date_return', null),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
       supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
       fetchAllRows('ticket', 'id, ticket_id, company_name, assigned_to, date, due_date, priority, is_completed, status', 'id', { ascending: false }),
@@ -719,7 +748,9 @@ function ServiceDashboard({ firstName }) {
       const activeServiceStaff = (serviceStaff.data || []).filter(user => isActiveUserStatus(user.status))
       const allowedStaffById = buildAllowedServiceStaffMap(activeServiceStaff)
       const ticketNumberById = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticket_id]))
-      const completedWork = tasks.filter(t => t.is_completed == 1).length + onsites.filter(o => o.is_completed == 1 || o.status === 'Completed').length
+      const completedWork = tasks.filter(t => t.is_completed == 1 && isServiceWorkInMonth(t, 'enddate', 'startdate')).length
+        + onsites.filter(o => (o.is_completed == 1 || o.status === 'Completed') && isServiceWorkInMonth(o, 'date')).length
+        + tickets.filter(t => (t.is_completed == 1 || t.status === 'Completed') && isServiceWorkInMonth(t, 'due_date', 'date')).length
       const pendingWork = tasks.filter(t => t.is_completed != 1).length + onsites.filter(o => o.is_completed != 1 && o.status !== 'Completed').length
       const dueToday = tasks.filter(t => t.is_completed != 1 && t.enddate === today).length
         + tickets.filter(t => t.is_completed != 1 && t.due_date === today).length
@@ -809,7 +840,7 @@ function ServiceDashboard({ firstName }) {
           ? 'No active users found. Check user status in Settings > Users.'
           : '')
       setAttentionItems(attention)
-    })
+    }).finally(() => setLoading(false))
   }, [staffMonth])
 
   const today = new Date().toISOString().split('T')[0]
@@ -832,6 +863,8 @@ function ServiceDashboard({ firstName }) {
     )
   }
 
+  if (loading) return <DashboardSpinner label={`Good day, ${firstName}!`} />
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -846,7 +879,7 @@ function ServiceDashboard({ firstName }) {
         <StatCard label="Overdue Tickets"  value={stats.overdueTickets} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/tickets" />
         <StatCard label="Due Today"        value={stats.dueToday}       icon={Gauge}         color="#2563EB" bg="#EFF6FF" to="/tasks" />
         <StatCard label="Work Completion"  value={`${stats.completionRate ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" />
-        <StatCard label="RMA Records"      value={stats.rmaCount}       icon={RotateCcw}     color="#059669" bg="#ECFDF5" to="/rma" />
+        <StatCard label="Open RMA"          value={stats.rmaCount}       icon={RotateCcw}     color="#059669" bg="#ECFDF5" to="/rma" />
       </div>
 
       <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
