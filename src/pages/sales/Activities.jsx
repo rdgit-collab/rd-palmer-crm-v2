@@ -83,6 +83,7 @@ export default function Activities() {
   const [rawActivities, setRawActivities] = useState([])
   const [page, setPage]         = useState(1)
   const [total, setTotal]       = useState(0)
+  const [tabCounts, setTabCounts] = useState({})
   const [search, setSearch]     = useState('')
   const [typeFilter, setTF]     = useState('')
   const [assignedFilter, setAssignedFilter] = useState('')
@@ -105,6 +106,51 @@ export default function Activities() {
 
   const leadsById = useMemo(() => Object.fromEntries(leads.map(l => [String(l.id), l])), [leads])
   const customersById = useMemo(() => Object.fromEntries(customers.map(c => [String(c.id), c])), [customers])
+
+  const shouldRestrictToOwnActivities = useCallback((tabId) => (
+    isSalesRestricted && (!isSalesManager || tabId !== 'all')
+  ), [isSalesRestricted, isSalesManager])
+
+  const applyOwnershipFilter = useCallback((query, ownedLeadIds = []) => {
+    const ownershipFilters = [
+      `assigned_to.eq.${currentLegacyUserId}`,
+      `user_id.eq.${currentLegacyUserId}`,
+    ]
+    if (ownedLeadIds.length) ownershipFilters.push(`lead_id.in.(${ownedLeadIds.join(',')})`)
+    return query.or(ownershipFilters.join(','))
+  }, [currentLegacyUserId])
+
+  const applyActivityTabFilter = useCallback((query, tabId) => {
+    if (tabId === 'completed') return query.ilike('status', '%complete%')
+    if (tabId === 'open') return query.not('status', 'ilike', '%complete%')
+    if (tabId === 'today') return query.eq('date', todayString()).not('status', 'ilike', '%complete%')
+    if (tabId === 'tomorrow') return query.eq('date', todayString(1)).not('status', 'ilike', '%complete%')
+    if (tabId === 'overdue') return query.lt('date', todayString()).not('status', 'ilike', '%complete%')
+    if (tabId === 'upcoming') return query.gt('date', todayString(1)).not('status', 'ilike', '%complete%')
+    return query
+  }, [])
+
+  const applyActivityFilters = useCallback((query, { tabId, ownedLeadIds = [], searchLeadIds = [], searchCustomerIds = [], text = '' }) => {
+    let nextQuery = query
+    if (shouldRestrictToOwnActivities(tabId)) nextQuery = applyOwnershipFilter(nextQuery, ownedLeadIds)
+    nextQuery = applyActivityTabFilter(nextQuery, tabId)
+    if (typeFilter) nextQuery = nextQuery.eq('type', typeFilter)
+    if (assignedFilter) nextQuery = nextQuery.eq('assigned_to', assignedFilter)
+
+    if (text) {
+      const searchFilters = [
+        `type.ilike.%${text}%`,
+        `status.ilike.%${text}%`,
+        `priority.ilike.%${text}%`,
+        `description.ilike.%${text}%`,
+      ]
+      if (searchLeadIds.length) searchFilters.push(`lead_id.in.(${searchLeadIds.join(',')})`)
+      if (searchCustomerIds.length) searchFilters.push(`company_id.in.(${searchCustomerIds.join(',')})`)
+      nextQuery = nextQuery.or(searchFilters.join(','))
+    }
+
+    return nextQuery
+  }, [applyActivityTabFilter, applyOwnershipFilter, assignedFilter, shouldRestrictToOwnActivities, typeFilter])
 
   const enrichActivity = useCallback((activity) => {
     const lead = activity.lead_id ? leadsById[String(activity.lead_id)] : null
@@ -129,7 +175,7 @@ export default function Activities() {
     ])
 
     let ownedLeadIds = []
-    if (isSalesRestricted && !isSalesManager) {
+    if (isSalesRestricted) {
       const { data: ownedLeads } = await supabase
         .from('sales_lead')
         .select('id')
@@ -142,25 +188,9 @@ export default function Activities() {
       .select(ACTIVITY_COLUMNS, { count: 'estimated' })
       .order('id', { ascending: false })
 
-    if (isSalesRestricted && !isSalesManager) {
-      const ownershipFilters = [
-        `assigned_to.eq.${currentLegacyUserId}`,
-        `user_id.eq.${currentLegacyUserId}`,
-      ]
-      if (ownedLeadIds.length) ownershipFilters.push(`lead_id.in.(${ownedLeadIds.join(',')})`)
-      activityQuery = activityQuery.or(ownershipFilters.join(','))
-    }
-
-    if (tab === 'completed') activityQuery = activityQuery.ilike('status', '%complete%')
-    if (tab === 'today') activityQuery = activityQuery.eq('date', todayString())
-    if (tab === 'tomorrow') activityQuery = activityQuery.eq('date', todayString(1))
-    if (tab === 'overdue') activityQuery = activityQuery.lt('date', todayString())
-    if (tab === 'upcoming') activityQuery = activityQuery.gt('date', todayString(1))
-    if (tab === 'open') activityQuery = activityQuery.not('status', 'ilike', '%complete%')
-    if (typeFilter) activityQuery = activityQuery.eq('type', typeFilter)
-    if (assignedFilter) activityQuery = activityQuery.eq('assigned_to', assignedFilter)
-
     const text = search.trim()
+    let searchLeadIds = []
+    let searchCustomerIds = []
     if (text) {
       const [leadSearchR, customerSearchR] = await Promise.all([
         supabase
@@ -174,18 +204,11 @@ export default function Activities() {
           .ilike('company_name', `%${text}%`)
           .limit(200),
       ])
-      const leadIds = (leadSearchR.data || []).map(row => row.id).filter(Boolean)
-      const customerIds = (customerSearchR.data || []).map(row => row.id).filter(Boolean)
-      const searchFilters = [
-        `type.ilike.%${text}%`,
-        `status.ilike.%${text}%`,
-        `priority.ilike.%${text}%`,
-        `description.ilike.%${text}%`,
-      ]
-      if (leadIds.length) searchFilters.push(`lead_id.in.(${leadIds.join(',')})`)
-      if (customerIds.length) searchFilters.push(`company_id.in.(${customerIds.join(',')})`)
-      activityQuery = activityQuery.or(searchFilters.join(','))
+      searchLeadIds = (leadSearchR.data || []).map(row => row.id).filter(Boolean)
+      searchCustomerIds = (customerSearchR.data || []).map(row => row.id).filter(Boolean)
     }
+
+    activityQuery = applyActivityFilters(activityQuery, { tabId: tab, ownedLeadIds, searchLeadIds, searchCustomerIds, text })
 
     activityQuery = activityQuery.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const actR = await activityQuery
@@ -209,9 +232,74 @@ export default function Activities() {
     if (!prioR.error) setPriorities(prioR.data || [])
     if (!statusR.error) setActivityStatuses(statusR.data || [])
     setLoading(false)
-  }, [currentLegacyUserId, isSalesRestricted, isSalesManager, tab, search, typeFilter, assignedFilter, page])
+  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, tab, search, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
+
+  const fetchTabCounts = useCallback(async () => {
+    const text = search.trim()
+    let ownedLeadIds = []
+    let searchLeadIds = []
+    let searchCustomerIds = []
+
+    const requests = []
+    if (isSalesRestricted) {
+      requests.push(
+        supabase
+          .from('sales_lead')
+          .select('id')
+          .eq('assigned_to', currentLegacyUserId)
+      )
+    }
+    if (text) {
+      requests.push(
+        supabase
+          .from('sales_lead')
+          .select('id')
+          .or(`company_name.ilike.%${text}%,first_name.ilike.%${text}%,last_name.ilike.%${text}%`)
+          .limit(200)
+      )
+      requests.push(
+        supabase
+          .from('customer')
+          .select('id')
+          .ilike('company_name', `%${text}%`)
+          .limit(200)
+      )
+    }
+
+    const results = requests.length ? await Promise.all(requests) : []
+    let resultIdx = 0
+    if (isSalesRestricted) {
+      ownedLeadIds = (results[resultIdx]?.data || []).map(row => row.id).filter(Boolean)
+      resultIdx += 1
+    }
+    if (text) {
+      searchLeadIds = (results[resultIdx]?.data || []).map(row => row.id).filter(Boolean)
+      searchCustomerIds = (results[resultIdx + 1]?.data || []).map(row => row.id).filter(Boolean)
+    }
+
+    const entries = await Promise.all(visibleTabs.map(async (item) => {
+      let countQuery = supabase
+        .from('activity')
+        .select('id', { count: 'exact', head: true })
+
+      countQuery = applyActivityFilters(countQuery, {
+        tabId: item.id,
+        ownedLeadIds,
+        searchLeadIds,
+        searchCustomerIds,
+        text,
+      })
+
+      const { count, error: countError } = await countQuery
+      return [item.id, countError ? 0 : (count || 0)]
+    }))
+
+    setTabCounts(Object.fromEntries(entries))
+  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, search, visibleTabs])
+
+  useEffect(() => { fetchTabCounts() }, [fetchTabCounts])
 
   const ensureLeadData = async () => {
     if (leadsLoadedRef.current) return
@@ -525,30 +613,10 @@ export default function Activities() {
 
       <div className="flex flex-wrap gap-1 mb-5 border-b border-gray-200">
         {visibleTabs.map(t => {
-          const today = todayString()
-          const tomorrow = todayString(1)
-          const isOwnActivity = (row) => (
-            String(row.assignedTo || '') === String(currentLegacyUserId) ||
-            String(row.user_id || '') === String(currentLegacyUserId) ||
-            String(row.lead?.assigned_to || '') === String(currentLegacyUserId)
-          )
-          const count = rows.filter(r => {
-            if (isSalesRestricted && (!isSalesManager || t.id !== 'all') && !isOwnActivity(r)) return false
-            const completed = isCompleted(r.status)
-            if (t.id === 'all') return true
-            if (t.id === 'open') return !completed
-            if (t.id === 'completed') return completed
-            if (completed) return false
-            if (t.id === 'today') return r.date === today
-            if (t.id === 'tomorrow') return r.date === tomorrow
-            if (t.id === 'overdue') return r.date && r.date < today
-            if (t.id === 'upcoming') return r.date && r.date > tomorrow
-            return true
-          }).length
           return (
             <button key={t.id} onClick={() => { setTab(t.id); setPage(1) }}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-              {t.label} <span className="text-xs text-gray-400">({count})</span>
+              {t.label} <span className="text-xs text-gray-400">({tabCounts[t.id] ?? 0})</span>
             </button>
           )
         })}
