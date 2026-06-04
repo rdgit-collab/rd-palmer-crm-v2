@@ -573,6 +573,7 @@ const SALES_MODULES = [
   { module: 'quotations', label: 'Quotations' },
   { module: 'invoices',   label: 'Invoices' },
   { module: 'tickets',    label: 'Tickets' },
+  { module: 'tasks',      label: 'Tasks' },
 ]
 const SERVICE_MODULES = [
   { module: 'tickets',       label: 'Tickets' },

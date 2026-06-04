@@ -16,6 +16,7 @@ const salesItems = [
   { name: 'Quotations',   href: '/quotations',       icon: FileText,    module: 'quotations' },
   { name: 'Invoices',     href: '/invoices',         icon: Receipt,     module: 'invoices' },
   { name: 'Tickets',      href: '/tickets',          icon: Ticket,      module: 'tickets' },
+  { name: 'Tasks',        href: '/tasks',            icon: Wrench,      module: 'tasks' },
 ]
 
 const serviceItems = [
