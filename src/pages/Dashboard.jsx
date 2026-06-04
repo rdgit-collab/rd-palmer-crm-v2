@@ -69,6 +69,18 @@ function fmtDate(value) {
   return value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'
 }
 
+function formatDaysOverdue(days) {
+  const value = Number(days || 0)
+  return `${value} ${value === 1 ? 'day' : 'days'} overdue`
+}
+
+function formatDaysLeft(days) {
+  const value = Number(days ?? 0)
+  if (value < 0) return `${Math.abs(value)} ${Math.abs(value) === 1 ? 'day' : 'days'} overdue`
+  if (value === 0) return 'Due today'
+  return `${value} ${value === 1 ? 'day' : 'days'} left`
+}
+
 function fmtCurrency(value) {
   return `MYR ${Number(value || 0).toLocaleString('en-MY', { maximumFractionDigits: 0 })}`
 }
@@ -444,17 +456,11 @@ function ServiceDashboard({ firstName }) {
 
   useEffect(() => {
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
-    Promise.all([
-      supabase.rpc('get_service_dashboard_summary', { p_month: staffMonth }),
-      supabase.from('ticket').select('id', { count: 'exact', head: true }).or('is_completed.eq.1,status.eq.Completed'),
-      supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
-      supabase.from('task').select('id, ticket_id, servicetype, startdate, enddate, assigned_to').eq('is_completed', 0).lt('enddate', today).order('enddate', { ascending: true }).limit(5),
-    ]).then(([summaryResult, closedTicketsResult, rTick, rTask]) => {
+    supabase.rpc('get_service_dashboard_summary', { p_month: staffMonth }).then(summaryResult => {
       const summary = summaryResult.data || {}
-      setStats({ ...(summary.stats || {}), closedTickets: closedTicketsResult.count || 0 })
-      setRecentTickets(rTick.data || [])
-      setRecentTasks(rTask.data || [])
+      setStats(summary.stats || {})
+      setRecentTickets(summary.highPriorityTickets || [])
+      setRecentTasks(summary.overdueTasks || [])
       const nextStaffRows = summary.staffRows || []
       setStaffRows(nextStaffRows)
       setStaffLoadNote(summaryResult.error
@@ -466,7 +472,6 @@ function ServiceDashboard({ firstName }) {
     }).finally(() => setLoading(false))
   }, [staffMonth])
 
-  const today = new Date().toISOString().split('T')[0]
   const selectedStaffMonthLabel = staffMonths.find(option => option.value === staffMonth)?.label || staffMonth
   const exportStaffRows = () => {
     downloadCsv(
@@ -568,20 +573,22 @@ function ServiceDashboard({ firstName }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-[#111111] text-sm">Recent Open Tickets</h3>
+            <h3 className="font-semibold text-[#111111] text-sm">High Priority Tickets</h3>
             <Link to="/tickets" className="text-xs text-red-600 hover:underline">View all</Link>
           </div>
-          {recentTickets.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No open tickets.</p> : (
+          {recentTickets.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No high priority tickets.</p> : (
             <div className="space-y-2">
               {recentTickets.map(t => (
-                <Link key={t.id} to="/tickets" state={{ ticketId: t.id }} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <div>
-                    <span className="text-sm font-semibold text-red-600 mr-2">TID{t.ticket_id}</span>
-                    <span className="text-sm text-gray-800">{displayText(t.company_name)}</span>
+                <Link key={t.key || t.id} to={t.to || '/tickets'} state={t.state || { ticketId: t.id }} className="flex items-center justify-between gap-3 py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-red-600">{displayText(t.label, `TID${t.ticket_id}`)}</p>
+                    <p className="text-xs text-gray-500 truncate">{displayText(t.companyName || t.company_name, 'No company')}</p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {t.priority && <span className={`text-xs px-2 py-0.5 rounded ${priorityColor(t.priority)}`}>{t.priority}</span>}
-                    {t.due_date && t.due_date < today && <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">Overdue</span>}
+                  <div className="text-right shrink-0">
+                    <p className="text-xs text-gray-500">{displayText(t.assignedTo, 'Unassigned')}</p>
+                    <p className={`text-xs font-medium ${Number(t.daysLeft) < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+                      {fmtDate(t.dueDate || t.due_date)} · {formatDaysLeft(t.daysLeft)}
+                    </p>
                   </div>
                 </Link>
               ))}
@@ -591,10 +598,10 @@ function ServiceDashboard({ firstName }) {
 
         <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-[#111111] text-sm">Attention Needed</h3>
+            <h3 className="font-semibold text-[#111111] text-sm">Overdue Ticket</h3>
             <span className="text-xs text-gray-400">{attentionItems.length} overdue</span>
           </div>
-          {attentionItems.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No overdue service work.</p> : (
+          {attentionItems.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No overdue tickets.</p> : (
             <div className="space-y-2">
               {attentionItems.map(item => (
                 <Link key={item.key} to={item.to} state={item.state} className="block py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
@@ -606,7 +613,7 @@ function ServiceDashboard({ firstName }) {
                       </div>
                       <p className="text-xs text-gray-500 mt-1 truncate">{displayText(item.text, '')} · {displayText(item.owner, '—')}</p>
                     </div>
-                    <span className="text-xs font-medium text-red-600 shrink-0">{fmtDate(item.date)}</span>
+                    <span className="text-xs font-medium text-red-600 shrink-0">{formatDaysOverdue(item.daysOverdue)}</span>
                   </div>
                 </Link>
               ))}
@@ -622,12 +629,12 @@ function ServiceDashboard({ firstName }) {
           {recentTasks.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No overdue tasks.</p> : (
             <div className="space-y-2">
               {recentTasks.map(t => (
-                <Link key={t.id} to="/tasks" state={{ taskId: t.id }} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{displayText(t.servicetype, `Task #${t.id}`)}</p>
-                    <p className="text-xs text-gray-500">{t.ticket_id ? `Ticket #${t.ticket_id}` : 'No ticket linked'}</p>
+                <Link key={t.key || t.id} to={t.to || '/tasks'} state={t.state || { taskId: t.id }} className="flex items-center justify-between gap-3 py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{displayText(t.serviceType || t.servicetype, `Task #${t.id}`)}</p>
+                    <p className="text-xs text-gray-500">{displayText(t.ticketNumber, 'No ticket linked')} · {displayText(t.assignedTo, 'Unassigned')}</p>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">{fmtDate(t.enddate)}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 shrink-0">{formatDaysOverdue(t.daysOverdue)}</span>
                 </Link>
               ))}
             </div>
