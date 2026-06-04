@@ -4,11 +4,11 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
-import { isSalesManagerRole, isSalesRole } from '../../lib/roles'
+import { hasAdminAccess, isSalesManagerRole, isSalesRole } from '../../lib/roles'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
 const PAGE_SIZE = 30
 const ACTIVITY_COLUMNS = 'id, type, priority, status, date, time, description, lead_id, company_id, assigned_to, user_id, created_at, updated_at'
@@ -74,6 +74,7 @@ export default function Activities() {
   const navigate = useNavigate()
   const isSalesRestricted = isSalesRole(profile?.role_id)
   const isSalesManager = isSalesManagerRole(profile?.role_id)
+  const canDeleteActivities = hasAdminAccess(profile?.role_id)
   const currentLegacyUserId = getLegacyUserId(profile)
   const visibleTabs = useMemo(() => (
     isSalesManager ? [...TABS, { id: 'all', label: 'All Activity' }] : TABS
@@ -90,6 +91,8 @@ export default function Activities() {
   const [tab, setTab]           = useState('open')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
+  const [editId, setEditId]     = useState(null)
+  const [editOriginalAssignee, setEditOriginalAssignee] = useState('')
   const [detail, setDetail]     = useState(null)
   const [deleteId, setDeleteId] = useState(null)
   const [saving, setSaving]     = useState(false)
@@ -379,6 +382,8 @@ export default function Activities() {
 
   const openAdd = async () => {
     await ensureLeadData()
+    setEditId(null)
+    setEditOriginalAssignee('')
     setForm({
       ...emptyForm,
       date: new Date().toISOString().split('T')[0],
@@ -390,12 +395,34 @@ export default function Activities() {
 
   const openUpdate = async (activity) => {
     await ensureLeadData()
+    setEditId(null)
+    setEditOriginalAssignee('')
     setForm({
       ...emptyForm,
       date: new Date().toISOString().split('T')[0],
       lead_id: activity.lead_id ? String(activity.lead_id) : '',
       company_id: activity.company_id ? String(activity.company_id) : '',
       assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (activity.assignedTo ? String(activity.assignedTo) : ''),
+    })
+    setError('')
+    setView('form')
+  }
+
+  const openEdit = async (activity) => {
+    await ensureLeadData()
+    const assignedTo = activity.assigned_to || activity.assignedTo || ''
+    setEditId(activity.id)
+    setEditOriginalAssignee(String(assignedTo || ''))
+    setForm({
+      type: activity.type || '',
+      priority: activity.priority || '',
+      status: activity.status || '',
+      date: activity.date || '',
+      time: activity.time || '',
+      description: activity.description || '',
+      lead_id: activity.lead_id ? String(activity.lead_id) : '',
+      company_id: activity.company_id ? String(activity.company_id) : '',
+      assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (assignedTo ? String(assignedTo) : ''),
     })
     setError('')
     setView('form')
@@ -419,23 +446,28 @@ export default function Activities() {
       lead_id: form.lead_id ? parseInt(form.lead_id) : null,
       company_id: form.lead_id ? null : (form.company_id || null),
       assigned_to: isSalesRestricted ? currentLegacyUserId : (form.assigned_to || selectedLead?.assigned_to || null),
-      user_id: getLegacyUserId(profile),
-      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
-    const { error: err } = await supabase.from('activity').insert([payload])
+    const result = editId
+      ? await supabase.from('activity').update(payload).eq('id', editId)
+      : await supabase.from('activity').insert([{ ...payload, user_id: getLegacyUserId(profile), created_at: new Date().toISOString() }])
+    const { error: err } = result
     if (err) { setError(err.message); setSaving(false); return }
     logActivity({
       module: 'activities',
-      action: 'create',
+      action: editId ? 'update' : 'create',
       recordTable: 'activity',
+      recordId: editId || null,
       recordLabel: form.type,
-      summary: `Created activity ${form.type}`,
+      summary: `${editId ? 'Updated' : 'Created'} activity ${form.type}`,
       metadata: { lead_id: form.lead_id || null, company_id: payload.company_id || null, assigned_to: payload.assigned_to || null },
     })
     const assignee = payload.assigned_to ? String(payload.assigned_to) : ''
     const company = selectedLead || (form.company_id ? customersById[String(form.company_id)] : null)
-    if (assignee && assignee !== String(currentLegacyUserId || '')) {
+    const shouldNotifyAssignee = assignee &&
+      assignee !== String(currentLegacyUserId || '') &&
+      (!editId || assignee !== String(editOriginalAssignee || ''))
+    if (shouldNotifyAssignee) {
       await notifyUser(supabase, {
         userId: parseInt(assignee),
         actorUserId: currentLegacyUserId,
@@ -455,11 +487,18 @@ export default function Activities() {
       })
     }
     setSaving(false)
+    setEditId(null)
+    setEditOriginalAssignee('')
     await fetchRows()
     setView('list')
   }
 
   const handleDelete = async (id) => {
+    if (!canDeleteActivities) {
+      setError('Only Admin and Super Admin can delete activities.')
+      setDeleteId(null)
+      return
+    }
     await supabase.from('activity').delete().eq('id', id)
     logActivity({
       module: 'activities',
@@ -485,8 +524,8 @@ export default function Activities() {
   if (view === 'form') return (
     <div className="p-6 max-w-3xl">
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"><ArrowLeft size={15} /> Back</button>
-        <h1 className="text-2xl font-bold text-gray-900">New Activity Update</h1>
+        <button onClick={() => { setEditId(null); setEditOriginalAssignee(''); setView('list') }} className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"><ArrowLeft size={15} /> Back</button>
+        <h1 className="text-2xl font-bold text-gray-900">{editId ? 'Edit Activity' : 'New Activity Update'}</h1>
       </div>
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       <form onSubmit={handleSave} className="bg-white border border-gray-200 p-6 space-y-5">
@@ -549,8 +588,8 @@ export default function Activities() {
           </div>
         </div>
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
-          <button type="button" onClick={() => setView('list')} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
-          <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"><Save size={14} />{saving ? 'Saving...' : 'Save Update'}</button>
+          <button type="button" onClick={() => { setEditId(null); setEditOriginalAssignee(''); setView('list') }} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
+          <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"><Save size={14} />{saving ? 'Saving...' : editId ? 'Update Activity' : 'Save Update'}</button>
         </div>
       </form>
     </div>
@@ -674,8 +713,9 @@ export default function Activities() {
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700" title="View history"><Eye size={15} /></button>
+                    <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-green-700" title="Edit latest update"><Edit2 size={15} /></button>
                     <button onClick={() => openUpdate(r)} className="text-red-600 hover:text-red-700 text-xs font-semibold">Update</button>
-                    <button onClick={() => setDeleteId(r.id)} className="text-gray-400 hover:text-red-700" title="Delete latest update"><Trash2 size={15} /></button>
+                    {canDeleteActivities && <button onClick={() => setDeleteId(r.id)} className="text-gray-400 hover:text-red-700" title="Delete latest update"><Trash2 size={15} /></button>}
                   </div>
                 </td>
               </tr>
@@ -686,7 +726,7 @@ export default function Activities() {
 
       <PaginationControls page={page} totalPages={totalPages} total={total} label="follow up" onPageChange={setPage} />
 
-      {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Latest Update?</h3><p className="text-sm text-gray-600">Only this activity row will be removed. Older lead history stays unchanged.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
+      {deleteId && canDeleteActivities && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Delete Latest Update?</h3><p className="text-sm text-gray-600">Only this activity row will be removed. Older lead history stays unchanged.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white">Delete</button></div></div></div>}
     </div>
   )
 }

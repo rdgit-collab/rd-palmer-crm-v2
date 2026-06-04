@@ -6,7 +6,7 @@ import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } 
 import { notifyUser } from '../../lib/notifyUser'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
-import { isSalesRole } from '../../lib/roles'
+import { hasAdminAccess, isSalesRole } from '../../lib/roles'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -948,6 +948,7 @@ function LeadForm({ lead, onSave, onCancel }) {
 export default function Leads() {
   const { profile } = useAuth()
   const location = useLocation()
+  const canDeleteLeads = hasAdminAccess(profile?.role_id)
   const [view, setView] = useState('list')
   const [selectedId, setSelectedId] = useState(null)
   const [editLead, setEditLead] = useState(null)
@@ -1018,6 +1019,10 @@ export default function Leads() {
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   const handleDelete = async (id) => {
+    if (!canDeleteLeads) {
+      setDeleteId(null)
+      return
+    }
     await supabase.from('sales_lead').delete().eq('id', id)
     logActivity({
       module: 'leads',
@@ -1174,10 +1179,12 @@ export default function Leads() {
                             className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Edit">
                             <Pencil size={14} />
                           </button>
-                          <button onClick={() => setDeleteId(l.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
-                            <Trash2 size={14} />
-                          </button>
+                          {canDeleteLeads && (
+                            <button onClick={() => setDeleteId(l.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1200,7 +1207,7 @@ export default function Leads() {
       </div>
 
       {/* Delete Confirm */}
-      {deleteId && (
+      {deleteId && canDeleteLeads && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-xl">
             <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Lead</h3>
