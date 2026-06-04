@@ -242,6 +242,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
         .section { margin-top: 10px; line-height: 1.35; }
         .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin-bottom: 6px; }
         .text-column { width: calc(100% - 278px); }
+        .terms-column { margin-top: 22px; }
         .text-column .section, .below-table .section { text-align: justify; text-align-last: left; hyphens: auto; overflow-wrap: break-word; }
         .text-column .section h2, .below-table .section h2 { text-align: left; text-align-last: left; }
         .below-table .section { margin-top: 4px; }
@@ -302,7 +303,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
             <div class="total"><span>Total</span><span>${escapeHtml(invoice.currency || 'MYR')} ${fmtMoney(invoice.total)}</span></div>
           </div>
         </div>
-        <div class="text-column">
+        <div class="text-column terms-column">
           ${terms ? `<div class="section"><h2>Terms & Conditions</h2>${terms}</div>` : ''}
         </div>
       </div>
