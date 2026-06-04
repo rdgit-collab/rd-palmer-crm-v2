@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -54,14 +54,24 @@ function hasOption(items, value, field = 'name') {
 // Stage badge colours by name
 const stageColor = (name = '') => {
   const n = name.toLowerCase()
+  if (n.startsWith('closed') && n.includes('won')) return 'bg-green-100 text-green-700'
+  if (n.startsWith('closed') && n.includes('lost')) return 'bg-red-100 text-red-700'
+  if (n.startsWith('closed'))  return 'bg-gray-200 text-gray-700'
   if (n.includes('won'))       return 'bg-green-100 text-green-700'
   if (n.includes('lost'))      return 'bg-red-100 text-red-700'
-  if (n.includes('closed'))    return 'bg-gray-100 text-gray-600'
   if (n.includes('new'))       return 'bg-blue-100 text-blue-700'
+  if (n.includes('contact'))   return 'bg-cyan-100 text-cyan-700'
   if (n.includes('follow'))    return 'bg-yellow-100 text-yellow-700'
+  if (n.includes('qualif'))    return 'bg-indigo-100 text-indigo-700'
   if (n.includes('proposal'))  return 'bg-purple-100 text-purple-700'
   if (n.includes('complete'))  return 'bg-emerald-100 text-emerald-700'
   return 'bg-gray-100 text-gray-600'
+}
+
+const isClosedStageName = (name = '') => String(name || '').trim().toLowerCase().startsWith('closed')
+const isTerminalActivityStatus = (name = '') => {
+  const n = String(name || '').trim().toLowerCase()
+  return n.includes('complete') || n.includes('cancel')
 }
 
 const activityStatusColor = (name = '') => {
@@ -104,6 +114,9 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const [activityForm, setActivityForm] = useState(defaultActivityForm)
   const [activitySaving, setActivitySaving] = useState(false)
   const [activityError, setActivityError] = useState('')
+  const [leadStatusError, setLeadStatusError] = useState('')
+  const [leadStatusSaving, setLeadStatusSaving] = useState(false)
+  const [pendingCloseStatus, setPendingCloseStatus] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -149,11 +162,65 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     : '—'
 
   const setActivity = (k, v) => setActivityForm(f => ({ ...f, [k]: v }))
+  const isTerminalActivity = isTerminalActivityStatus(activityForm.status)
+  const activityLockedClass = isTerminalActivity ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
+
+  const stageNameFor = (stageId) => lookupName(stages, stageId, 'Status')
+  const allActivitiesReadyToClose = () => (
+    activities.every(activity => isTerminalActivityStatus(activity.status))
+  )
+
+  const updateLeadStatus = async (nextStatus) => {
+    setLeadStatusSaving(true)
+    setLeadStatusError('')
+    const { error } = await supabase
+      .from('sales_lead')
+      .update({ status: nextStatus, updated_at: new Date().toISOString() })
+      .eq('id', lead.id)
+    setLeadStatusSaving(false)
+    if (error) {
+      setLeadStatusError(error.message)
+      return false
+    }
+    const nextStageName = stageNameFor(nextStatus)
+    setLead(current => ({ ...current, status: nextStatus, updated_at: new Date().toISOString() }))
+    logActivity({
+      module: 'leads',
+      action: 'update',
+      recordTable: 'sales_lead',
+      recordId: lead.id,
+      recordLabel: lead.company_name,
+      summary: `Updated lead status to ${nextStageName}`,
+      metadata: { status: nextStatus, status_name: nextStageName },
+    })
+    return true
+  }
+
+  const handleLeadStatusChange = async (nextStatus) => {
+    if (!nextStatus || String(nextStatus) === String(lead.status || '')) return
+    const nextStageName = stageNameFor(nextStatus)
+    if (isClosedStageName(nextStageName)) {
+      if (!allActivitiesReadyToClose()) {
+        setLeadStatusError('Before closing this lead, all activities under this lead must be Complete or Cancelled.')
+        return
+      }
+      setLeadStatusError('')
+      setPendingCloseStatus({ id: nextStatus, name: nextStageName })
+      return
+    }
+    await updateLeadStatus(nextStatus)
+  }
+
+  const confirmCloseLead = async () => {
+    if (!pendingCloseStatus) return
+    const ok = await updateLeadStatus(pendingCloseStatus.id)
+    if (ok) setPendingCloseStatus(null)
+  }
 
   const saveActivity = async (e) => {
     e.preventDefault()
-    if (!activityForm.type) { setActivityError('Activity type is required'); return }
-    if (!activityForm.description.trim()) { setActivityError('Description is required'); return }
+    if (!isTerminalActivity && !activityForm.type) { setActivityError('Activity type is required'); return }
+    if (!isTerminalActivity && !activityForm.description.trim()) { setActivityError('Description is required'); return }
     setActivitySaving(true)
     setActivityError('')
     const payload = {
@@ -161,12 +228,12 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       lead_id: lead.id,
       company_id: null,
       assigned_to: lead.assigned_to || null,
-      type: activityForm.type,
-      priority: activityForm.priority || null,
+      type: activityForm.type || (isTerminalActivity ? 'Status Update' : ''),
+      priority: isTerminalActivity ? null : (activityForm.priority || null),
       status: activityForm.status || null,
-      date: activityForm.date || null,
-      time: activityForm.time || null,
-      description: activityForm.description,
+      date: isTerminalActivity ? null : (activityForm.date || null),
+      time: isTerminalActivity ? null : (activityForm.time || null),
+      description: activityForm.description || (isTerminalActivity ? `Marked activity as ${activityForm.status}.` : ''),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
@@ -177,8 +244,8 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       module: 'activities',
       action: 'create',
       recordTable: 'activity',
-      recordLabel: activityForm.type,
-      summary: `Added ${activityForm.type} progress update for lead ${lead.company_name || lead.id}`,
+      recordLabel: payload.type,
+      summary: `Added ${payload.type} progress update for lead ${lead.company_name || lead.id}`,
       metadata: { lead_id: lead.id, assigned_to: lead.assigned_to || null },
     })
     setActivityForm(defaultActivityForm())
@@ -210,6 +277,22 @@ function LeadDetail({ leadId, onBack, onEdit }) {
         </div>
       </div>
 
+      {leadStatusError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{leadStatusError}</div>}
+
+      <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 mb-4">
+        <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Lead Status</label>
+        <select
+          value={lead.status || ''}
+          onChange={e => handleLeadStatusChange(e.target.value)}
+          disabled={leadStatusSaving}
+          className="w-full max-w-sm border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-500"
+        >
+          <option value="">Please Select</option>
+          {stages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+        </select>
+        <p className="mt-1 text-xs text-gray-400">Closed stages require all lead activities to be Complete or Cancelled.</p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Next Contact</p>
@@ -232,36 +315,37 @@ function LeadDetail({ leadId, onBack, onEdit }) {
             <button type="button" onClick={() => setShowActivityForm(false)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
           </div>
           {activityError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{activityError}</div>}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select value={activityForm.status} onChange={e => setActivity('status', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+              <option value="">Please Select</option>
+              {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            {isTerminalActivity && <p className="mt-1 text-xs text-gray-400">This status closes the activity, so the remaining fields are locked.</p>}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
-              <select value={activityForm.type} onChange={e => setActivity('type', e.target.value)} required className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+              <select value={activityForm.type} onChange={e => setActivity('type', e.target.value)} required={!isTerminalActivity} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`}>
                 <option value="">Please Select</option>
                 {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Next Contact Date</label>
-              <input type="date" value={activityForm.date} onChange={e => setActivity('date', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+              <input type="date" value={activityForm.date} onChange={e => setActivity('date', e.target.value)} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-              <input type="time" value={activityForm.time} onChange={e => setActivity('time', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+              <input type="time" value={activityForm.time} onChange={e => setActivity('time', e.target.value)} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`} />
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select value={activityForm.priority} onChange={e => setActivity('priority', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+              <select value={activityForm.priority} onChange={e => setActivity('priority', e.target.value)} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`}>
                 <option value="">Please Select</option>
                 {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select value={activityForm.status} onChange={e => setActivity('status', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
-                <option value="">Please Select</option>
-                {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
             </div>
           </div>
@@ -270,10 +354,11 @@ function LeadDetail({ leadId, onBack, onEdit }) {
             <textarea
               value={activityForm.description}
               onChange={e => setActivity('description', e.target.value)}
-              required
+              required={!isTerminalActivity}
+              disabled={isTerminalActivity}
               rows={6}
               placeholder="Type detailed progress notes..."
-              className="w-full min-h-[140px] max-h-[420px] resize-y border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+              className={`w-full min-h-[140px] max-h-[420px] resize-y border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`}
             />
           </div>
           <div className="flex justify-end gap-3">
@@ -371,6 +456,21 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           </div>
         )}
       </div>
+
+      {pendingCloseStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Close Lead</h3>
+            <p className="text-sm text-gray-600 mb-4">Are you confirm to close this leads?</p>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => setPendingCloseStatus(null)} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={confirmCloseLead} disabled={leadStatusSaving} className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700 disabled:opacity-50">
+                {leadStatusSaving ? 'Closing...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -956,6 +1056,7 @@ export default function Leads() {
   const [leads, setLeads] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
+  const [tab, setTab] = useState('open')
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterAssigned, setFilterAssigned] = useState('')
@@ -964,6 +1065,10 @@ export default function Leads() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
+  const closedStageIds = useMemo(
+    () => stages.filter(stage => isClosedStageName(stage.name)).map(stage => String(stage.id)),
+    [stages]
+  )
 
   useEffect(() => {
     const run = async () => {
@@ -997,6 +1102,13 @@ export default function Leads() {
       q = q.eq('assigned_to', currentLegacyUserId)
     }
 
+    if (tab === 'closed') {
+      if (closedStageIds.length) q = q.in('status', closedStageIds)
+      else q = q.eq('status', '__no_closed_stage__')
+    } else if (closedStageIds.length) {
+      q = q.or(`status.is.null,status.not.in.(${closedStageIds.join(',')})`)
+    }
+
     if (search.trim()) {
       q = q.ilike('company_name', `%${search.trim()}%`)
     }
@@ -1011,10 +1123,10 @@ export default function Leads() {
     const { data, count, error } = await q
     if (!error) { setLeads(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, filterStatus, filterAssigned, page, profile])
+  }, [search, filterStatus, filterAssigned, page, profile, tab, closedStageIds])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
-  useEffect(() => { setPage(0) }, [search, filterStatus, filterAssigned])
+  useEffect(() => { setPage(0) }, [search, filterStatus, filterAssigned, tab])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -1076,6 +1188,21 @@ export default function Leads() {
         >
           <Plus size={16} /> Add Lead
         </button>
+      </div>
+
+      <div className="flex flex-wrap gap-1 mb-5 border-b border-gray-200">
+        {[
+          ['open', 'Open Leads'],
+          ['closed', 'Closed Leads'],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => { setTab(id); setPage(0) }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}

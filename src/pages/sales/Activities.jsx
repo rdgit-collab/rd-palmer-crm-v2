@@ -42,6 +42,11 @@ function isCompleted(status = '') {
   return String(status || '').toLowerCase().includes('complete')
 }
 
+function isTerminalActivityStatus(status = '') {
+  const value = String(status || '').trim().toLowerCase()
+  return value.includes('complete') || value.includes('close') || value.includes('cancel')
+}
+
 function priorityColor(p = '') {
   const n = String(p || '').toLowerCase()
   if (n.includes('high')) return 'bg-red-100 text-red-700'
@@ -429,20 +434,22 @@ export default function Activities() {
   }
 
   const selectedLead = form.lead_id ? leadsById[String(form.lead_id)] : null
+  const isTerminalStatus = isTerminalActivityStatus(form.status)
+  const lockedFieldClass = isTerminalStatus ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!form.type) { setError('Activity type is required'); return }
-    if (!form.description.trim()) { setError('Description is required'); return }
+    if (!isTerminalStatus && !form.type) { setError('Activity type is required'); return }
+    if (!isTerminalStatus && !form.description.trim()) { setError('Description is required'); return }
     setSaving(true)
     setError('')
     const payload = {
-      type: form.type,
-      priority: form.priority || null,
+      type: form.type || (isTerminalStatus ? 'Status Update' : ''),
+      priority: isTerminalStatus ? null : (form.priority || null),
       status: form.status || null,
-      date: form.date || null,
-      time: form.time || null,
-      description: form.description,
+      date: isTerminalStatus ? null : (form.date || null),
+      time: isTerminalStatus ? null : (form.time || null),
+      description: form.description || (isTerminalStatus ? `Marked activity as ${form.status}.` : ''),
       lead_id: form.lead_id ? parseInt(form.lead_id) : null,
       company_id: form.lead_id ? null : (form.company_id || null),
       assigned_to: isSalesRestricted ? currentLegacyUserId : (form.assigned_to || selectedLead?.assigned_to || null),
@@ -458,8 +465,8 @@ export default function Activities() {
       action: editId ? 'update' : 'create',
       recordTable: 'activity',
       recordId: editId || null,
-      recordLabel: form.type,
-      summary: `${editId ? 'Updated' : 'Created'} activity ${form.type}`,
+      recordLabel: payload.type,
+      summary: `${editId ? 'Updated' : 'Created'} activity ${payload.type}`,
       metadata: { lead_id: form.lead_id || null, company_id: payload.company_id || null, assigned_to: payload.assigned_to || null },
     })
     const assignee = payload.assigned_to ? String(payload.assigned_to) : ''
@@ -477,10 +484,10 @@ export default function Activities() {
         body: `You have been assigned an activity${company?.company_name ? ' for ' + company.company_name : ''}.`,
         details: [
           ['Company', company?.company_name || ''],
-          ['Activity Type', form.type],
-          ['Description', form.description],
-          ['Date', form.date || ''],
-          ['Time', form.time || ''],
+          ['Activity Type', payload.type],
+          ['Description', payload.description],
+          ['Date', payload.date || ''],
+          ['Time', payload.time || ''],
           ['Assigned By', getUserName(currentLegacyUserId)],
         ],
         link: '/activities',
@@ -539,9 +546,19 @@ export default function Activities() {
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
+          <label className="text-sm font-medium text-gray-700">Status</label>
+          <div className="col-span-2">
+            <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <option value="">Please Select</option>
+              {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            {isTerminalStatus && <p className="mt-1 text-xs text-gray-400">This status closes the activity, so the remaining fields are locked.</p>}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Activity Type <span className="text-red-500">*</span></label>
           <div className="col-span-2">
-            <select value={form.type} onChange={e => setForm(f => ({...f, type: e.target.value}))} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+            <select value={form.type} onChange={e => setForm(f => ({...f, type: e.target.value}))} required={!isTerminalStatus} disabled={isTerminalStatus} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
               <option value="">Please Select</option>
               {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
             </select>
@@ -550,32 +567,23 @@ export default function Activities() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Next Contact</label>
           <div className="col-span-2 flex gap-3">
-            <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} className="flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-            <input type="time" value={form.time} onChange={e => setForm(f => ({...f, time: e.target.value}))} className="w-32 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} disabled={isTerminalStatus} className={`flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
+            <input type="time" value={form.time} onChange={e => setForm(f => ({...f, time: e.target.value}))} disabled={isTerminalStatus} className={`w-32 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Priority</label>
           <div className="col-span-2">
-            <select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+            <select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))} disabled={isTerminalStatus} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
               <option value="">Please Select</option>
               {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
             </select>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
-          <label className="text-sm font-medium text-gray-700">Status</label>
-          <div className="col-span-2">
-            <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              <option value="">Please Select</option>
-              {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Assigned To</label>
           <div className="col-span-2">
-            <select value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+            <select value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} disabled={isTerminalStatus} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
               <option value="">Please Select</option>
               {formAssignableUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
             </select>
@@ -584,7 +592,7 @@ export default function Activities() {
         <div className="grid grid-cols-3 gap-4">
           <label className="text-sm font-medium text-gray-700 pt-2">Progress Notes <span className="text-red-500">*</span></label>
           <div className="col-span-2">
-            <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} required rows={4} placeholder="Activity notes..." className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none" />
+            <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} required={!isTerminalStatus} disabled={isTerminalStatus} rows={4} placeholder="Activity notes..." className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
           </div>
         </div>
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
