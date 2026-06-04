@@ -1138,16 +1138,25 @@ export default function Tickets() {
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Products / Items</h3>
             <div className="border border-gray-200 overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[980px] table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[150px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[80px]" />
+                  <col />
+                  <col className="w-[155px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[38px]" />
+                </colgroup>
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-52">Serial Number</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-32">Date</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-36">Warranty</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Serial Number</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Date</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Warranty</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Item Description</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-700 w-44">SKU</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">SKU</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Remarks</th>
-                    <th className="px-3 py-2 w-8"></th>
+                    <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
