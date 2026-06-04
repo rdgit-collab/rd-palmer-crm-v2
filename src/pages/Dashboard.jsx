@@ -444,13 +444,15 @@ function ServiceDashboard({ firstName }) {
 
   useEffect(() => {
     setLoading(true)
+    const today = new Date().toISOString().split('T')[0]
     Promise.all([
       supabase.rpc('get_service_dashboard_summary', { p_month: staffMonth }),
+      supabase.from('ticket').select('id', { count: 'exact', head: true }).or('is_completed.eq.1,status.eq.Completed'),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
-      supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
-    ]).then(([summaryResult, rTick, rTask]) => {
+      supabase.from('task').select('id, ticket_id, servicetype, startdate, enddate, assigned_to').eq('is_completed', 0).lt('enddate', today).order('enddate', { ascending: true }).limit(5),
+    ]).then(([summaryResult, closedTicketsResult, rTick, rTask]) => {
       const summary = summaryResult.data || {}
-      setStats(summary.stats || {})
+      setStats({ ...(summary.stats || {}), closedTickets: closedTicketsResult.count || 0 })
       setRecentTickets(rTick.data || [])
       setRecentTasks(rTask.data || [])
       const nextStaffRows = summary.staffRows || []
@@ -495,6 +497,7 @@ function ServiceDashboard({ firstName }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label="Open Tickets"     value={stats.openTickets}    icon={Ticket}        color="#D97706" bg="#FFFBEB" to="/tickets" />
+        <StatCard label="Closed Tickets"   value={stats.closedTickets}  icon={CheckCircle2}  color="#059669" bg="#ECFDF5" to="/tickets" />
         <StatCard label="Open Tasks"       value={stats.openTasks}      icon={ClipboardList} color="#0891B2" bg="#ECFEFF" to="/tasks" />
         <StatCard label="Onsite Tickets"   value={stats.onsiteTickets}  icon={MapPin}        color="#7C3AED" bg="#F5F3FF" to="/onsite-tickets" />
         <StatCard label="Overdue Tickets"  value={stats.overdueTickets} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/tickets" />
@@ -613,19 +616,19 @@ function ServiceDashboard({ firstName }) {
 
         <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-[#111111] text-sm">Recent Open Tasks</h3>
+            <h3 className="font-semibold text-[#111111] text-sm">Task Overdue List</h3>
             <Link to="/tasks" className="text-xs text-red-600 hover:underline">View all</Link>
           </div>
-          {recentTasks.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No open tasks.</p> : (
+          {recentTasks.length === 0 ? <p className="text-sm text-gray-400 text-center py-6">No overdue tasks.</p> : (
             <div className="space-y-2">
               {recentTasks.map(t => (
-                <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <Link key={t.id} to="/tasks" state={{ taskId: t.id }} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{displayText(t.servicetype, `Task #${t.id}`)}</p>
-                    <p className="text-xs text-gray-500">{t.startdate || ''}</p>
+                    <p className="text-xs text-gray-500">{t.ticket_id ? `Ticket #${t.ticket_id}` : 'No ticket linked'}</p>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">Open</span>
-                </div>
+                  <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">{fmtDate(t.enddate)}</span>
+                </Link>
               ))}
             </div>
           )}
