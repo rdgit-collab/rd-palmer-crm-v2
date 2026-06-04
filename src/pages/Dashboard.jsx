@@ -8,9 +8,10 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { getLegacyUserId } from '../lib/legacyUsers'
+import { fetchAssignableUsers, getLegacyUserId, getUserName as formatUserName } from '../lib/legacyUsers'
+import { fetchAllRows } from '../lib/fetchAllRows'
 import { displayText } from '../lib/displayText'
-import { isSalesRole, isServiceRole } from '../lib/roles'
+import { isSalesRole, isServiceRole, roleLabel } from '../lib/roles'
 
 // ── Shared loading spinner ────────────────────────────────────────
 function DashboardSpinner({ label }) {
@@ -106,6 +107,59 @@ function downloadCsv(filename, headers, rows) {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
+}
+
+function isActiveUserStatus(status) {
+  const value = String(status ?? '').trim().toLowerCase()
+  return !['inactive', 'resigned', 'disabled', '0', 'false'].includes(value)
+}
+
+function addStaffMetric(map, allowedStaffById, assignee, updates) {
+  const key = assignee ? String(assignee) : ''
+  if (!key || !allowedStaffById.has(key)) return
+  if (!map[key]) map[key] = { ...allowedStaffById.get(key) }
+  Object.entries(updates).forEach(([field, value]) => {
+    map[key][field] += value
+  })
+}
+
+function buildAllowedServiceStaffMap(staffUsers) {
+  return new Map(staffUsers.map(user => {
+    const key = String(user.old_user_id || user.id || '')
+    return [key, {
+      id: key,
+      name: `${user.first_name || ''} ${user.last_name || ''}`.replace(/\s+/g, ' ').trim() || '-',
+      role: roleLabel(user.role_id),
+      openTickets: 0,
+      openTasks: 0,
+      openOnsites: 0,
+      completed: 0,
+      overdue: 0,
+    }]
+  }).filter(([key]) => key))
+}
+
+function seedServiceStaffMetrics(map, staffUsers) {
+  buildAllowedServiceStaffMap(staffUsers).forEach((value, key) => {
+    map[key] = { ...value }
+  })
+}
+
+function dateOnly(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function monthRange(value) {
+  const [year, month] = String(value || monthValue()).split('-').map(Number)
+  return {
+    start: dateOnly(new Date(year, month - 1, 1)),
+    end: dateOnly(new Date(year, month, 1)),
+  }
+}
+
+function isInMonth(value, range) {
+  const date = String(value || '').slice(0, 10)
+  return date >= range.start && date < range.end
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -431,6 +485,122 @@ function SalesDashboard({ firstName }) {
 // ════════════════════════════════════════════════════════════════════
 // SERVICE DASHBOARD
 // ════════════════════════════════════════════════════════════════════
+async function loadServiceDashboardFallback(staffMonth) {
+  const today = new Date().toISOString().split('T')[0]
+  const selectedRange = monthRange(staffMonth)
+  const serviceWorkDate = (row, ...fields) => fields.map(field => row?.[field]).find(Boolean)
+  const isServiceWorkInMonth = (row, ...fields) => isInMonth(serviceWorkDate(row, ...fields), selectedRange)
+
+  const [tick, tsk, onsite, overdue, rma, allTickets, allTasks, allOnsites, users, serviceStaff] = await Promise.all([
+    supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+    supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+    supabase.from('onsiteticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
+    supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0).lt('due_date', today),
+    supabase.from('rma').select('id', { count: 'exact', head: true }).is('date_return', null),
+    fetchAllRows('ticket', 'id, ticket_id, company_name, assigned_to, date, due_date, priority, is_completed, status', 'id', { ascending: false }),
+    fetchAllRows('task', 'id, ticket_id, servicetype, assigned_to, startdate, enddate, is_completed', 'id', { ascending: false }),
+    fetchAllRows('onsiteticket', 'id, ticket_id, issue_description, product, assigned_to, date, is_completed, status', 'id', { ascending: false }),
+    fetchAssignableUsers(supabase),
+    supabase.from('users').select('id, old_user_id, first_name, last_name, role_id, status').order('first_name'),
+  ])
+
+  const tickets = allTickets || []
+  const tasks = allTasks || []
+  const onsites = allOnsites || []
+  const activeServiceStaff = (serviceStaff.data || []).filter(user => isActiveUserStatus(user.status))
+  const allowedStaffById = buildAllowedServiceStaffMap(activeServiceStaff)
+  const ticketNumberById = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticket_id]))
+  const completedWork = tasks.filter(t => t.is_completed == 1 && isServiceWorkInMonth(t, 'enddate', 'startdate')).length
+    + onsites.filter(o => (o.is_completed == 1 || o.status === 'Completed') && isServiceWorkInMonth(o, 'date')).length
+    + tickets.filter(t => (t.is_completed == 1 || t.status === 'Completed') && isServiceWorkInMonth(t, 'due_date', 'date')).length
+  const pendingWork = tasks.filter(t => t.is_completed != 1).length + onsites.filter(o => o.is_completed != 1 && o.status !== 'Completed').length
+  const dueToday = tasks.filter(t => t.is_completed != 1 && t.enddate === today).length
+    + tickets.filter(t => t.is_completed != 1 && t.due_date === today).length
+
+  const staffMap = {}
+  seedServiceStaffMetrics(staffMap, activeServiceStaff)
+  tickets.forEach(ticket => {
+    if (ticket.is_completed == 1 || ticket.status === 'Completed') {
+      if (isServiceWorkInMonth(ticket, 'due_date', 'date')) {
+        addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, { completed: 1 })
+      }
+      return
+    }
+    addStaffMetric(staffMap, allowedStaffById, ticket.assigned_to, {
+      openTickets: 1,
+      overdue: ticket.due_date && ticket.due_date < today ? 1 : 0,
+    })
+  })
+  tasks.forEach(task => {
+    if (task.is_completed == 1) {
+      if (isServiceWorkInMonth(task, 'enddate', 'startdate')) {
+        addStaffMetric(staffMap, allowedStaffById, task.assigned_to, { completed: 1 })
+      }
+      return
+    }
+    addStaffMetric(staffMap, allowedStaffById, task.assigned_to, {
+      openTasks: 1,
+      overdue: task.enddate && task.enddate < today ? 1 : 0,
+    })
+  })
+  onsites.forEach(onsiteRow => {
+    if (onsiteRow.is_completed == 1 || onsiteRow.status === 'Completed') {
+      if (isServiceWorkInMonth(onsiteRow, 'date')) {
+        addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, { completed: 1 })
+      }
+      return
+    }
+    addStaffMetric(staffMap, allowedStaffById, onsiteRow.assigned_to, { openOnsites: 1 })
+  })
+
+  const attentionItems = [
+    ...tickets
+      .filter(ticket => ticket.is_completed != 1 && ticket.due_date && ticket.due_date < today)
+      .map(ticket => ({
+        key: `ticket-${ticket.id}`,
+        type: 'Ticket',
+        label: `TID${ticket.ticket_id}`,
+        text: ticket.company_name || ticket.status || 'Open ticket',
+        date: ticket.due_date,
+        owner: formatUserName(users, ticket.assigned_to),
+        to: '/tickets',
+        state: { ticketId: ticket.id },
+      })),
+    ...tasks
+      .filter(task => task.is_completed != 1 && task.enddate && task.enddate < today)
+      .map(task => ({
+        key: `task-${task.id}`,
+        type: 'Task',
+        label: task.servicetype || `Task #${task.id}`,
+        text: task.ticket_id ? `TID${ticketNumberById[task.ticket_id] || task.ticket_id}` : 'Open task',
+        date: task.enddate,
+        owner: formatUserName(users, task.assigned_to),
+        to: '/tasks',
+      })),
+  ].sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(0, 8)
+
+  const staffRows = Object.values(staffMap)
+    .map(row => ({ ...row, pending: row.openTickets + row.openTasks + row.openOnsites }))
+    .sort((a, b) => (b.pending + b.overdue) - (a.pending + a.overdue))
+
+  return {
+    stats: {
+      openTickets: tick.count || 0,
+      openTasks: tsk.count || 0,
+      onsiteTickets: onsite.count || 0,
+      overdueTickets: overdue.count || 0,
+      rmaCount: rma.count || 0,
+      completedWork,
+      pendingWork,
+      dueToday,
+      completionRate: completedWork + pendingWork > 0 ? Math.round((completedWork / (completedWork + pendingWork)) * 100) : 0,
+    },
+    staffRows,
+    attentionItems,
+    note: serviceStaff.error ? `RPC failed; fallback also had user warning: ${serviceStaff.error.message}` : 'Using fallback calculation while dashboard RPC is unavailable.',
+  }
+}
+
 function ServiceDashboard({ firstName }) {
   const [stats, setStats] = useState({})
   const [recentTickets, setRecentTickets] = useState([])
@@ -448,14 +618,17 @@ function ServiceDashboard({ firstName }) {
       supabase.rpc('get_service_dashboard_summary', { p_month: staffMonth }),
       supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date, status').eq('is_completed', 0).order('id', { ascending: false }).limit(6),
       supabase.from('task').select('id, ticket_id, servicetype, startdate, assigned_to').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
-    ]).then(([summaryResult, rTick, rTask]) => {
-      const summary = summaryResult.data || {}
+    ]).then(async ([summaryResult, rTick, rTask]) => {
+      const rpcSummary = summaryResult.data || {}
+      const summary = summaryResult.error || !rpcSummary.stats
+        ? await loadServiceDashboardFallback(staffMonth)
+        : rpcSummary
       setStats(summary.stats || {})
       setRecentTickets(rTick.data || [])
       setRecentTasks(rTask.data || [])
       const nextStaffRows = summary.staffRows || []
       setStaffRows(nextStaffRows)
-      setStaffLoadNote(nextStaffRows.length === 0 ? 'No active users found. Check user status in Settings > Users.' : '')
+      setStaffLoadNote(summary.note || (nextStaffRows.length === 0 ? 'No active users found. Check user status in Settings > Users.' : ''))
       setAttentionItems(summary.attentionItems || [])
     }).finally(() => setLoading(false))
   }, [staffMonth])
