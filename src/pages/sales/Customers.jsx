@@ -98,6 +98,19 @@ function CustomerForm({ customer, onSave, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.company_name.trim()) { setError('Company name is required'); return }
+    const requiredFields = [
+      ['Industry', form.industry],
+      ['Account type', form.account_type],
+      ['Country', form.country],
+      ['State', form.state],
+      ['City', form.city],
+      ['Postal / Zip Code', form.zipcode],
+    ]
+    const missingField = requiredFields.find(([, value]) => !String(value || '').trim())
+    if (missingField) {
+      setError(`${missingField[0]} is required`)
+      return
+    }
     setSaving(true); setError('')
 
     const assignedUser = users.find(u => String(u.id) === String(form.assignto))
@@ -192,15 +205,15 @@ function CustomerForm({ customer, onSave, onCancel }) {
         {/* Industry + Account Type */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className={labelCls}>Industry</label>
-            <select className={inputCls} value={form.industry} onChange={e => set('industry', e.target.value)}>
+            <label className={labelCls}>Industry <span className="text-red-500">*</span></label>
+            <select className={inputCls} value={form.industry} onChange={e => set('industry', e.target.value)} required>
               <option value="">Please Select</option>
               {industries.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
             </select>
           </div>
           <div>
-            <label className={labelCls}>Account Type</label>
-            <select className={inputCls} value={form.account_type} onChange={e => set('account_type', e.target.value)}>
+            <label className={labelCls}>Account Type <span className="text-red-500">*</span></label>
+            <select className={inputCls} value={form.account_type} onChange={e => set('account_type', e.target.value)} required>
               <option value="">Please Select</option>
               {accountTypes.map(a => <option key={a.id} value={a.type}>{a.type}</option>)}
             </select>
@@ -225,26 +238,26 @@ function CustomerForm({ customer, onSave, onCancel }) {
         {/* Country / State */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className={labelCls}>Country</label>
+            <label className={labelCls}>Country <span className="text-red-500">*</span></label>
             {countries.length > 0 ? (
-              <select className={inputCls} value={form.country} onChange={e => setCountry(e.target.value)}>
+              <select className={inputCls} value={form.country} onChange={e => setCountry(e.target.value)} required>
                 <option value="">— Select Country —</option>
                 {countries.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             ) : (
-              <input className={inputCls} value={form.country} onChange={e => setCountry(e.target.value)} placeholder="Country" />
+              <input className={inputCls} value={form.country} onChange={e => setCountry(e.target.value)} placeholder="Country" required />
             )}
           </div>
           <div>
-            <label className={labelCls}>State</label>
+            <label className={labelCls}>State <span className="text-red-500">*</span></label>
             {states.length > 0 ? (
-              <select className={inputCls} value={form.state} onChange={e => setState(e.target.value)}>
+              <select className={inputCls} value={form.state} onChange={e => setState(e.target.value)} required>
                 <option value="">— Select State —</option>
                 {states.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
             ) : (
               <input className={inputCls} value={form.state} onChange={e => setState(e.target.value)}
-                placeholder={form.country ? 'State / Province' : 'Select country first'} />
+                placeholder={form.country ? 'State / Province' : 'Select country first'} required />
             )}
           </div>
         </div>
@@ -252,20 +265,20 @@ function CustomerForm({ customer, onSave, onCancel }) {
         {/* City / Postcode */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className={labelCls}>City</label>
+            <label className={labelCls}>City <span className="text-red-500">*</span></label>
             {cities.length > 0 ? (
-              <select className={inputCls} value={form.city} onChange={e => setCity(e.target.value)}>
+              <select className={inputCls} value={form.city} onChange={e => setCity(e.target.value)} required>
                 <option value="">— Select City —</option>
                 {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             ) : (
               <input className={inputCls} value={form.city} onChange={e => setCity(e.target.value)}
-                placeholder={form.state ? 'City' : 'Select state first'} />
+                placeholder={form.state ? 'City' : 'Select state first'} required />
             )}
           </div>
           <div>
-            <label className={labelCls}>Postal / Zip Code</label>
-            <input className={inputCls} value={form.zipcode} onChange={e => set('zipcode', e.target.value)} placeholder="Postal/Zip Code" />
+            <label className={labelCls}>Postal / Zip Code <span className="text-red-500">*</span></label>
+            <input className={inputCls} value={form.zipcode} onChange={e => set('zipcode', e.target.value)} placeholder="Postal/Zip Code" required />
           </div>
         </div>
 
