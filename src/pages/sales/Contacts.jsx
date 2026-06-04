@@ -45,6 +45,10 @@ function ContactForm({ contact, onSave, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.first_name.trim()) { setError('First name is required'); return }
+    if (!form.mobile_number.trim() && !form.email.trim()) {
+      setError('Please enter at least a mobile number or email address.')
+      return
+    }
     setSaving(true); setError('')
 
     const payload = {
@@ -140,14 +144,15 @@ function ContactForm({ contact, onSave, onCancel }) {
         {/* Mobile / Email */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <label className={labelCls}>Mobile Number</label>
+            <label className={labelCls}>Mobile Number <span className="text-red-500">*</span></label>
             <input className={inputCls} value={form.mobile_number} onChange={e => set('mobile_number', e.target.value)} placeholder="Mobile number" />
           </div>
           <div>
-            <label className={labelCls}>Email</label>
+            <label className={labelCls}>Email <span className="text-red-500">*</span></label>
             <input className={inputCls} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="Email address" />
           </div>
         </div>
+        <p className="-mt-2 mb-4 text-xs text-gray-500">Fill in at least one: mobile number or email.</p>
 
         {/* Address */}
         <div className="mb-6">
@@ -179,18 +184,34 @@ export default function Contacts() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
+  const [searchField, setSearchField] = useState('name')
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
 
   const fetchContacts = useCallback(async () => {
     setLoading(true)
+    const term = search.trim()
     let q = supabase
       .from('contact')
       .select(CONTACT_LIST_COLUMNS, { count: 'estimated' })
 
-    if (search.trim()) {
+    if (term && searchField === 'company') {
+      const { data: matchingCustomers, error: customerError } = await supabase
+        .from('customer')
+        .select('id')
+        .ilike('company_name', `%${term}%`)
+
+      if (customerError || !matchingCustomers?.length) {
+        setContacts([])
+        setTotal(0)
+        setLoading(false)
+        return
+      }
+
+      q = q.in('company_id', matchingCustomers.map(c => c.id))
+    } else if (term) {
       q = q.or(
-        `first_name.ilike.%${search.trim()}%,last_name.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%,mobile_number.ilike.%${search.trim()}%`
+        `first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,mobile_number.ilike.%${term}%`
       )
     }
 
@@ -214,10 +235,10 @@ export default function Contacts() {
       setTotal(count || 0)
     }
     setLoading(false)
-  }, [search, page])
+  }, [search, searchField, page])
 
   useEffect(() => { fetchContacts() }, [fetchContacts])
-  useEffect(() => { setPage(0) }, [search])
+  useEffect(() => { setPage(0) }, [search, searchField])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -268,11 +289,19 @@ export default function Contacts() {
 
       {/* Search */}
       <div className="flex items-center gap-3 mb-4">
+        <select
+          className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+          value={searchField}
+          onChange={e => setSearchField(e.target.value)}
+        >
+          <option value="name">Contact Name</option>
+          <option value="company">Company Name</option>
+        </select>
         <div className="relative flex-1 max-w-sm">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-            placeholder="Search by name, email, phone..."
+            placeholder={searchField === 'company' ? 'Search by company name...' : 'Search by contact name...'}
             value={search}
             onChange={e => setSearch(e.target.value)}
           />

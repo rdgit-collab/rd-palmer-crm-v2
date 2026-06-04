@@ -25,6 +25,30 @@ const ROLES = [
   { id: ROLE_SUPER_ADMIN, label: 'Super Admin' },
 ]
 
+const ROLE_SORT_RANK = {
+  [ROLE_SUPER_ADMIN]: 1,
+  [ROLE_ADMIN]: 2,
+  [ROLE_SALES]: 3,
+  [ROLE_SALES_MANAGER]: 3,
+  [ROLE_SERVICE]: 4,
+}
+
+const userDisplayName = (row) =>
+  `${row.first_name || ''} ${row.last_name || ''}`.trim().toLowerCase() || (row.email || '').toLowerCase()
+
+const sortUsersForList = (users) =>
+  [...users].sort((a, b) => {
+    const statusRankA = a.status === 'Inactive' ? 1 : 0
+    const statusRankB = b.status === 'Inactive' ? 1 : 0
+    if (statusRankA !== statusRankB) return statusRankA - statusRankB
+
+    const roleRankA = ROLE_SORT_RANK[Number(a.role_id)] || 99
+    const roleRankB = ROLE_SORT_RANK[Number(b.role_id)] || 99
+    if (roleRankA !== roleRankB) return roleRankA - roleRankB
+
+    return userDisplayName(a).localeCompare(userDisplayName(b))
+  })
+
 const emptyForm = {
   first_name: '', last_name: '', email: '', password: '',
   role_id: '2', position: '', department: '', phone: '',
@@ -53,12 +77,14 @@ export default function Users() {
     setLoading(true)
     let q = supabase
       .from('users')
-      .select('id, first_name, last_name, email, role_id, position, department, phone, status, created_at', { count: 'estimated' })
-      .order('first_name')
+      .select('id, first_name, last_name, email, role_id, position, department, phone, status, created_at')
     if (search) q = q.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`)
-    q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
-    const { data, count, error: err } = await q
-    if (!err) { setRows(data || []); setTotal(count || 0) }
+    const { data, error: err } = await q
+    if (!err) {
+      const sorted = sortUsersForList(data || [])
+      setRows(sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE))
+      setTotal(sorted.length)
+    }
     setLoading(false)
   }, [search, page])
 

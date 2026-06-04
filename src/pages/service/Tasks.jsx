@@ -272,6 +272,7 @@ export default function Tasks() {
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
   const [uploadFile, setUploadFile] = useState(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
 
   const [tickets, setTickets]         = useState([])
   const [ticketLabels, setTicketLabels] = useState({})
@@ -281,6 +282,7 @@ export default function Tasks() {
   const [spares, setSpares]           = useState([])
   const [dropdownLoading, setDropdownLoading] = useState(true)
   const origAssignedTo                = useRef(null)
+  const origFile                      = useRef('')
   const ticketDataLoadedRef           = useRef(false)
 
   // ── Fetch list ────────────────────────────────────────────────────
@@ -433,7 +435,9 @@ export default function Tasks() {
     await ensureTicketData()
     setForm({ ...emptyForm, startdate: new Date().toISOString().split('T')[0] })
     setUploadFile(null)
+    setFileInputKey(key => key + 1)
     setEditId(null)
+    origFile.current = ''
     setError('')
     setView('form')
   }
@@ -455,7 +459,9 @@ export default function Tasks() {
       file:        t.file               || '',
     })
     setUploadFile(null)
+    setFileInputKey(key => key + 1)
     origAssignedTo.current = t.assigned_to || ''
+    origFile.current = t.file || ''
     setEditId(t.id)
     setError('')
     setView('form')
@@ -498,6 +504,9 @@ export default function Tasks() {
     } else {
       const { error: err } = await supabase.from('task').insert([payload])
       if (err) { setError(err.message); setSaving(false); return }
+    }
+    if (editId && origFile.current && origFile.current !== filePath) {
+      supabase.storage.from('crm-uploads').remove([origFile.current]).catch(() => {})
     }
     logActivity({
       module: 'tasks',
@@ -853,15 +862,36 @@ export default function Tasks() {
             <label className="text-sm font-medium text-gray-700">Document</label>
             <div className="col-span-2">
               <input
+                key={fileInputKey}
                 type="file"
                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
                 onChange={e => setUploadFile(e.target.files?.[0] || null)}
                 className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
               />
               {form.file && !uploadFile && (
-                <SignedFileLink path={form.file} label="Current document" className="mt-2 text-xs text-red-600 hover:underline" />
+                <div className="mt-2 flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
+                  <SignedFileLink path={form.file} label="Current document" className="text-xs text-red-600 hover:underline" />
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, file: '' }))}
+                    className="text-xs text-gray-500 hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                </div>
               )}
-              {uploadFile && <p className="mt-2 text-xs text-gray-500">{uploadFile.name}</p>}
+              {uploadFile && (
+                <div className="mt-2 flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
+                  <p className="min-w-0 truncate text-xs text-gray-500">{uploadFile.name}</p>
+                  <button
+                    type="button"
+                    onClick={() => { setUploadFile(null); setFileInputKey(key => key + 1) }}
+                    className="text-xs text-gray-500 hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -932,12 +962,14 @@ export default function Tasks() {
             <div><span className="font-medium text-gray-500">Assigned To: </span>{getUserName(detail.assigned_to)}</div>
             <div><span className="font-medium text-gray-500">Created By: </span>{getUserName(detail.user_id)}</div>
             <div><span className="font-medium text-gray-500">Date Created: </span>{formatDateTime(detail.created_at)}</div>
-            <div>
-              <span className="font-medium text-gray-500">Document: </span>
-              {detail.file ? (
-                <SignedFileLink path={detail.file} className="text-red-600 hover:underline" />
-              ) : '—'}
-            </div>
+          </div>
+          <div className="border-t border-gray-100 pt-4">
+            <p className="font-medium text-gray-500 mb-1">Document</p>
+            {detail.file ? (
+              <SignedFileLink path={detail.file} label="View uploaded document" className="text-red-600 hover:underline" />
+            ) : (
+              <p className="text-gray-400">No document uploaded.</p>
+            )}
           </div>
           <div className="border-t border-gray-100 pt-4">
             <p className="font-medium text-gray-500 mb-1">Description</p>

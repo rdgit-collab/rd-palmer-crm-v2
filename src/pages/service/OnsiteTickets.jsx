@@ -125,9 +125,11 @@ export default function OnsiteTickets() {
   const [spares, setSpares]       = useState([])
   const [dropdownLoading, setDropdownLoading] = useState(true)
   const [uploadFile, setUploadFile] = useState(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
   const serialSearchId = useRef(0)
   const formDataLoadedRef = useRef(false)
   const origAssignedTo = useRef('')
+  const origFile = useRef('')
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -253,8 +255,10 @@ export default function OnsiteTickets() {
     setProductLoading(false)
     setSerialLoading(false)
     setUploadFile(null)
+    setFileInputKey(key => key + 1)
     setEditId(null)
     origAssignedTo.current = ''
+    origFile.current = ''
     setError('')
     setView('form')
   }
@@ -269,9 +273,11 @@ export default function OnsiteTickets() {
       workdone: r.workdone || '', date: r.date || '', file: r.file || '',
     })
     setUploadFile(null)
+    setFileInputKey(key => key + 1)
     await loadTicketProducts(r.ticket_id, productValues(r.product))
     loadSerialOptions(r.serial_number || '')
     origAssignedTo.current = String(r.assigned_to || '')
+    origFile.current = r.file || ''
     setEditId(r.id); setError(''); setView('form')
   }
 
@@ -299,6 +305,9 @@ export default function OnsiteTickets() {
       ? await supabase.from('onsiteticket').update(payload).eq('id', editId)
       : await supabase.from('onsiteticket').insert([payload])
     if (err) { setError(err.message); setSaving(false); return }
+    if (editId && origFile.current && origFile.current !== filePath) {
+      supabase.storage.from('crm-uploads').remove([origFile.current]).catch(() => {})
+    }
     logActivity({
       module: 'onsite-tickets',
       action: editId ? 'update' : 'create',
@@ -512,15 +521,36 @@ export default function OnsiteTickets() {
           <label className="text-sm font-medium text-gray-700">Document</label>
           <div className="col-span-2">
             <input
+              key={fileInputKey}
               type="file"
               accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
               onChange={e => setUploadFile(e.target.files?.[0] || null)}
               className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
             />
             {form.file && !uploadFile && (
-              <SignedFileLink path={form.file} label="Current document" className="mt-2 text-xs text-red-600 hover:underline" />
+              <div className="mt-2 flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
+                <SignedFileLink path={form.file} label="Current document" className="text-xs text-red-600 hover:underline" />
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, file: '' }))}
+                  className="text-xs text-gray-500 hover:text-red-600"
+                >
+                  Remove
+                </button>
+              </div>
             )}
-            {uploadFile && <p className="mt-2 text-xs text-gray-500">{uploadFile.name}</p>}
+            {uploadFile && (
+              <div className="mt-2 flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
+                <p className="min-w-0 truncate text-xs text-gray-500">{uploadFile.name}</p>
+                <button
+                  type="button"
+                  onClick={() => { setUploadFile(null); setFileInputKey(key => key + 1) }}
+                  className="text-xs text-gray-500 hover:text-red-600"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
           </div>
         </div>
         {[
@@ -585,12 +615,14 @@ export default function OnsiteTickets() {
           <DetailField label="Vendor Ref">{detail.vandor_order_ref || '—'}</DetailField>
           <DetailField label="Spare" className="md:col-span-2">{detail.spare || '—'}</DetailField>
           <DetailField label="Assigned To">{getUserName(detail.assigned_to)}</DetailField>
-          <div>
-            <span className="font-medium text-gray-500">Document: </span>
-            {detail.file ? (
-              <SignedFileLink path={detail.file} className="text-red-600 hover:underline" />
-            ) : '—'}
-          </div>
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          <p className="font-medium text-gray-500 mb-1">Document</p>
+          {detail.file ? (
+            <SignedFileLink path={detail.file} label="View uploaded document" className="text-red-600 hover:underline" />
+          ) : (
+            <p className="text-gray-400">No document uploaded.</p>
+          )}
         </div>
         {detail.issue_description && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Issue Description</p><p className="whitespace-pre-wrap">{detail.issue_description}</p></div>}
         {detail.workdone && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Work Done</p><p className="whitespace-pre-wrap">{detail.workdone}</p></div>}
