@@ -7,6 +7,7 @@ import { notifyUser } from '../../lib/notifyUser'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { hasAdminAccess, isSalesRole } from '../../lib/roles'
+import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -71,12 +72,6 @@ const stageColor = (name = '') => {
   return 'bg-gray-100 text-gray-600'
 }
 
-const isClosedStageName = (name = '') => String(name || '').trim().toLowerCase().startsWith('closed')
-const isTerminalActivityStatus = (name = '') => {
-  const n = String(name || '').trim().toLowerCase()
-  return n.includes('complete') || n.includes('cancel')
-}
-
 const activityStatusColor = (name = '') => {
   const n = name.toLowerCase()
   if (n.includes('complete')) return 'bg-green-100 text-green-700'
@@ -118,6 +113,8 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const [activitySaving, setActivitySaving] = useState(false)
   const [activityError, setActivityError] = useState('')
   const [leadStatusError, setLeadStatusError] = useState('')
+  const [leadCloseBlockers, setLeadCloseBlockers] = useState([])
+  const [blockedCloseStatus, setBlockedCloseStatus] = useState(null)
   const [leadStatusSaving, setLeadStatusSaving] = useState(false)
   const [pendingCloseStatus, setPendingCloseStatus] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -172,6 +169,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const allActivitiesReadyToClose = () => (
     activities.every(activity => isTerminalActivityStatus(activity.status))
   )
+  const completeStatusName = activityStatuses.find(status => String(status.name || '').toLowerCase().includes('complete'))?.name || ''
 
   const updateLeadStatus = async (nextStatus) => {
     setLeadStatusSaving(true)
@@ -204,14 +202,54 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     const nextStageName = stageNameFor(nextStatus)
     if (isClosedStageName(nextStageName)) {
       if (!allActivitiesReadyToClose()) {
+        const blockers = activities.filter(activity => !isTerminalActivityStatus(activity.status))
         setLeadStatusError('Before closing this lead, all activities under this lead must be Complete or Cancelled.')
+        setLeadCloseBlockers(blockers)
+        setBlockedCloseStatus({ id: nextStatus, name: nextStageName })
         return
       }
       setLeadStatusError('')
+      setLeadCloseBlockers([])
+      setBlockedCloseStatus(null)
       setPendingCloseStatus({ id: nextStatus, name: nextStageName })
       return
     }
+    setLeadCloseBlockers([])
+    setBlockedCloseStatus(null)
     await updateLeadStatus(nextStatus)
+  }
+
+  const markBlockersCompleteAndContinue = async () => {
+    if (!completeStatusName || leadCloseBlockers.length === 0) return
+    setLeadStatusSaving(true)
+    setLeadStatusError('')
+    const blockerIds = leadCloseBlockers.map(activity => activity.id)
+    const { error } = await supabase
+      .from('activity')
+      .update({ status: completeStatusName, updated_at: new Date().toISOString() })
+      .in('id', blockerIds)
+    setLeadStatusSaving(false)
+    if (error) {
+      setLeadStatusError(error.message)
+      return
+    }
+    logActivity({
+      module: 'activities',
+      action: 'update',
+      recordTable: 'activity',
+      recordLabel: completeStatusName,
+      summary: `Marked ${blockerIds.length} lead activities as ${completeStatusName}`,
+      metadata: { lead_id: lead.id, activity_ids: blockerIds },
+    })
+    const nextActivities = activities.map(activity =>
+      blockerIds.includes(activity.id) ? { ...activity, status: completeStatusName, updated_at: new Date().toISOString() } : activity
+    )
+    setActivities(nextActivities)
+    setLeadCloseBlockers([])
+    if (blockedCloseStatus) {
+      setPendingCloseStatus(blockedCloseStatus)
+      setBlockedCloseStatus(null)
+    }
   }
 
   const confirmCloseLead = async () => {
@@ -253,7 +291,12 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     })
     setActivityForm(defaultActivityForm())
     setShowActivityForm(false)
-    load()
+    const { data: nextActivities } = await supabase
+      .from('activity')
+      .select('*')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false })
+    setActivities(nextActivities || [])
   }
 
   return (
@@ -287,6 +330,27 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           {stages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
         </select>
         <p className="mt-1 text-xs text-gray-400">Closed stages require all lead activities to be Complete or Cancelled.</p>
+        {leadCloseBlockers.length > 0 && (
+          <div className="mt-3 rounded border border-red-100 bg-red-50 p-3">
+            <p className="text-xs font-semibold text-red-700 mb-2">These activities must be completed or cancelled first:</p>
+            <div className="space-y-1.5">
+              {leadCloseBlockers.map(activity => (
+                <div key={activity.id} className="flex items-center justify-between gap-3 text-xs text-red-700">
+                  <span className="min-w-0 truncate">{activity.type || 'Activity'} · {activity.date ? fmt(activity.date) : 'No date'}</span>
+                  <span className="shrink-0">{activity.status || 'No status'}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={markBlockersCompleteAndContinue}
+              disabled={!completeStatusName || leadStatusSaving}
+              className="mt-3 px-3 py-1.5 text-xs bg-red-600 text-white rounded disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {completeStatusName ? 'Mark all as Complete & continue' : 'No Complete status found'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -1067,6 +1131,7 @@ export default function Leads() {
   const [page, setPage] = useState(0)
   const [tab, setTab] = useState('open')
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterAssigned, setFilterAssigned] = useState('')
   const [stages, setStages] = useState([])
@@ -1078,6 +1143,11 @@ export default function Leads() {
     () => stages.filter(stage => isClosedStageName(stage.name)).map(stage => String(stage.id)),
     [stages]
   )
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
     const run = async () => {
@@ -1118,8 +1188,8 @@ export default function Leads() {
       q = q.or(`status.is.null,status.not.in.(${closedStageIds.join(',')})`)
     }
 
-    if (search.trim()) {
-      q = q.ilike('company_name', `%${search.trim()}%`)
+    if (debouncedSearch.trim()) {
+      q = q.ilike('company_name', `%${debouncedSearch.trim()}%`)
     }
     if (filterStatus) {
       q = q.eq('status', filterStatus)
@@ -1132,10 +1202,10 @@ export default function Leads() {
     const { data, count, error } = await q
     if (!error) { setLeads(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, filterStatus, filterAssigned, page, profile, tab, closedStageIds])
+  }, [debouncedSearch, filterStatus, filterAssigned, page, profile, tab, closedStageIds])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
-  useEffect(() => { setPage(0) }, [search, filterStatus, filterAssigned, tab])
+  useEffect(() => { setPage(0) }, [debouncedSearch, filterStatus, filterAssigned, tab])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 

@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { hasAdminAccess, isSalesManagerRole, isSalesRole } from '../../lib/roles'
+import { isTerminalActivityStatus } from '../../lib/activityStatus'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
 import PaginationControls from '../../components/PaginationControls'
@@ -36,15 +37,6 @@ function todayString(offset = 0) {
   const d = new Date()
   d.setDate(d.getDate() + offset)
   return d.toISOString().split('T')[0]
-}
-
-function isCompleted(status = '') {
-  return String(status || '').toLowerCase().includes('complete')
-}
-
-function isTerminalActivityStatus(status = '') {
-  const value = String(status || '').trim().toLowerCase()
-  return value.includes('complete') || value.includes('close') || value.includes('cancel')
 }
 
 function priorityColor(p = '') {
@@ -91,6 +83,7 @@ export default function Activities() {
   const [total, setTotal]       = useState(0)
   const [tabCounts, setTabCounts] = useState({})
   const [search, setSearch]     = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [typeFilter, setTF]     = useState('')
   const [assignedFilter, setAssignedFilter] = useState('')
   const [tab, setTab]           = useState('open')
@@ -111,9 +104,15 @@ export default function Activities() {
   const [priorities, setPriorities] = useState([])
   const [activityStatuses, setActivityStatuses] = useState([])
   const leadsLoadedRef = useRef(false)
+  const lookupsLoadedRef = useRef(false)
 
   const leadsById = useMemo(() => Object.fromEntries(leads.map(l => [String(l.id), l])), [leads])
   const customersById = useMemo(() => Object.fromEntries(customers.map(c => [String(c.id), c])), [customers])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const shouldRestrictToOwnActivities = useCallback((tabId) => (
     isSalesRestricted && (!isSalesManager || tabId !== 'all')
@@ -129,12 +128,14 @@ export default function Activities() {
   }, [currentLegacyUserId])
 
   const applyActivityTabFilter = useCallback((query, tabId) => {
-    if (tabId === 'completed') return query.ilike('status', '%complete%')
-    if (tabId === 'open') return query.not('status', 'ilike', '%complete%')
-    if (tabId === 'today') return query.eq('date', todayString()).not('status', 'ilike', '%complete%')
-    if (tabId === 'tomorrow') return query.eq('date', todayString(1)).not('status', 'ilike', '%complete%')
-    if (tabId === 'overdue') return query.lt('date', todayString()).not('status', 'ilike', '%complete%')
-    if (tabId === 'upcoming') return query.gt('date', todayString(1)).not('status', 'ilike', '%complete%')
+    const terminalOr = 'status.ilike.%complete%,status.ilike.%cancel%,status.ilike.%close%'
+    const excludeTerminal = (base) => base.or('status.is.null,and(status.not.ilike.%complete%,status.not.ilike.%cancel%,status.not.ilike.%close%)')
+    if (tabId === 'completed') return query.or(terminalOr)
+    if (tabId === 'open') return excludeTerminal(query)
+    if (tabId === 'today') return excludeTerminal(query.eq('date', todayString()))
+    if (tabId === 'tomorrow') return excludeTerminal(query.eq('date', todayString(1)))
+    if (tabId === 'overdue') return excludeTerminal(query.lt('date', todayString()))
+    if (tabId === 'upcoming') return excludeTerminal(query.gt('date', todayString(1)))
     return query
   }, [])
 
@@ -174,13 +175,21 @@ export default function Activities() {
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    const [activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
-      fetchAssignableUsers(supabase),
-      fetchLegacyUsers(supabase),
-      supabase.from('activity_type').select('id, type').order('type'),
-      supabase.from('priority').select('id, name').order('name'),
-      supabase.from('activity_status').select('id, name').order('name'),
-    ])
+    if (!lookupsLoadedRef.current) {
+      const [activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
+        fetchAssignableUsers(supabase),
+        fetchLegacyUsers(supabase),
+        supabase.from('activity_type').select('id, type').order('type'),
+        supabase.from('priority').select('id, name').order('name'),
+        supabase.from('activity_status').select('id, name').order('name'),
+      ])
+      setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
+      setAssignableUsers(activeUsers || [])
+      if (!atR.error) setActivityTypes(atR.data || [])
+      if (!prioR.error) setPriorities(prioR.data || [])
+      if (!statusR.error) setActivityStatuses(statusR.data || [])
+      lookupsLoadedRef.current = true
+    }
 
     let ownedLeadIds = []
     if (isSalesRestricted) {
@@ -196,7 +205,7 @@ export default function Activities() {
       .select(ACTIVITY_COLUMNS, { count: 'estimated' })
       .order('id', { ascending: false })
 
-    const text = search.trim()
+    const text = debouncedSearch.trim()
     let searchLeadIds = []
     let searchCustomerIds = []
     if (text) {
@@ -234,18 +243,13 @@ export default function Activities() {
     setCustomers(custR.data || [])
     if (!actR.error) setRawActivities(activityRows)
     setTotal(actR.count || 0)
-    setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
-    setAssignableUsers(activeUsers || [])
-    if (!atR.error) setActivityTypes(atR.data || [])
-    if (!prioR.error) setPriorities(prioR.data || [])
-    if (!statusR.error) setActivityStatuses(statusR.data || [])
     setLoading(false)
-  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, tab, search, page])
+  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, tab, debouncedSearch, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
   const fetchTabCounts = useCallback(async () => {
-    const text = search.trim()
+    const text = debouncedSearch.trim()
     let ownedLeadIds = []
     let searchLeadIds = []
     let searchCustomerIds = []
@@ -305,7 +309,7 @@ export default function Activities() {
     }))
 
     setTabCounts(Object.fromEntries(entries))
-  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, search, visibleTabs])
+  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, debouncedSearch, visibleTabs])
 
   useEffect(() => { fetchTabCounts() }, [fetchTabCounts])
 
@@ -322,18 +326,13 @@ export default function Activities() {
   }
 
   useEffect(() => {
-    const latest = new Map()
-    rawActivities.map(enrichActivity).forEach(activity => {
-      const key = activity.lead_id ? `lead-${activity.lead_id}` : `activity-${activity.id}`
-      if (!latest.has(key)) latest.set(key, activity)
-    })
-    setRows(Array.from(latest.values()))
+    setRows(rawActivities.map(enrichActivity))
   }, [rawActivities, enrichActivity])
 
   const filteredRows = useMemo(() => {
     const today = todayString()
     const tomorrow = todayString(1)
-    const text = search.trim().toLowerCase()
+    const text = debouncedSearch.trim().toLowerCase()
     const isOwnActivity = (row) => (
       String(row.assignedTo || '') === String(currentLegacyUserId) ||
       String(row.user_id || '') === String(currentLegacyUserId) ||
@@ -342,7 +341,7 @@ export default function Activities() {
     return rows
       .filter(r => {
         if (isSalesRestricted && (!isSalesManager || tab !== 'all') && !isOwnActivity(r)) return false
-        const completed = isCompleted(r.status)
+        const completed = isTerminalActivityStatus(r.status)
         if (tab === 'all') return true
         if (tab === 'open') return !completed
         if (tab === 'completed') return completed
@@ -362,7 +361,7 @@ export default function Activities() {
         if (tab === 'overdue') return dateA.localeCompare(dateB) || b.id - a.id
         return dateB.localeCompare(dateA) || b.id - a.id
       })
-  }, [rows, search, typeFilter, assignedFilter, tab, currentLegacyUserId, isSalesRestricted, isSalesManager])
+  }, [rows, debouncedSearch, typeFilter, assignedFilter, tab, currentLegacyUserId, isSalesRestricted, isSalesManager])
 
   const pagedRows = filteredRows
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -384,6 +383,16 @@ export default function Activities() {
       .map(enrichActivity)
       .sort((a, b) => b.id - a.id)
   }
+
+  const isOwnRow = (activity) => (
+    String(activity.assigned_to || activity.assignedTo || '') === String(currentLegacyUserId) ||
+    String(activity.user_id || '') === String(currentLegacyUserId) ||
+    String(activity.lead?.assigned_to || '') === String(currentLegacyUserId)
+  )
+  const canEditRow = (activity) => (
+    hasAdminAccess(profile?.role_id) ||
+    (!isTerminalActivityStatus(activity.status) && isOwnRow(activity))
+  )
 
   const openAdd = async () => {
     await ensureLeadData()
@@ -721,9 +730,9 @@ export default function Activities() {
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700" title="View history"><Eye size={15} /></button>
-                    <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-green-700" title="Edit latest update"><Edit2 size={15} /></button>
-                    <button onClick={() => openUpdate(r)} className="text-red-600 hover:text-red-700 text-xs font-semibold">Update</button>
-                    {canDeleteActivities && <button onClick={() => setDeleteId(r.id)} className="text-gray-400 hover:text-red-700" title="Delete latest update"><Trash2 size={15} /></button>}
+                    {canEditRow(r) && <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-green-700" title="Edit this update"><Edit2 size={15} /></button>}
+                    <button onClick={() => openUpdate(r)} className="text-red-600 hover:text-red-700 text-xs font-semibold" title="Add a new update">Add update</button>
+                    {canDeleteActivities && <button onClick={() => setDeleteId(r.id)} className="text-gray-400 hover:text-red-700" title="Delete this entry"><Trash2 size={15} /></button>}
                   </div>
                 </td>
               </tr>
