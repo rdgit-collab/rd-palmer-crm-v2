@@ -206,7 +206,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
   return `<!doctype html>
   <html>
     <head>
-      <title>${escapeHtml(invoice.invoice_number || 'Invoice')}</title>
+      <title>${escapeHtml(invoice.invoice_number || 'Proforma Invoice')}</title>
       <style>
         @page { size: A4; margin: 0; }
         body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
@@ -234,7 +234,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
         tr:last-child td { border-bottom: 0; }
         td:nth-child(2) { overflow-wrap: anywhere; hyphens: auto; }
         .desc { margin-top: 5px; line-height: 1.42; }
-        tr, .totals, .section, .document-signature { break-inside: avoid; page-break-inside: avoid; }
+        tr, .totals, .section { break-inside: avoid; page-break-inside: avoid; }
         .below-table { display: grid; grid-template-columns: 1fr 250px; gap: 28px; align-items: start; margin-top: 6px; }
         .totals { width: 250px; margin-left: auto; border-top: 1px solid #aaa; padding-top: 8px; }
         .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
@@ -245,8 +245,6 @@ function invoiceHtml(invoice, items, contactName, customer) {
         .text-column .section, .below-table .section { text-align: justify; text-align-last: left; hyphens: auto; overflow-wrap: break-word; }
         .text-column .section h2, .below-table .section h2 { text-align: left; text-align-last: left; }
         .below-table .section { margin-top: 4px; }
-        .document-signature { display: grid; grid-template-columns: 270px 270px; gap: 48px; margin-top: 28px; }
-        .signature-line { border-top: 1px dotted #111; padding-top: 10px; font-style: italic; min-height: 64px; line-height: 1.45; }
         ul { padding-left: 18px; margin-top: 4px; }
         @media print {
           body { background: #fff; }
@@ -266,7 +264,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
         <div class="top">
           <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
           <div class="company">
-            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
+            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (200301008311)<br>
             63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
             Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
             Website: www.rd-palmer.com
@@ -279,7 +277,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
             <div style="margin-top:12px;">Attn: ${escapeHtml(contactName || '-')}</div>
           </div>
           <div>
-            <div class="doc-title">Invoice</div>
+            <div class="doc-title">Proforma Invoice</div>
             <div class="meta">
               <div class="meta-row"><span>Invoice No.:</span><span class="value">${escapeHtml(invoice.invoice_number || '-')}</span></div>
               <div class="meta-row"><span>Date:</span><span class="value">${fmt(invoice.date)}</span></div>
@@ -306,10 +304,6 @@ function invoiceHtml(invoice, items, contactName, customer) {
         </div>
         <div class="text-column">
           ${terms ? `<div class="section"><h2>Terms & Conditions</h2>${terms}</div>` : ''}
-        </div>
-        <div class="document-signature">
-          <div class="signature-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
-          <div class="signature-line">(Co. Stamp)</div>
         </div>
       </div>
     </body>

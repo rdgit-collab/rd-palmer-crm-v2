@@ -375,7 +375,7 @@ export default function Calibration() {
           <div class="top">
             <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
             <div class="company">
-              <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (610731 W)<br>
+              <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (200301008311)<br>
               63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
               Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
               Website: www.rd-palmer.com
