@@ -12,7 +12,6 @@ import {
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const PAGE_SIZE = 30
-const CONTACT_LIST_COLUMNS = 'id, company_id, Salutation, first_name, last_name, department_id, position, mobile_number, email, address, user_id, created_at, updated_at'
 
 // ─── Contact Form (Add / Edit) ─────────────────────────────────────────────────
 function ContactForm({ contact, onSave, onCancel }) {
@@ -255,50 +254,19 @@ export default function Contacts() {
   const fetchContacts = useCallback(async () => {
     setLoading(true)
     const term = submittedSearch.trim()
-    let q = supabase
-      .from('contact')
-      .select(CONTACT_LIST_COLUMNS, { count: 'exact' })
-
-    if (term && searchField === 'company') {
-      let customerQuery = supabase
-        .from('customer')
-        .select('id')
-        .limit(1000)
-      customerQuery = applyTokenIlike(customerQuery, 'company_name', term)
-      const { data: matchingCustomers, error: customerError } = await customerQuery
-
-      if (customerError || !matchingCustomers?.length) {
-        setContacts([])
-        setTotal(0)
-        setLoading(false)
-        return
-      }
-
-      q = q.in('company_id', matchingCustomers.map(c => c.id))
-    } else if (term) {
-      q = q.or(
-        `first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,mobile_number.ilike.%${term}%`
-      )
-    }
-
-    q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    const { data, count, error } = await q
+    const { data, error } = await supabase.rpc('search_contacts', {
+      p_search: term,
+      p_search_field: searchField,
+      p_limit: PAGE_SIZE,
+      p_offset: page * PAGE_SIZE,
+    })
     if (!error) {
       const contactRows = data || []
-      const companyIds = [...new Set(contactRows.map(c => c.company_id).filter(Boolean))]
-      let customersById = {}
-      if (companyIds.length) {
-        const { data: customerRows } = await supabase
-          .from('customer')
-          .select('id, company_name')
-          .in('id', companyIds)
-        customersById = Object.fromEntries((customerRows || []).map(c => [String(c.id), c]))
-      }
       setContacts(contactRows.map(c => ({
         ...c,
-        customer: customersById[String(c.company_id)] || null,
+        customer: c.company_name ? { id: c.company_id, company_name: c.company_name } : null,
       })))
-      setTotal(count || 0)
+      setTotal(contactRows[0]?.total_count || 0)
     }
     setLoading(false)
   }, [submittedSearch, searchField, page])
