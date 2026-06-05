@@ -22,7 +22,6 @@ const markedRate = (baseRate, markup) => {
 }
 const PAGE_SIZE = 30
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
-const QUOTATION_LIST_COLUMNS = 'id, user_id, number, name, date, expiry_date, currency, total, isconvert, created_at'
 const DEFAULT_QUOTATION_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_QUOTATION_TERMS = `Availability:
 Validity: 30 days from quotation date.
@@ -669,15 +668,14 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     }
     setCustomerLoading(true)
     try {
-      let q = supabase
-        .from('customer')
-        .select('id, company_name, assigned')
-        .order('company_name')
-        .limit(100)
-      q = applyTokenIlike(q, 'company_name', term)
-      const { data, error: searchError } = await q
+      const { data, error: searchError } = await supabase.rpc('search_customers', {
+        p_search: term,
+        p_limit: 30,
+        p_offset: 0,
+      })
       if (searchError) throw searchError
-      setCustomers(rankRowsBySearch(data || [], 'company_name', term).slice(0, 30))
+      const result = Array.isArray(data) ? data[0] : data
+      setCustomers(Array.isArray(result?.rows) ? result.rows : [])
     } catch (searchError) {
       setCustomers([])
       setError(searchError.message || 'Unable to search customers.')
@@ -1439,33 +1437,24 @@ export default function Quotations() {
 
   const fetchQuotations = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('quotation').select(QUOTATION_LIST_COLUMNS, { count: 'exact' })
-    if (isSalesRole(profile?.role_id)) q = q.eq('user_id', getLegacyUserId(profile))
-    if (submittedSearch.trim()) {
-      const term = submittedSearch.trim()
-      q = q.or(`name.ilike.%${term}%,number.ilike.%${term}%`)
+    try {
+      const { data, error } = await supabase.rpc('search_quotations', {
+        p_search: submittedSearch.trim(),
+        p_current_user_id: getLegacyUserId(profile) || null,
+        p_restricted: isSalesRole(profile?.role_id),
+        p_limit: PAGE_SIZE,
+        p_offset: page * PAGE_SIZE,
+      })
+      if (error) throw error
+      const result = Array.isArray(data) ? data[0] : data
+      setQuotations(Array.isArray(result?.rows) ? result.rows : [])
+      setTotal(Number(result?.total_count || 0))
+    } catch (error) {
+      setQuotations([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
     }
-    q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    const { data, count, error } = await q
-    if (!error) {
-      const rows = data || []
-      if (rows.length > 0) {
-        const { data: itemRows } = await supabase
-          .from('quotation_item')
-          .select('qid, item')
-          .in('qid', rows.map(row => row.id))
-          .order('id')
-        const firstItemByQid = {}
-        ;(itemRows || []).forEach(item => {
-          if (!firstItemByQid[item.qid]) firstItemByQid[item.qid] = item.item
-        })
-        setQuotations(rows.map(row => ({ ...row, first_item: firstItemByQid[row.id] || '' })))
-      } else {
-        setQuotations([])
-      }
-      setTotal(count || 0)
-    }
-    setLoading(false)
   }, [submittedSearch, page, profile])
 
   useEffect(() => { fetchQuotations() }, [fetchQuotations])

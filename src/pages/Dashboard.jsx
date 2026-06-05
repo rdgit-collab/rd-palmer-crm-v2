@@ -263,7 +263,7 @@ function AdminDashboard({ firstName }) {
                 <div key={a.id} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
                   <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium mt-0.5 ${activityTypeColor(a.type)}`}>{a.type || '—'}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">{displayText(a.description || a.company_id)}</p>
+                    <p className="text-sm text-gray-800 truncate">{displayText(a.description || a.companyName || a.company_id)}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{a.date || ''}</p>
                   </div>
                 </div>
@@ -309,11 +309,21 @@ function SalesDashboard({ firstName }) {
       p_current_user_id: currentLegacyUserId || null,
       p_restricted: isSalesRestricted,
     })
-    let recentActivitiesQuery = supabase.from('activity').select('id, user_id, assigned_to, type, date, description, company_id').order('date', { ascending: false }).limit(8)
+    const recentActivitiesQuery = supabase.rpc('search_activities', {
+      p_tab: 'all',
+      p_search: '',
+      p_type_filter: '',
+      p_assigned_filter: '',
+      p_current_user_id: currentLegacyUserId || null,
+      p_restricted: isSalesRestricted,
+      p_limit: 8,
+      p_offset: 0,
+      p_today: new Date().toISOString().split('T')[0],
+      p_tomorrow: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    })
     let recentLeadsQuery = supabase.from('sales_lead').select('id, first_name, last_name, company_name, status, assigned_to, created_at, updated_at').order('id', { ascending: false }).limit(5)
 
     if (isSalesRestricted) {
-      recentActivitiesQuery = recentActivitiesQuery.or(`assigned_to.eq.${currentLegacyUserId},user_id.eq.${currentLegacyUserId}`)
       recentLeadsQuery = recentLeadsQuery.eq('assigned_to', currentLegacyUserId)
     }
 
@@ -328,7 +338,8 @@ function SalesDashboard({ firstName }) {
       const getLeadStatusName = (status) => status ? (stageLookup[String(status)] || String(status)) : 'Open'
 
       setStats(summary.stats || {})
-      setRecentActivities(acts.data || [])
+      const activitySummary = Array.isArray(acts.data) ? acts.data[0] : acts.data
+      setRecentActivities(Array.isArray(activitySummary?.rows) ? activitySummary.rows : [])
       setRecentLeads((rLeads.data || []).map(lead => ({ ...lead, status_name: getLeadStatusName(lead.status) })))
       setSalesRows(summary.salesRows || [])
       setFollowUpItems(summary.followUpItems || [])

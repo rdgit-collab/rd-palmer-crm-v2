@@ -12,7 +12,6 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
 const PAGE_SIZE = 30
-const ACTIVITY_COLUMNS = 'id, type, priority, status, date, time, description, lead_id, company_id, assigned_to, user_id, created_at, updated_at'
 
 const emptyForm = {
   type: '', priority: '', status: '',
@@ -140,240 +139,62 @@ export default function Activities() {
     isSalesRestricted && (!isSalesManager || tabId !== 'all')
   ), [isSalesRestricted, isSalesManager])
 
-  const applyOwnershipFilter = useCallback((query, ownedLeadIds = []) => {
-    const ownershipFilters = [
-      `assigned_to.eq.${currentLegacyUserId}`,
-      `user_id.eq.${currentLegacyUserId}`,
-    ]
-    if (ownedLeadIds.length) ownershipFilters.push(`lead_id.in.(${ownedLeadIds.join(',')})`)
-    return query.or(ownershipFilters.join(','))
-  }, [currentLegacyUserId])
-
-  const applyActivityTabFilter = useCallback((query, tabId) => {
-    const terminalOr = 'status.ilike.%complete%,status.ilike.%cancel%,status.ilike.%close%'
-    const excludeTerminal = (base) => base.or('status.is.null,and(status.not.ilike.%complete%,status.not.ilike.%cancel%,status.not.ilike.%close%)')
-    if (tabId === 'completed') return query.or(terminalOr)
-    if (tabId === 'open') return excludeTerminal(query)
-    if (tabId === 'today') return excludeTerminal(query.eq('date', todayString()))
-    if (tabId === 'tomorrow') return excludeTerminal(query.eq('date', todayString(1)))
-    if (tabId === 'overdue') return excludeTerminal(query.lt('date', todayString()))
-    if (tabId === 'upcoming') return excludeTerminal(query.gt('date', todayString(1)))
-    return query
-  }, [])
-
-  const applyActivityFilters = useCallback((query, { tabId, ownedLeadIds = [], searchLeadIds = [], searchCustomerIds = [], text = '' }) => {
-    let nextQuery = query
-    if (shouldRestrictToOwnActivities(tabId)) nextQuery = applyOwnershipFilter(nextQuery, ownedLeadIds)
-    nextQuery = applyActivityTabFilter(nextQuery, tabId)
-    if (typeFilter) nextQuery = nextQuery.eq('type', typeFilter)
-    if (assignedFilter) nextQuery = nextQuery.eq('assigned_to', assignedFilter)
-
-    if (text) {
-      const searchFilters = [
-        `type.ilike.%${text}%`,
-        `status.ilike.%${text}%`,
-        `priority.ilike.%${text}%`,
-        `description.ilike.%${text}%`,
-      ]
-      if (searchLeadIds.length) searchFilters.push(`lead_id.in.(${searchLeadIds.join(',')})`)
-      if (searchCustomerIds.length) searchFilters.push(`company_id.in.(${searchCustomerIds.join(',')})`)
-      nextQuery = nextQuery.or(searchFilters.join(','))
-    }
-
-    return nextQuery
-  }, [applyActivityTabFilter, applyOwnershipFilter, assignedFilter, shouldRestrictToOwnActivities, typeFilter])
-
-  const enrichActivity = useCallback((activity) => {
-    const lead = activity.lead_id ? leadsById[String(activity.lead_id)] : null
-    const customer = activity.company_id ? customersById[String(activity.company_id)] : null
-    return {
-      ...activity,
-      lead,
-      customer,
-      companyName: lead?.company_name || customer?.company_name || activity.company_id || '-',
-      assignedTo: activity.assigned_to || lead?.assigned_to || '',
-    }
-  }, [leadsById, customersById])
-
   const fetchRows = useCallback(async () => {
     setLoading(true)
-    if (!lookupsLoadedRef.current) {
-      const [activeUsers, legacyUsers, atR, prioR, statusR, stageR] = await Promise.all([
-        fetchAssignableUsers(supabase),
-        fetchLegacyUsers(supabase),
-        supabase.from('activity_type').select('id, type').order('type'),
-        supabase.from('priority').select('id, name').order('name'),
-        supabase.from('activity_status').select('id, name').order('name'),
-        supabase.from('stage').select('id, name').order('name'),
-      ])
-      setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
-      setAssignableUsers(activeUsers || [])
-      if (!atR.error) setActivityTypes(atR.data || [])
-      if (!prioR.error) setPriorities(prioR.data || [])
-      if (!statusR.error) setActivityStatuses(statusR.data || [])
-      if (!stageR.error) setStages(stageR.data || [])
-      lookupsLoadedRef.current = true
+    setError('')
+    try {
+      if (!lookupsLoadedRef.current) {
+        const [activeUsers, legacyUsers, atR, prioR, statusR, stageR] = await Promise.all([
+          fetchAssignableUsers(supabase),
+          fetchLegacyUsers(supabase),
+          supabase.from('activity_type').select('id, type').order('type'),
+          supabase.from('priority').select('id, name').order('name'),
+          supabase.from('activity_status').select('id, name').order('name'),
+          supabase.from('stage').select('id, name').order('name'),
+        ])
+        setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
+        setAssignableUsers(activeUsers || [])
+        if (!atR.error) setActivityTypes(atR.data || [])
+        if (!prioR.error) setPriorities(prioR.data || [])
+        if (!statusR.error) setActivityStatuses(statusR.data || [])
+        if (!stageR.error) setStages(stageR.data || [])
+        lookupsLoadedRef.current = true
+      }
+
+      const { data, error: rpcError } = await supabase.rpc('search_activities', {
+        p_tab: tab,
+        p_search: submittedSearch.trim(),
+        p_type_filter: typeFilter || '',
+        p_assigned_filter: assignedFilter || '',
+        p_current_user_id: currentLegacyUserId || null,
+        p_restricted: shouldRestrictToOwnActivities(tab),
+        p_limit: PAGE_SIZE,
+        p_offset: (page - 1) * PAGE_SIZE,
+        p_today: todayString(),
+        p_tomorrow: todayString(1),
+      })
+      if (rpcError) throw rpcError
+
+      const result = Array.isArray(data) ? data[0] : data
+      const activityRows = Array.isArray(result?.rows) ? result.rows : []
+      setRawActivities(activityRows)
+      setRows(activityRows)
+      setTotal(Number(result?.total_count || 0))
+      setTabCounts(result?.tab_counts || {})
+      mergeLeads(activityRows.map(row => row.lead).filter(Boolean))
+      mergeCustomers(activityRows.map(row => row.customer).filter(Boolean))
+    } catch (fetchError) {
+      setRawActivities([])
+      setRows([])
+      setTotal(0)
+      setTabCounts({})
+      setError(fetchError.message || 'Unable to load activities.')
+    } finally {
+      setLoading(false)
     }
-
-    let ownedLeadIds = []
-    if (isSalesRestricted) {
-      const { data: ownedLeads } = await supabase
-        .from('sales_lead')
-        .select('id')
-        .eq('assigned_to', currentLegacyUserId)
-      ownedLeadIds = (ownedLeads || []).map(lead => lead.id).filter(Boolean)
-    }
-
-    let activityQuery = supabase
-      .from('activity')
-      .select(ACTIVITY_COLUMNS, { count: 'exact' })
-      .order('id', { ascending: false })
-
-    const text = submittedSearch.trim()
-    let searchLeadIds = []
-    let searchCustomerIds = []
-    if (text) {
-      let leadSearchQ = supabase
-          .from('sales_lead')
-          .select('id')
-          .limit(200)
-      let customerSearchQ = supabase
-          .from('customer')
-          .select('id')
-          .limit(200)
-      leadSearchQ = applyTokenIlike(leadSearchQ, 'company_name', text)
-      customerSearchQ = applyTokenIlike(customerSearchQ, 'company_name', text)
-      const [leadSearchR, customerSearchR] = await Promise.all([
-        leadSearchQ,
-        customerSearchQ,
-      ])
-      searchLeadIds = (leadSearchR.data || []).map(row => row.id).filter(Boolean)
-      searchCustomerIds = (customerSearchR.data || []).map(row => row.id).filter(Boolean)
-    }
-
-    activityQuery = applyActivityFilters(activityQuery, { tabId: tab, ownedLeadIds, searchLeadIds, searchCustomerIds, text })
-
-    activityQuery = activityQuery.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
-    const actR = await activityQuery
-    const activityRows = actR.data || []
-    const leadIds = [...new Set(activityRows.map(row => row.lead_id).filter(Boolean))]
-    const customerIds = [...new Set(activityRows.map(row => row.company_id).filter(Boolean))]
-    const leadR = leadIds.length
-      ? await supabase.from('sales_lead').select('id, company_name, first_name, last_name, assigned_to, status').in('id', leadIds)
-      : { data: [] }
-    const custR = customerIds.length
-      ? await supabase.from('customer').select('id, company_name').in('id', customerIds)
-      : { data: [] }
-
-    mergeLeads(leadR.data || [])
-    mergeCustomers(custR.data || [])
-    if (!actR.error) setRawActivities(activityRows)
-    setTotal(actR.count || 0)
-    setLoading(false)
-  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, mergeCustomers, mergeLeads, tab, submittedSearch, page])
+  }, [assignedFilter, currentLegacyUserId, mergeCustomers, mergeLeads, page, shouldRestrictToOwnActivities, submittedSearch, tab, typeFilter])
 
   useEffect(() => { fetchRows() }, [fetchRows])
-
-  const fetchTabCounts = useCallback(async () => {
-    const text = submittedSearch.trim()
-    let ownedLeadIds = []
-    let searchLeadIds = []
-    let searchCustomerIds = []
-
-    const requests = []
-    if (isSalesRestricted) {
-      requests.push(
-        supabase
-          .from('sales_lead')
-          .select('id')
-          .eq('assigned_to', currentLegacyUserId)
-      )
-    }
-    if (text) {
-      let leadSearchQ = supabase
-          .from('sales_lead')
-          .select('id')
-          .limit(200)
-      let customerSearchQ = supabase
-          .from('customer')
-          .select('id')
-          .limit(200)
-      leadSearchQ = applyTokenIlike(leadSearchQ, 'company_name', text)
-      customerSearchQ = applyTokenIlike(customerSearchQ, 'company_name', text)
-      requests.push(leadSearchQ)
-      requests.push(customerSearchQ)
-    }
-
-    const results = requests.length ? await Promise.all(requests) : []
-    let resultIdx = 0
-    if (isSalesRestricted) {
-      ownedLeadIds = (results[resultIdx]?.data || []).map(row => row.id).filter(Boolean)
-      resultIdx += 1
-    }
-    if (text) {
-      searchLeadIds = (results[resultIdx]?.data || []).map(row => row.id).filter(Boolean)
-      searchCustomerIds = (results[resultIdx + 1]?.data || []).map(row => row.id).filter(Boolean)
-    }
-
-    const entries = await Promise.all(visibleTabs.map(async (item) => {
-      let countQuery = supabase
-        .from('activity')
-        .select('id', { count: 'exact', head: true })
-
-      countQuery = applyActivityFilters(countQuery, {
-        tabId: item.id,
-        ownedLeadIds,
-        searchLeadIds,
-        searchCustomerIds,
-        text,
-      })
-
-      const { count, error: countError } = await countQuery
-      return [item.id, countError ? 0 : (count || 0)]
-    }))
-
-    setTabCounts(Object.fromEntries(entries))
-  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, submittedSearch, visibleTabs])
-
-  useEffect(() => { fetchTabCounts() }, [fetchTabCounts])
-
-  useEffect(() => {
-    setRows(rawActivities.map(enrichActivity))
-  }, [rawActivities, enrichActivity])
-
-  const filteredRows = useMemo(() => {
-    const today = todayString()
-    const tomorrow = todayString(1)
-    const text = submittedSearch.trim().toLowerCase()
-    const isOwnActivity = (row) => (
-      String(row.assignedTo || '') === String(currentLegacyUserId) ||
-      String(row.user_id || '') === String(currentLegacyUserId) ||
-      String(row.lead?.assigned_to || '') === String(currentLegacyUserId)
-    )
-    return rows
-      .filter(r => {
-        if (isSalesRestricted && (!isSalesManager || tab !== 'all') && !isOwnActivity(r)) return false
-        const completed = isTerminalActivityStatus(r.status)
-        if (tab === 'all') return true
-        if (tab === 'open') return !completed
-        if (tab === 'completed') return completed
-        if (completed) return false
-        if (tab === 'today') return r.date === today
-        if (tab === 'tomorrow') return r.date === tomorrow
-        if (tab === 'overdue') return r.date && r.date < today
-        if (tab === 'upcoming') return r.date && r.date > tomorrow
-        return true
-      })
-      .filter(r => !typeFilter || r.type === typeFilter)
-      .filter(r => !assignedFilter || String(r.assignedTo || '') === String(assignedFilter))
-      .filter(r => !text || [r.companyName, r.type, r.status, r.priority, r.description].some(value => String(value || '').toLowerCase().includes(text)))
-      .sort((a, b) => {
-        const dateA = a.date || ''
-        const dateB = b.date || ''
-        if (tab === 'overdue') return dateA.localeCompare(dateB) || b.id - a.id
-        return dateB.localeCompare(dateA) || b.id - a.id
-      })
-  }, [rows, submittedSearch, typeFilter, assignedFilter, tab, currentLegacyUserId, isSalesRestricted, isSalesManager])
   const runSearch = () => {
     setSubmittedSearch(search.trim())
     setPage(1)
@@ -386,7 +207,7 @@ export default function Activities() {
     setPage(1)
   }
 
-  const pagedRows = filteredRows
+  const pagedRows = rows
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   const getUserName = (id) => formatUserName(users, id)
@@ -404,7 +225,6 @@ export default function Activities() {
     if (!activity?.lead_id) return [activity]
     return rawActivities
       .filter(item => String(item.lead_id) === String(activity.lead_id))
-      .map(enrichActivity)
       .sort((a, b) => b.id - a.id)
   }
 

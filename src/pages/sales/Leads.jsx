@@ -8,7 +8,6 @@ import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { hasAdminAccess, isSalesRole } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
-import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -16,7 +15,6 @@ import {
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const PAGE_SIZE = 30
-const LEAD_LIST_COLUMNS = 'id, lead_source, status, type, company_id, contact_id, company_name, industry, account_type, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, salutation, first_name, last_name, position, department_id, contact_mobile_number, contact_email, assigned_to, created_at, updated_at'
 
 const lookupName = (items, id, fallbackPrefix) => {
   if (!id) return '—'
@@ -768,15 +766,14 @@ function LeadForm({ lead, onSave, onCancel }) {
     }
     setCustomerLoading(true)
     try {
-      let q = supabase
-        .from('customer')
-        .select('id, industry, account_type, company_name, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, assignto')
-        .order('company_name')
-        .limit(100)
-      q = applyTokenIlike(q, 'company_name', term)
-      const { data, error: searchError } = await q
+      const { data, error: searchError } = await supabase.rpc('search_customers', {
+        p_search: term,
+        p_limit: 30,
+        p_offset: 0,
+      })
       if (searchError) throw searchError
-      setCustomers(rankRowsBySearch(data || [], 'company_name', term).slice(0, 30))
+      const result = Array.isArray(data) ? data[0] : data
+      setCustomers(Array.isArray(result?.rows) ? result.rows : [])
     } catch (searchError) {
       setCustomers([])
       setError(searchError.message || 'Unable to search customers.')
@@ -1322,33 +1319,30 @@ export default function Leads() {
   const fetchLeads = useCallback(async () => {
     if (!profile) return
     setLoading(true)
-    let q = supabase.from('sales_lead').select(LEAD_LIST_COLUMNS, { count: 'exact' })
     const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
-
-    if (isSalesRestricted) {
-      q = q.eq('assigned_to', currentLegacyUserId)
+    try {
+      const { data, error } = await supabase.rpc('search_leads', {
+        p_tab: tab,
+        p_search: submittedSearch.trim(),
+        p_status_filter: filterStatus || '',
+        p_assigned_filter: !isSalesRestricted && filterAssigned ? parseInt(filterAssigned) : null,
+        p_current_user_id: currentLegacyUserId || null,
+        p_restricted: isSalesRestricted,
+        p_closed_stage_ids: closedStageIds,
+        p_limit: PAGE_SIZE,
+        p_offset: page * PAGE_SIZE,
+      })
+      if (error) throw error
+      const result = Array.isArray(data) ? data[0] : data
+      setLeads(Array.isArray(result?.rows) ? result.rows : [])
+      setTotal(Number(result?.total_count || 0))
+    } catch (error) {
+      setLeads([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
     }
-
-    if (tab === 'closed') {
-      if (closedStageIds.length) q = q.in('status', closedStageIds)
-      else q = q.eq('status', '__no_closed_stage__')
-    } else if (closedStageIds.length) {
-      q = q.or(`status.is.null,status.not.in.(${closedStageIds.join(',')})`)
-    }
-
-    if (submittedSearch.trim()) q = applyTokenIlike(q, 'company_name', submittedSearch)
-    if (filterStatus) {
-      q = q.eq('status', filterStatus)
-    }
-    if (!isSalesRestricted && filterAssigned) {
-      q = q.eq('assigned_to', parseInt(filterAssigned))
-    }
-
-    q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    const { data, count, error } = await q
-    if (!error) { setLeads(data || []); setTotal(count || 0) }
-    setLoading(false)
   }, [submittedSearch, filterStatus, filterAssigned, page, profile, tab, closedStageIds])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])

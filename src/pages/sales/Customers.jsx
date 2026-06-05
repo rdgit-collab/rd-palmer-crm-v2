@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
-import { applyTokenIlike } from '../../lib/searchUtils'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
@@ -12,7 +11,6 @@ import {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const CUSTOMER_LIST_COLUMNS = 'id, industry, account_type, company_name, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, assigned, assignto, created_at, updated_at'
 
 
 // ─── Customer Form (Add / Edit) ────────────────────────────────────────────────
@@ -570,12 +568,22 @@ export default function Customers() {
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('customer').select(CUSTOMER_LIST_COLUMNS, { count: 'exact' })
-    if (submittedSearch.trim()) q = applyTokenIlike(q, 'company_name', submittedSearch)
-    q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    const { data, count, error } = await q
-    if (!error) { setCustomers(data || []); setTotal(count || 0) }
-    setLoading(false)
+    try {
+      const { data, error } = await supabase.rpc('search_customers', {
+        p_search: submittedSearch.trim(),
+        p_limit: PAGE_SIZE,
+        p_offset: page * PAGE_SIZE,
+      })
+      if (error) throw error
+      const result = Array.isArray(data) ? data[0] : data
+      setCustomers(Array.isArray(result?.rows) ? result.rows : [])
+      setTotal(Number(result?.total_count || 0))
+    } catch (error) {
+      setCustomers([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
+    }
   }, [submittedSearch, page])
 
   useEffect(() => { fetchCustomers() }, [fetchCustomers])
