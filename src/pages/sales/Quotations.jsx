@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import { isSalesRole } from '../../lib/roles'
 import { logActivity } from '../../lib/activityLog'
 import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
+import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLookups'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -562,6 +563,9 @@ function QuotationForm({ quotation, onSave, onCancel }) {
   const [contactForm, setContactForm] = useState(emptyContactForm)
   const [contactSaving, setContactSaving] = useState(false)
   const [contactError, setContactError] = useState('')
+  const salesUsersQuery = useAssignableUsers()
+  const taxesQuery = useTaxes()
+  const paymentTermsQuery = usePaymentTerms()
 
   // Header fields
   const [form, setForm] = useState({
@@ -604,19 +608,12 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       : [{ itemid: '', item: '', description: '', qty: 1, markup: '', base_rate: 0, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }]
   )
 
+  useEffect(() => { setSalesUsers(salesUsersQuery.data || []) }, [salesUsersQuery.data])
+  useEffect(() => { setTaxes(taxesQuery.data || []) }, [taxesQuery.data])
+  useEffect(() => { setPaymentTerms(paymentTermsQuery.data || []) }, [paymentTermsQuery.data])
+
   useEffect(() => {
     const load = async () => {
-      const [
-        users, { data: txs }, { data: pts }
-      ] = await Promise.all([
-        fetchAssignableUsers(supabase),
-        supabase.from('tax').select('id, name').order('name'),
-        supabase.from('payment_term').select('id, name').order('name'),
-      ])
-      setSalesUsers(users || [])
-      setTaxes(txs || [])
-      setPaymentTerms(pts || [])
-
       if (quotation?.companyid) {
         const { data: currentCustomer } = await supabase
           .from('customer')

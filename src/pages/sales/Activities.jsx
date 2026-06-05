@@ -1,13 +1,21 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
+import { getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { hasAdminAccess, isSalesManagerRole, isSalesRole } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
 import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
+import {
+  useActivityStatuses,
+  useActivityTypes,
+  useAssignableUsers,
+  useLegacyUsers,
+  usePriorities,
+  useStages,
+} from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
@@ -110,7 +118,12 @@ export default function Activities() {
   const [leadSearch, setLeadSearch] = useState('')
   const [leadSearchedTerm, setLeadSearchedTerm] = useState('')
   const [leadLoading, setLeadLoading] = useState(false)
-  const lookupsLoadedRef = useRef(false)
+  const activityTypesQuery = useActivityTypes()
+  const prioritiesQuery = usePriorities()
+  const activityStatusesQuery = useActivityStatuses()
+  const stagesQuery = useStages()
+  const assignableUsersQuery = useAssignableUsers()
+  const legacyUsersQuery = useLegacyUsers()
 
   const leadsById = useMemo(() => Object.fromEntries(leads.map(l => [String(l.id), l])), [leads])
   const customersById = useMemo(() => Object.fromEntries(customers.map(c => [String(c.id), c])), [customers])
@@ -139,28 +152,22 @@ export default function Activities() {
     isSalesRestricted && (!isSalesManager || tabId !== 'all')
   ), [isSalesRestricted, isSalesManager])
 
+  useEffect(() => {
+    const activeUsers = assignableUsersQuery.data || []
+    const legacyRows = legacyUsersQuery.data || []
+    setUsers((legacyRows.length ? legacyRows : activeUsers) || [])
+    setAssignableUsers(activeUsers || [])
+  }, [assignableUsersQuery.data, legacyUsersQuery.data])
+
+  useEffect(() => { setActivityTypes(activityTypesQuery.data || []) }, [activityTypesQuery.data])
+  useEffect(() => { setPriorities(prioritiesQuery.data || []) }, [prioritiesQuery.data])
+  useEffect(() => { setActivityStatuses(activityStatusesQuery.data || []) }, [activityStatusesQuery.data])
+  useEffect(() => { setStages(stagesQuery.data || []) }, [stagesQuery.data])
+
   const fetchRows = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      if (!lookupsLoadedRef.current) {
-        const [activeUsers, legacyUsers, atR, prioR, statusR, stageR] = await Promise.all([
-          fetchAssignableUsers(supabase),
-          fetchLegacyUsers(supabase),
-          supabase.from('activity_type').select('id, type').order('type'),
-          supabase.from('priority').select('id, name').order('name'),
-          supabase.from('activity_status').select('id, name').order('name'),
-          supabase.from('stage').select('id, name').order('name'),
-        ])
-        setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
-        setAssignableUsers(activeUsers || [])
-        if (!atR.error) setActivityTypes(atR.data || [])
-        if (!prioR.error) setPriorities(prioR.data || [])
-        if (!statusR.error) setActivityStatuses(statusR.data || [])
-        if (!stageR.error) setStages(stageR.data || [])
-        lookupsLoadedRef.current = true
-      }
-
       const { data, error: rpcError } = await supabase.rpc('search_activities', {
         p_tab: tab,
         p_search: submittedSearch.trim(),

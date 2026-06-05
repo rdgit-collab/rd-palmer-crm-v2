@@ -2,12 +2,24 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
+import { getLegacyUserId, getUserName } from '../../lib/legacyUsers'
 import { notifyUser } from '../../lib/notifyUser'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { hasAdminAccess, isSalesRole } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
+import {
+  useAccountTypes,
+  useActivityStatuses,
+  useActivityTypes,
+  useAssignableUsers,
+  useCountries,
+  useIndustries,
+  useLeadSources,
+  useLegacyUsers,
+  usePriorities,
+  useStages,
+} from '../../hooks/useLookups'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -104,6 +116,12 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const [leadStatusSaving, setLeadStatusSaving] = useState(false)
   const [pendingCloseStatus, setPendingCloseStatus] = useState(null)
   const [loading, setLoading] = useState(true)
+  const legacyUsersQuery = useLegacyUsers()
+  const leadSourcesQuery = useLeadSources()
+  const stagesQuery = useStages()
+  const activityTypesQuery = useActivityTypes()
+  const prioritiesQuery = usePriorities()
+  const activityStatusesQuery = useActivityStatuses()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -111,30 +129,25 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     if (isSalesRole(profile?.role_id)) {
       leadQuery = leadQuery.eq('assigned_to', getLegacyUserId(profile))
     }
-    const [{ data: l }, { data: act }, legacyUsers, { data: sources }, { data: stageRows }, { data: typeRows }, { data: priorityRows }, { data: statusRows }] = await Promise.all([
+    const [{ data: l }, { data: act }] = await Promise.all([
       leadQuery.maybeSingle(),
       supabase.from('activity').select('*').eq('lead_id', leadId).order('created_at', { ascending: false }),
-      fetchLegacyUsers(supabase),
-      supabase.from('lead').select('id, name').order('name'),
-      supabase.from('stage').select('id, name').order('name'),
-      supabase.from('activity_type').select('id, type').order('type'),
-      supabase.from('priority').select('id, name').order('name'),
-      supabase.from('activity_status').select('id, name').order('name'),
     ])
     setLead(l)
     setActivities(act || [])
-    setUsers(legacyUsers || [])
-    setLeadSources(sources || [])
-    setStages(stageRows || [])
-    setActivityTypes(typeRows || [])
-    setPriorities(priorityRows || [])
-    setActivityStatuses(statusRows || [])
     setLoading(false)
   }, [leadId, profile])
 
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => { setUsers(legacyUsersQuery.data || []) }, [legacyUsersQuery.data])
+  useEffect(() => { setLeadSources(leadSourcesQuery.data || []) }, [leadSourcesQuery.data])
+  useEffect(() => { setStages(stagesQuery.data || []) }, [stagesQuery.data])
+  useEffect(() => { setActivityTypes(activityTypesQuery.data || []) }, [activityTypesQuery.data])
+  useEffect(() => { setPriorities(prioritiesQuery.data || []) }, [prioritiesQuery.data])
+  useEffect(() => { setActivityStatuses(activityStatusesQuery.data || []) }, [activityStatusesQuery.data])
 
   if (loading) return <div className="flex items-center justify-center h-40 text-gray-500 text-sm">Loading...</div>
   if (!lead) return <div className="text-gray-500 text-sm p-4">Lead not found.</div>
@@ -641,6 +654,12 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [contactMode, setContactMode] = useState('existing')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const leadSourcesQuery = useLeadSources()
+  const stagesQuery = useStages()
+  const usersQuery = useAssignableUsers()
+  const industriesQuery = useIndustries()
+  const accountTypesQuery = useAccountTypes()
+  const countriesQuery = useCountries()
 
   const [form, setForm] = useState({
     lead_source: lead?.lead_source ? String(lead.lead_source) : '',
@@ -672,32 +691,12 @@ function LeadForm({ lead, onSave, onCancel }) {
     assigned_to: lead?.assigned_to ? String(lead.assigned_to) : (isSalesRestricted ? String(currentLegacyUserId) : ''),
   })
 
-  useEffect(() => {
-    const run = async () => {
-      const [
-        { data: sources },
-        { data: stageRows },
-        assignableUsers,
-        { data: industryRows },
-        { data: accountRows },
-        { data: countryRows },
-      ] = await Promise.all([
-        supabase.from('lead').select('id, name').order('name'),
-        supabase.from('stage').select('id, name').order('name'),
-        fetchAssignableUsers(supabase),
-        supabase.from('industries').select('id, name').order('name'),
-        supabase.from('account_type').select('id, type').order('type'),
-        supabase.from('country').select('id, name').order('name'),
-      ])
-      setLeadSources(sources || [])
-      setStages(stageRows || [])
-      setUsers(assignableUsers || [])
-      setIndustries(industryRows || [])
-      setAccountTypes(accountRows || [])
-      setCountries(countryRows || [])
-    }
-    run()
-  }, [])
+  useEffect(() => { setLeadSources(leadSourcesQuery.data || []) }, [leadSourcesQuery.data])
+  useEffect(() => { setStages(stagesQuery.data || []) }, [stagesQuery.data])
+  useEffect(() => { setUsers(usersQuery.data || []) }, [usersQuery.data])
+  useEffect(() => { setIndustries(industriesQuery.data || []) }, [industriesQuery.data])
+  useEffect(() => { setAccountTypes(accountTypesQuery.data || []) }, [accountTypesQuery.data])
+  useEffect(() => { setCountries(countriesQuery.data || []) }, [countriesQuery.data])
 
   useEffect(() => {
     const loadSelectedCustomer = async () => {
@@ -1290,24 +1289,17 @@ export default function Leads() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
+  const stagesQuery = useStages()
+  const leadSourcesQuery = useLeadSources()
+  const legacyUsersQuery = useLegacyUsers()
   const closedStageIds = useMemo(
     () => stages.filter(stage => isClosedStageName(stage.name)).map(stage => String(stage.id)),
     [stages]
   )
 
-  useEffect(() => {
-    const run = async () => {
-      const [{ data: stageRows }, { data: sourceRows }, legacyUsers] = await Promise.all([
-        supabase.from('stage').select('id, name').order('name'),
-        supabase.from('lead').select('id, name').order('name'),
-        fetchLegacyUsers(supabase),
-      ])
-      setStages(stageRows || [])
-      setLeadSources(sourceRows || [])
-      setUsers(legacyUsers || [])
-    }
-    run()
-  }, [])
+  useEffect(() => { setStages(stagesQuery.data || []) }, [stagesQuery.data])
+  useEffect(() => { setLeadSources(leadSourcesQuery.data || []) }, [leadSourcesQuery.data])
+  useEffect(() => { setUsers(legacyUsersQuery.data || []) }, [legacyUsersQuery.data])
 
   useEffect(() => {
     if (location.state?.leadId) {

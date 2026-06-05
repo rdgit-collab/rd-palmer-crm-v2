@@ -3,11 +3,21 @@ import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
-import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
+import { getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import { displayText } from '../../lib/displayText'
+import {
+  useAssignableUsers,
+  useCategories,
+  useLegacyUsers,
+  useModes,
+  usePriorities,
+  useServiceTypes,
+  useSpares,
+  useVendors,
+} from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -287,6 +297,14 @@ export default function Tickets() {
   const [spares, setSpares] = useState([])
   const [vendors, setVendors] = useState([])
   const [modes, setModes] = useState([])
+  const categoriesQuery = useCategories()
+  const assignableUsersQuery = useAssignableUsers()
+  const legacyUsersQuery = useLegacyUsers()
+  const prioritiesQuery = usePriorities()
+  const serviceTypesQuery = useServiceTypes()
+  const sparesQuery = useSpares()
+  const vendorsQuery = useVendors()
+  const modesQuery = useModes()
 
   // Products rows in form
   const [products, setProducts] = useState([{ ...emptyProduct }])
@@ -345,32 +363,35 @@ export default function Tickets() {
     load()
   }, [location.state])
 
-  // ── Fetch dropdowns ───────────────────────────────────────────────
+  useEffect(() => { setCategories(categoriesQuery.data || []) }, [categoriesQuery.data])
+  useEffect(() => { setUsers(assignableUsersQuery.data || []) }, [assignableUsersQuery.data])
+  useEffect(() => { setAllUsers(legacyUsersQuery.data || []) }, [legacyUsersQuery.data])
+  useEffect(() => { setPriorities(prioritiesQuery.data || []) }, [prioritiesQuery.data])
+  useEffect(() => { setServiceTypes(serviceTypesQuery.data || []) }, [serviceTypesQuery.data])
+  useEffect(() => { setSpares(sparesQuery.data || []) }, [sparesQuery.data])
+  useEffect(() => { setVendors(vendorsQuery.data || []) }, [vendorsQuery.data])
+  useEffect(() => { setModes(modesQuery.data || []) }, [modesQuery.data])
   useEffect(() => {
-    const run = async () => {
-      setDropdownLoading(true)
-      const [catR, usrR, allUsrR, prioR, svcR, spareR, vendorR, modeR] = await Promise.all([
-        supabase.from('category').select('id, name').order('name'),
-        fetchAssignableUsers(supabase),
-        fetchLegacyUsers(supabase),
-        supabase.from('priority').select('id, name').order('name'),
-        supabase.from('service_type').select('id, type').order('type'),
-        supabase.from('spare').select('id, name').order('name'),
-        supabase.from('vendor').select('id, name').order('name'),
-        supabase.from('mode').select('id, name').order('name'),
-      ])
-      if (!catR.error)  setCategories(catR.data  || [])
-      setUsers(usrR || [])
-      setAllUsers(allUsrR || [])
-      if (!prioR.error) setPriorities(prioR.data || [])
-      if (!svcR.error) setServiceTypes(svcR.data || [])
-      if (!spareR.error) setSpares(spareR.data || [])
-      if (!vendorR.error) setVendors(vendorR.data || [])
-      if (!modeR.error) setModes(modeR.data || [])
-      setDropdownLoading(false)
-    }
-    run().catch(() => setDropdownLoading(false))
-  }, [])
+    setDropdownLoading([
+      categoriesQuery,
+      assignableUsersQuery,
+      legacyUsersQuery,
+      prioritiesQuery,
+      serviceTypesQuery,
+      sparesQuery,
+      vendorsQuery,
+      modesQuery,
+    ].some(query => query.isLoading))
+  }, [
+    categoriesQuery.isLoading,
+    assignableUsersQuery.isLoading,
+    legacyUsersQuery.isLoading,
+    prioritiesQuery.isLoading,
+    serviceTypesQuery.isLoading,
+    sparesQuery.isLoading,
+    vendorsQuery.isLoading,
+    modesQuery.isLoading,
+  ])
 
   // ── Helpers ───────────────────────────────────────────────────────
   const ensureFormData = async () => {

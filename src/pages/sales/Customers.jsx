@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
+import { getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
+import { useAccountTypes, useAssignableUsers, useCountries, useIndustries } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
@@ -38,6 +39,10 @@ function CustomerForm({ customer, onSave, onCancel }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [newContacts, setNewContacts] = useState([{ ...emptyContact }])
+  const industriesQuery = useIndustries()
+  const accountTypesQuery = useAccountTypes()
+  const usersQuery = useAssignableUsers()
+  const countriesQuery = useCountries()
 
   const [form, setForm] = useState({
     industry: customer?.industry || '',
@@ -57,11 +62,20 @@ function CustomerForm({ customer, onSave, onCancel }) {
   })
 
   useEffect(() => {
-    supabase.from('industries').select('id, name').order('name').then(({ data }) => setIndustries(data || []))
-    supabase.from('account_type').select('id, type').order('type').then(({ data }) => setAccountTypes(data || []))
-    fetchAssignableUsers(supabase).then(setUsers)
-    supabase.from('country').select('id, name').order('name').then(({ data }) => setCountries(data || []))
-  }, [])
+    setIndustries(industriesQuery.data || [])
+  }, [industriesQuery.data])
+
+  useEffect(() => {
+    setAccountTypes(accountTypesQuery.data || [])
+  }, [accountTypesQuery.data])
+
+  useEffect(() => {
+    setUsers(usersQuery.data || [])
+  }, [usersQuery.data])
+
+  useEffect(() => {
+    setCountries(countriesQuery.data || [])
+  }, [countriesQuery.data])
 
   // Load states when country changes
   useEffect(() => {
