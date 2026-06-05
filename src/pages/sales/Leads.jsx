@@ -1219,7 +1219,7 @@ export default function Leads() {
   const [page, setPage] = useState(0)
   const [tab, setTab] = useState('open')
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterAssigned, setFilterAssigned] = useState('')
   const [stages, setStages] = useState([])
@@ -1231,11 +1231,6 @@ export default function Leads() {
     () => stages.filter(stage => isClosedStageName(stage.name)).map(stage => String(stage.id)),
     [stages]
   )
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(timer)
-  }, [search])
 
   useEffect(() => {
     const run = async () => {
@@ -1276,7 +1271,7 @@ export default function Leads() {
       q = q.or(`status.is.null,status.not.in.(${closedStageIds.join(',')})`)
     }
 
-    if (debouncedSearch.trim()) q = applyTokenIlike(q, 'company_name', debouncedSearch)
+    if (submittedSearch.trim()) q = applyTokenIlike(q, 'company_name', submittedSearch)
     if (filterStatus) {
       q = q.eq('status', filterStatus)
     }
@@ -1288,10 +1283,21 @@ export default function Leads() {
     const { data, count, error } = await q
     if (!error) { setLeads(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [debouncedSearch, filterStatus, filterAssigned, page, profile, tab, closedStageIds])
+  }, [submittedSearch, filterStatus, filterAssigned, page, profile, tab, closedStageIds])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
-  useEffect(() => { setPage(0) }, [debouncedSearch, filterStatus, filterAssigned, tab])
+  useEffect(() => { setPage(0) }, [submittedSearch, filterStatus, filterAssigned, tab])
+  const runSearch = () => {
+    setSubmittedSearch(search.trim())
+    setPage(0)
+  }
+  const clearSearch = () => {
+    setSearch('')
+    setSubmittedSearch('')
+    setFilterStatus('')
+    setFilterAssigned('')
+    setPage(0)
+  }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -1377,9 +1383,14 @@ export default function Leads() {
           <input
             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
             placeholder="Search by company name..."
-            value={search} onChange={e => setSearch(e.target.value)}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') runSearch() }}
           />
         </div>
+        <button onClick={runSearch} className="flex items-center gap-1.5 px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+          <Search size={14} /> Search
+        </button>
         <select
           className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
           value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
@@ -1396,8 +1407,8 @@ export default function Leads() {
             {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
           </select>
         )}
-        {(search || filterStatus || filterAssigned) && (
-          <button onClick={() => { setSearch(''); setFilterStatus(''); setFilterAssigned('') }}
+        {(search || submittedSearch || filterStatus || filterAssigned) && (
+          <button onClick={clearSearch}
             className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
             <X size={14} /> Clear
           </button>

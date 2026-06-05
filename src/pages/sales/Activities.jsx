@@ -86,7 +86,7 @@ export default function Activities() {
   const [total, setTotal]       = useState(0)
   const [tabCounts, setTabCounts] = useState({})
   const [search, setSearch]     = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState('')
   const [typeFilter, setTF]     = useState('')
   const [assignedFilter, setAssignedFilter] = useState('')
   const [tab, setTab]           = useState('open')
@@ -113,11 +113,6 @@ export default function Activities() {
 
   const leadsById = useMemo(() => Object.fromEntries(leads.map(l => [String(l.id), l])), [leads])
   const customersById = useMemo(() => Object.fromEntries(customers.map(c => [String(c.id), c])), [customers])
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(timer)
-  }, [search])
 
   const shouldRestrictToOwnActivities = useCallback((tabId) => (
     isSalesRestricted && (!isSalesManager || tabId !== 'all')
@@ -212,7 +207,7 @@ export default function Activities() {
       .select(ACTIVITY_COLUMNS, { count: 'estimated' })
       .order('id', { ascending: false })
 
-    const text = debouncedSearch.trim()
+    const text = submittedSearch.trim()
     let searchLeadIds = []
     let searchCustomerIds = []
     if (text) {
@@ -253,12 +248,12 @@ export default function Activities() {
     if (!actR.error) setRawActivities(activityRows)
     setTotal(actR.count || 0)
     setLoading(false)
-  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, tab, debouncedSearch, page])
+  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, tab, submittedSearch, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
   const fetchTabCounts = useCallback(async () => {
-    const text = debouncedSearch.trim()
+    const text = submittedSearch.trim()
     let ownedLeadIds = []
     let searchLeadIds = []
     let searchCustomerIds = []
@@ -316,7 +311,7 @@ export default function Activities() {
     }))
 
     setTabCounts(Object.fromEntries(entries))
-  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, debouncedSearch, visibleTabs])
+  }, [applyActivityFilters, currentLegacyUserId, isSalesRestricted, submittedSearch, visibleTabs])
 
   useEffect(() => { fetchTabCounts() }, [fetchTabCounts])
 
@@ -339,7 +334,7 @@ export default function Activities() {
   const filteredRows = useMemo(() => {
     const today = todayString()
     const tomorrow = todayString(1)
-    const text = debouncedSearch.trim().toLowerCase()
+    const text = submittedSearch.trim().toLowerCase()
     const isOwnActivity = (row) => (
       String(row.assignedTo || '') === String(currentLegacyUserId) ||
       String(row.user_id || '') === String(currentLegacyUserId) ||
@@ -368,7 +363,18 @@ export default function Activities() {
         if (tab === 'overdue') return dateA.localeCompare(dateB) || b.id - a.id
         return dateB.localeCompare(dateA) || b.id - a.id
       })
-  }, [rows, debouncedSearch, typeFilter, assignedFilter, tab, currentLegacyUserId, isSalesRestricted, isSalesManager])
+  }, [rows, submittedSearch, typeFilter, assignedFilter, tab, currentLegacyUserId, isSalesRestricted, isSalesManager])
+  const runSearch = () => {
+    setSubmittedSearch(search.trim())
+    setPage(1)
+  }
+  const clearSearch = () => {
+    setSearch('')
+    setSubmittedSearch('')
+    setTF('')
+    setAssignedFilter('')
+    setPage(1)
+  }
 
   const pagedRows = filteredRows
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -844,9 +850,10 @@ export default function Activities() {
       <div className="flex gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Search company, notes, status..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+          <input type="text" placeholder="Search company, notes, status..." value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') runSearch() }}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
         </div>
+        <button onClick={runSearch} className="flex items-center gap-1.5 bg-red-600 text-white px-3 py-2 text-sm hover:bg-red-700"><Search size={14} /> Search</button>
         <select value={typeFilter} onChange={e => { setTF(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
           <option value="">All Types</option>
           {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
@@ -857,7 +864,7 @@ export default function Activities() {
             {filterUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
           </select>
         )}
-        {(search || typeFilter || assignedFilter) && <button onClick={() => { setSearch(''); setTF(''); setAssignedFilter('') }} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"><X size={14} /> Clear</button>}
+        {(search || submittedSearch || typeFilter || assignedFilter) && <button onClick={clearSearch} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"><X size={14} /> Clear</button>}
       </div>
 
       <div className="bg-white border border-gray-200">

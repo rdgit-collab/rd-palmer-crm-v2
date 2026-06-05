@@ -563,28 +563,32 @@ export default function Customers() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
   const [deleteError, setDeleteError] = useState('')
 
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(timer)
-  }, [search])
-
   const fetchCustomers = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('customer').select(CUSTOMER_LIST_COLUMNS, { count: 'estimated' })
-    if (debouncedSearch.trim()) q = applyTokenIlike(q, 'company_name', debouncedSearch)
+    if (submittedSearch.trim()) q = applyTokenIlike(q, 'company_name', submittedSearch)
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q
     if (!error) { setCustomers(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [debouncedSearch, page])
+  }, [submittedSearch, page])
 
   useEffect(() => { fetchCustomers() }, [fetchCustomers])
-  useEffect(() => { setPage(0) }, [debouncedSearch])
+  useEffect(() => { setPage(0) }, [submittedSearch])
+  const runSearch = () => {
+    setSubmittedSearch(search.trim())
+    setPage(0)
+  }
+  const clearSearch = () => {
+    setSearch('')
+    setSubmittedSearch('')
+    setPage(0)
+  }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -669,10 +673,14 @@ export default function Customers() {
             placeholder="Search by company name..."
             value={search}
             onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') runSearch() }}
           />
         </div>
-        {search && (
-          <button onClick={() => setSearch('')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+        <button onClick={runSearch} className="flex items-center gap-1.5 px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+          <Search size={14} /> Search
+        </button>
+        {(search || submittedSearch) && (
+          <button onClick={clearSearch} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
             <X size={14} /> Clear
           </button>
         )}

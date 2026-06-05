@@ -1337,6 +1337,7 @@ export default function Quotations() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
 
@@ -1344,8 +1345,8 @@ export default function Quotations() {
     setLoading(true)
     let q = supabase.from('quotation').select(QUOTATION_LIST_COLUMNS, { count: 'estimated' })
     if (isSalesRole(profile?.role_id)) q = q.eq('user_id', getLegacyUserId(profile))
-    if (search.trim()) {
-      const term = search.trim()
+    if (submittedSearch.trim()) {
+      const term = submittedSearch.trim()
       q = q.or(`name.ilike.%${term}%,number.ilike.%${term}%`)
     }
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
@@ -1369,10 +1370,19 @@ export default function Quotations() {
       setTotal(count || 0)
     }
     setLoading(false)
-  }, [search, page, profile])
+  }, [submittedSearch, page, profile])
 
   useEffect(() => { fetchQuotations() }, [fetchQuotations])
-  useEffect(() => { setPage(0) }, [search])
+  useEffect(() => { setPage(0) }, [submittedSearch])
+  const runSearch = () => {
+    setSubmittedSearch(search.trim())
+    setPage(0)
+  }
+  const clearSearch = () => {
+    setSearch('')
+    setSubmittedSearch('')
+    setPage(0)
+  }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -1456,10 +1466,13 @@ export default function Quotations() {
         <div className="relative flex-1 max-w-sm">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-            placeholder="Search by customer or quotation number..." value={search} onChange={e => setSearch(e.target.value)} />
+            placeholder="Search by customer or quotation number..." value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') runSearch() }} />
         </div>
-        {search && (
-          <button onClick={() => setSearch('')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+        <button onClick={runSearch} className="flex items-center gap-1.5 px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+          <Search size={14} /> Search
+        </button>
+        {(search || submittedSearch) && (
+          <button onClick={clearSearch} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
             <X size={14} /> Clear
           </button>
         )}
