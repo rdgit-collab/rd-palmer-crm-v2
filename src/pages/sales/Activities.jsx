@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { hasAdminAccess, isSalesManagerRole, isSalesRole } from '../../lib/roles'
-import { isTerminalActivityStatus } from '../../lib/activityStatus'
+import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
 import PaginationControls from '../../components/PaginationControls'
@@ -18,6 +18,7 @@ const emptyForm = {
   type: '', priority: '', status: '',
   date: new Date().toISOString().split('T')[0], time: '',
   description: '', lead_id: '', company_id: '', assigned_to: '',
+  lead_stage: '', followup_date: '', followup_time: '', followup_type: '',
 }
 
 const TABS = [
@@ -103,6 +104,8 @@ export default function Activities() {
   const [activityTypes, setActivityTypes] = useState([])
   const [priorities, setPriorities] = useState([])
   const [activityStatuses, setActivityStatuses] = useState([])
+  const [stages, setStages] = useState([])
+  const [stageCloseBlockers, setStageCloseBlockers] = useState([])
   const leadsLoadedRef = useRef(false)
   const lookupsLoadedRef = useRef(false)
 
@@ -176,18 +179,20 @@ export default function Activities() {
   const fetchRows = useCallback(async () => {
     setLoading(true)
     if (!lookupsLoadedRef.current) {
-      const [activeUsers, legacyUsers, atR, prioR, statusR] = await Promise.all([
+      const [activeUsers, legacyUsers, atR, prioR, statusR, stageR] = await Promise.all([
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
         supabase.from('activity_type').select('id, type').order('type'),
         supabase.from('priority').select('id, name').order('name'),
         supabase.from('activity_status').select('id, name').order('name'),
+        supabase.from('stage').select('id, name').order('name'),
       ])
       setUsers((legacyUsers?.length ? legacyUsers : activeUsers) || [])
       setAssignableUsers(activeUsers || [])
       if (!atR.error) setActivityTypes(atR.data || [])
       if (!prioR.error) setPriorities(prioR.data || [])
       if (!statusR.error) setActivityStatuses(statusR.data || [])
+      if (!stageR.error) setStages(stageR.data || [])
       lookupsLoadedRef.current = true
     }
 
@@ -398,6 +403,7 @@ export default function Activities() {
     await ensureLeadData()
     setEditId(null)
     setEditOriginalAssignee('')
+    setStageCloseBlockers([])
     setForm({
       ...emptyForm,
       date: new Date().toISOString().split('T')[0],
@@ -411,12 +417,14 @@ export default function Activities() {
     await ensureLeadData()
     setEditId(null)
     setEditOriginalAssignee('')
+    setStageCloseBlockers([])
     setForm({
       ...emptyForm,
       date: new Date().toISOString().split('T')[0],
       lead_id: activity.lead_id ? String(activity.lead_id) : '',
       company_id: activity.company_id ? String(activity.company_id) : '',
       assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (activity.assignedTo ? String(activity.assignedTo) : ''),
+      lead_stage: activity.lead?.status ? String(activity.lead.status) : '',
     })
     setError('')
     setView('form')
@@ -427,6 +435,7 @@ export default function Activities() {
     const assignedTo = activity.assigned_to || activity.assignedTo || ''
     setEditId(activity.id)
     setEditOriginalAssignee(String(assignedTo || ''))
+    setStageCloseBlockers([])
     setForm({
       type: activity.type || '',
       priority: activity.priority || '',
@@ -437,6 +446,10 @@ export default function Activities() {
       lead_id: activity.lead_id ? String(activity.lead_id) : '',
       company_id: activity.company_id ? String(activity.company_id) : '',
       assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (assignedTo ? String(assignedTo) : ''),
+      lead_stage: activity.lead?.status ? String(activity.lead.status) : '',
+      followup_date: '',
+      followup_time: '',
+      followup_type: '',
     })
     setError('')
     setView('form')
@@ -445,6 +458,10 @@ export default function Activities() {
   const selectedLead = form.lead_id ? leadsById[String(form.lead_id)] : null
   const isTerminalStatus = isTerminalActivityStatus(form.status)
   const lockedFieldClass = isTerminalStatus ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
+  const selectedStage = form.lead_stage || selectedLead?.status || ''
+  const selectedStageName = stages.find(stage => String(stage.id) === String(selectedStage))?.name || ''
+  const shouldMoveStage = selectedLead && selectedStage && String(selectedStage) !== String(selectedLead.status || '')
+  const followupType = form.followup_type || form.type || 'Follow Up'
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -452,12 +469,33 @@ export default function Activities() {
     if (!isTerminalStatus && !form.description.trim()) { setError('Description is required'); return }
     setSaving(true)
     setError('')
+    setStageCloseBlockers([])
+    if (shouldMoveStage && isClosedStageName(selectedStageName)) {
+      const { data: leadActivities, error: blockersError } = await supabase
+        .from('activity')
+        .select('id, type, status, date')
+        .eq('lead_id', parseInt(form.lead_id))
+      if (blockersError) { setError(blockersError.message); setSaving(false); return }
+      const blockers = (leadActivities || []).filter(activity => {
+        if (editId && isTerminalStatus && String(activity.id) === String(editId)) return false
+        return !isTerminalActivityStatus(activity.status)
+      })
+      if (!isTerminalStatus) {
+        blockers.push({ id: 'current', type: form.type || 'Current update', status: form.status || 'No status', date: form.date || null })
+      }
+      if (blockers.length) {
+        setStageCloseBlockers(blockers)
+        setError('Before closing this lead, all activities under this lead must be Complete or Cancelled.')
+        setSaving(false)
+        return
+      }
+    }
     const payload = {
       type: form.type || (isTerminalStatus ? 'Status Update' : ''),
       priority: isTerminalStatus ? null : (form.priority || null),
       status: form.status || null,
-      date: isTerminalStatus ? null : (form.date || null),
-      time: isTerminalStatus ? null : (form.time || null),
+      date: isTerminalStatus ? null : (editId ? (form.date || null) : null),
+      time: isTerminalStatus ? null : (editId ? (form.time || null) : null),
       description: form.description || (isTerminalStatus ? `Marked activity as ${form.status}.` : ''),
       lead_id: form.lead_id ? parseInt(form.lead_id) : null,
       company_id: form.lead_id ? null : (form.company_id || null),
@@ -469,6 +507,40 @@ export default function Activities() {
       : await supabase.from('activity').insert([{ ...payload, user_id: getLegacyUserId(profile), created_at: new Date().toISOString() }])
     const { error: err } = result
     if (err) { setError(err.message); setSaving(false); return }
+    if (shouldMoveStage) {
+      const { error: stageError } = await supabase
+        .from('sales_lead')
+        .update({ status: selectedStage, updated_at: new Date().toISOString() })
+        .eq('id', parseInt(form.lead_id))
+      if (stageError) { setError(stageError.message); setSaving(false); return }
+      logActivity({
+        module: 'leads',
+        action: 'update',
+        recordTable: 'sales_lead',
+        recordId: parseInt(form.lead_id),
+        recordLabel: selectedLead?.company_name || `Lead #${form.lead_id}`,
+        summary: `Updated lead status to ${selectedStageName}`,
+        metadata: { status: selectedStage, status_name: selectedStageName },
+      })
+    }
+    if (!editId && form.followup_date) {
+      const followupPayload = {
+        type: followupType,
+        priority: form.priority || null,
+        status: null,
+        date: form.followup_date,
+        time: form.followup_time || null,
+        description: 'Scheduled follow-up',
+        lead_id: form.lead_id ? parseInt(form.lead_id) : null,
+        company_id: form.lead_id ? null : (form.company_id || null),
+        assigned_to: payload.assigned_to,
+        user_id: getLegacyUserId(profile),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      const { error: followupError } = await supabase.from('activity').insert([followupPayload])
+      if (followupError) { setError(followupError.message); setSaving(false); return }
+    }
     logActivity({
       module: 'activities',
       action: editId ? 'update' : 'create',
@@ -497,6 +569,25 @@ export default function Activities() {
           ['Description', payload.description],
           ['Date', payload.date || ''],
           ['Time', payload.time || ''],
+          ['Assigned By', getUserName(currentLegacyUserId)],
+        ],
+        link: '/activities',
+      })
+    }
+    const followupAssignee = payload.assigned_to ? String(payload.assigned_to) : ''
+    if (!editId && form.followup_date && followupAssignee && followupAssignee !== String(currentLegacyUserId || '')) {
+      await notifyUser(supabase, {
+        userId: parseInt(followupAssignee),
+        actorUserId: currentLegacyUserId,
+        title: 'Activity assigned to you',
+        reference: followupType,
+        companyName: company?.company_name || '',
+        body: `You have been assigned a follow-up${company?.company_name ? ' for ' + company.company_name : ''}.`,
+        details: [
+          ['Company', company?.company_name || ''],
+          ['Activity Type', followupType],
+          ['Date', form.followup_date || ''],
+          ['Time', form.followup_time || ''],
           ['Assigned By', getUserName(currentLegacyUserId)],
         ],
         link: '/activities',
@@ -534,6 +625,7 @@ export default function Activities() {
       lead_id: leadId,
       company_id: '',
       assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (lead?.assigned_to ? String(lead.assigned_to) : f.assigned_to),
+      lead_stage: lead?.status ? String(lead.status) : '',
     }))
   }
 
@@ -545,6 +637,9 @@ export default function Activities() {
       </div>
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       <form onSubmit={handleSave} className="bg-white border border-gray-200 p-6 space-y-5">
+        <div>
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">What happened</h2>
+        </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Lead</label>
           <div className="col-span-2">
@@ -554,6 +649,30 @@ export default function Activities() {
             </select>
           </div>
         </div>
+        {!editId && form.lead_id && (
+          <div className="grid grid-cols-3 gap-4 items-center">
+            <label className="text-sm font-medium text-gray-700">Move Lead To Stage</label>
+            <div className="col-span-2">
+              <select value={selectedStage} onChange={e => setForm(f => ({...f, lead_stage: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                <option value="">No stage change</option>
+                {stages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+        {stageCloseBlockers.length > 0 && (
+          <div className="rounded border border-red-100 bg-red-50 p-3">
+            <p className="text-xs font-semibold text-red-700 mb-2">These activities must be completed or cancelled before closing the lead:</p>
+            <div className="space-y-1.5">
+              {stageCloseBlockers.map(activity => (
+                <div key={activity.id} className="flex items-center justify-between gap-3 text-xs text-red-700">
+                  <span className="min-w-0 truncate">{activity.type || 'Activity'} · {activity.date ? fmt(activity.date) : 'No date'}</span>
+                  <span className="shrink-0">{activity.status || 'No status'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Status</label>
           <div className="col-span-2">
@@ -573,13 +692,15 @@ export default function Activities() {
             </select>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4 items-center">
-          <label className="text-sm font-medium text-gray-700">Next Contact</label>
-          <div className="col-span-2 flex gap-3">
-            <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} disabled={isTerminalStatus} className={`flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
-            <input type="time" value={form.time} onChange={e => setForm(f => ({...f, time: e.target.value}))} disabled={isTerminalStatus} className={`w-32 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
+        {editId && (
+          <div className="grid grid-cols-3 gap-4 items-center">
+            <label className="text-sm font-medium text-gray-700">Activity Date</label>
+            <div className="col-span-2 flex gap-3">
+              <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} disabled={isTerminalStatus} className={`flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
+              <input type="time" value={form.time} onChange={e => setForm(f => ({...f, time: e.target.value}))} disabled={isTerminalStatus} className={`w-32 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
+            </div>
           </div>
-        </div>
+        )}
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Priority</label>
           <div className="col-span-2">
@@ -604,6 +725,27 @@ export default function Activities() {
             <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} required={!isTerminalStatus} disabled={isTerminalStatus} rows={4} placeholder="Activity notes..." className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
           </div>
         </div>
+        {!editId && (
+          <div className="border-t border-gray-100 pt-5 space-y-4">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Schedule next follow-up</h2>
+            <div className="grid grid-cols-3 gap-4 items-center">
+              <label className="text-sm font-medium text-gray-700">Next Follow-up</label>
+              <div className="col-span-2 flex gap-3">
+                <input type="date" value={form.followup_date} onChange={e => setForm(f => ({...f, followup_date: e.target.value}))} className="flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                <input type="time" value={form.followup_time} onChange={e => setForm(f => ({...f, followup_time: e.target.value}))} className="w-32 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 items-center">
+              <label className="text-sm font-medium text-gray-700">Follow-up Type</label>
+              <div className="col-span-2">
+                <select value={form.followup_type} onChange={e => setForm(f => ({...f, followup_type: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                  <option value="">Use activity type</option>
+                  {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
           <button type="button" onClick={() => { setEditId(null); setEditOriginalAssignee(''); setView('list') }} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
           <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"><Save size={14} />{saving ? 'Saving...' : editId ? 'Update Activity' : 'Save Update'}</button>

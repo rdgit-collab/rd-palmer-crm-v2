@@ -95,6 +95,10 @@ const defaultActivityForm = () => ({
   date: new Date().toISOString().split('T')[0],
   time: '',
   description: '',
+  lead_stage: '',
+  followup_date: '',
+  followup_time: '',
+  followup_type: '',
 })
 
 // ─── Lead Detail View ──────────────────────────────────────────────────────────
@@ -164,6 +168,8 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const setActivity = (k, v) => setActivityForm(f => ({ ...f, [k]: v }))
   const isTerminalActivity = isTerminalActivityStatus(activityForm.status)
   const activityLockedClass = isTerminalActivity ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
+  const selectedUpdateStage = activityForm.lead_stage || lead.status || ''
+  const followupType = activityForm.followup_type || activityForm.type || 'Follow Up'
 
   const stageNameFor = (stageId) => lookupName(stages, stageId, 'Status')
   const allActivitiesReadyToClose = () => (
@@ -264,6 +270,19 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     if (!isTerminalActivity && !activityForm.description.trim()) { setActivityError('Description is required'); return }
     setActivitySaving(true)
     setActivityError('')
+    const selectedStageName = selectedUpdateStage ? stageNameFor(selectedUpdateStage) : ''
+    const shouldMoveStage = selectedUpdateStage && String(selectedUpdateStage) !== String(lead.status || '')
+    if (shouldMoveStage && isClosedStageName(selectedStageName) && (!allActivitiesReadyToClose() || !isTerminalActivity)) {
+      const blockers = activities.filter(activity => !isTerminalActivityStatus(activity.status))
+      if (!isTerminalActivity) {
+        blockers.push({ id: 'current', type: activityForm.type || 'Current update', status: activityForm.status || 'No status', date: null })
+      }
+      setLeadCloseBlockers(blockers)
+      setBlockedCloseStatus({ id: selectedUpdateStage, name: selectedStageName })
+      setActivityError('Before closing this lead, all activities under this lead must be Complete or Cancelled.')
+      setActivitySaving(false)
+      return
+    }
     const payload = {
       user_id: getLegacyUserId(profile),
       lead_id: lead.id,
@@ -272,15 +291,14 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       type: activityForm.type || (isTerminalActivity ? 'Status Update' : ''),
       priority: isTerminalActivity ? null : (activityForm.priority || null),
       status: activityForm.status || null,
-      date: isTerminalActivity ? null : (activityForm.date || null),
-      time: isTerminalActivity ? null : (activityForm.time || null),
+      date: null,
+      time: null,
       description: activityForm.description || (isTerminalActivity ? `Marked activity as ${activityForm.status}.` : ''),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
     const { error } = await supabase.from('activity').insert([payload])
-    setActivitySaving(false)
-    if (error) { setActivityError(error.message); return }
+    if (error) { setActivitySaving(false); setActivityError(error.message); return }
     logActivity({
       module: 'activities',
       action: 'create',
@@ -289,6 +307,48 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       summary: `Added ${payload.type} progress update for lead ${lead.company_name || lead.id}`,
       metadata: { lead_id: lead.id, assigned_to: lead.assigned_to || null },
     })
+    if (shouldMoveStage) {
+      const moved = await updateLeadStatus(selectedUpdateStage)
+      if (!moved) { setActivitySaving(false); return }
+    }
+    if (activityForm.followup_date) {
+      const followupPayload = {
+        user_id: getLegacyUserId(profile),
+        lead_id: lead.id,
+        company_id: null,
+        assigned_to: lead.assigned_to || null,
+        type: followupType,
+        priority: activityForm.priority || null,
+        status: null,
+        date: activityForm.followup_date,
+        time: activityForm.followup_time || null,
+        description: 'Scheduled follow-up',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      const { error: followupError } = await supabase.from('activity').insert([followupPayload])
+      if (followupError) { setActivitySaving(false); setActivityError(followupError.message); return }
+      const assignee = followupPayload.assigned_to ? String(followupPayload.assigned_to) : ''
+      if (assignee && assignee !== String(getLegacyUserId(profile) || '')) {
+        await notifyUser(supabase, {
+          userId: parseInt(assignee),
+          actorUserId: getLegacyUserId(profile),
+          title: 'Activity assigned to you',
+          reference: followupPayload.type,
+          companyName: lead.company_name || '',
+          body: `You have been assigned a follow-up${lead.company_name ? ' for ' + lead.company_name : ''}.`,
+          details: [
+            ['Company', lead.company_name || ''],
+            ['Activity Type', followupPayload.type],
+            ['Date', followupPayload.date || ''],
+            ['Time', followupPayload.time || ''],
+            ['Assigned By', getUserName(users, getLegacyUserId(profile))],
+          ],
+          link: '/activities',
+        })
+      }
+    }
+    setActivitySaving(false)
     setActivityForm(defaultActivityForm())
     setShowActivityForm(false)
     const { data: nextActivities } = await supabase
@@ -484,6 +544,33 @@ function LeadDetail({ leadId, onBack, onEdit }) {
               placeholder="Type detailed progress notes..."
               className={`w-full min-h-[140px] max-h-[420px] resize-y border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`}
             />
+          </div>
+          <div className="border-t border-gray-100 pt-4 mb-4">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Move lead to stage</h3>
+            <select value={selectedUpdateStage} onChange={e => setActivity('lead_stage', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+              <option value="">No stage change</option>
+              {stages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+            </select>
+          </div>
+          <div className="border-t border-gray-100 pt-4 mb-4">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Schedule next follow-up</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input type="date" value={activityForm.followup_date} onChange={e => setActivity('followup_date', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <input type="time" value={activityForm.followup_time} onChange={e => setActivity('followup_time', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select value={activityForm.followup_type} onChange={e => setActivity('followup_type', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+                  <option value="">Use activity type</option>
+                  {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
+                </select>
+              </div>
+            </div>
           </div>
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setShowActivityForm(false)} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
