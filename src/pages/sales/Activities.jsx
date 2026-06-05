@@ -766,6 +766,8 @@ export default function Activities() {
         {(search || submittedSearch || typeFilter || assignedFilter) && <button onClick={clearSearch} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"><X size={14} /> Clear</button>}
       </div>
 
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
           <thead>
