@@ -58,8 +58,8 @@ as $$
       p.term,
       p.field_name,
       case
-        when p.field_name = 'company' then lower(coalesce(cu.company_name, ''))
-        else lower(concat_ws(' ', ct.first_name, ct.last_name, ct.email, ct.mobile_number, ct.department_id, ct.position, ct.id::text))
+        when p.field_name = 'company' then lower(regexp_replace(coalesce(cu.company_name, ''), '[[:space:]]+', ' ', 'g'))
+        else lower(regexp_replace(concat_ws(' ', ct.first_name, ct.last_name, ct.email, ct.mobile_number, ct.department_id, ct.position, ct.id::text), '[[:space:]]+', ' ', 'g'))
       end as search_text
     from contact ct
     left join customer cu on cu.id = ct.company_id
@@ -70,12 +70,12 @@ as $$
       case
         when base.term = '' then 0
         else
-          case when base.search_text = lower(base.term) then 10000 else 0 end +
-          case when base.search_text like lower(base.term) || '%' then 7000 else 0 end +
-          case when base.search_text like '%' || lower(base.term) || '%' then 4000 else 0 end +
+          case when base.search_text = lower(regexp_replace(base.term, '[[:space:]]+', ' ', 'g')) then 10000 else 0 end +
+          case when base.search_text like lower(regexp_replace(base.term, '[[:space:]]+', ' ', 'g')) || '%' then 7000 else 0 end +
+          case when base.search_text like '%' || lower(regexp_replace(base.term, '[[:space:]]+', ' ', 'g')) || '%' then 4000 else 0 end +
           coalesce((
             select sum(1000 - least(nullif(strpos(base.search_text, lower(token)), 0), 999))
-            from regexp_split_to_table(base.term, '\s+') token
+            from regexp_split_to_table(base.term, '[[:space:]]+') token
             where base.search_text ilike '%' || token || '%'
           ), 0)
       end as search_score
@@ -84,7 +84,7 @@ as $$
       base.term = ''
       or not exists (
         select 1
-        from regexp_split_to_table(base.term, '\s+') token
+        from regexp_split_to_table(base.term, '[[:space:]]+') token
         where base.search_text not ilike '%' || token || '%'
       )
   )
