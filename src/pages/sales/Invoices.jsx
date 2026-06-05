@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
-import { fetchAllRows } from '../../lib/fetchAllRows'
 import { isSalesRole } from '../../lib/roles'
 import { logActivity } from '../../lib/activityLog'
+import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -332,6 +332,8 @@ async function getNextInvNumber() {
 function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   const selectedItem = catalogueItems.find(c => String(c.id) === String(item.itemid || ''))
   const [itemSearch, setItemSearch] = useState(selectedItem ? catalogueItemLabel(selectedItem) : '')
+  const [itemResults, setItemResults] = useState([])
+  const [itemLoading, setItemLoading] = useState(false)
   const [showItemOptions, setShowItemOptions] = useState(false)
   const [itemDropdownStyle, setItemDropdownStyle] = useState({})
   const itemSearchRef = useRef(null)
@@ -379,6 +381,38 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
       onChange(idx, { ...item, itemid: '', item: '', description: '', markup: '', base_rate: 0, rate: 0, amount: 0 })
     }
   }
+
+  useEffect(() => {
+    const term = itemSearch.trim()
+    if (!showItemOptions || term.length < 2 || selectedItem && term === catalogueItemLabel(selectedItem)) {
+      setItemResults([])
+      setItemLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    setItemLoading(true)
+    const timer = setTimeout(async () => {
+      let skuQuery = supabase.from('goodsservices').select('id, sku, name, price, description').ilike('sku', `%${term}%`).limit(50)
+      let nameQuery = supabase.from('goodsservices').select('id, sku, name, price, description').limit(50)
+      nameQuery = applyTokenIlike(nameQuery, 'name', term)
+      const [skuR, nameR] = await Promise.all([skuQuery, nameQuery])
+      if (cancelled) return
+      const map = new Map()
+      ;[...(skuR.data || []), ...(nameR.data || [])].forEach(row => map.set(String(row.id), row))
+      const ranked = rankRowsBySearch(
+        Array.from(map.values()).map(row => ({ ...row, search_label: catalogueItemLabel(row) })),
+        'search_label',
+        term
+      )
+      setItemResults(ranked.slice(0, 20))
+      setItemLoading(false)
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [itemSearch, selectedItem, showItemOptions])
+
   const handleQtyChange = (qty) => {
     const q = parseFloat(qty) || 0
     onChange(idx, { ...item, qty: q, amount: q * (parseFloat(item.rate) || 0) })
@@ -401,16 +435,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
   const tdCls = 'px-2 py-1.5'
   const inputCls = 'w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-400'
-  const searchNeedle = itemSearch.trim().toLowerCase()
-  const filteredCatalogueItems = (searchNeedle
-    ? catalogueItems.filter(c => {
-      const sku = String(c.sku || '').toLowerCase()
-      const name = String(c.name || '').toLowerCase()
-      const label = catalogueItemLabel(c).toLowerCase()
-      return sku.includes(searchNeedle) || name.includes(searchNeedle) || label.includes(searchNeedle)
-    })
-    : catalogueItems
-  ).slice(0, 20)
+  const filteredCatalogueItems = itemResults
 
   return (
     <tr className="border-b border-gray-100">
@@ -429,11 +454,12 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
             }}
             onBlur={() => setTimeout(() => setShowItemOptions(false), 120)}
           />
-          {showItemOptions && filteredCatalogueItems.length > 0 && (
+          {showItemOptions && (itemLoading || filteredCatalogueItems.length > 0) && (
             <div
               className="fixed z-[1000] max-h-56 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
               style={itemDropdownStyle}
             >
+              {itemLoading && <div className="px-3 py-2 text-xs text-gray-400">Searching items...</div>}
               {filteredCatalogueItems.map(c => (
                 <button
                   key={c.id}
@@ -489,6 +515,9 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
   const { profile } = useAuth()
   const isEdit = !!invoice?.id
   const [customers, setCustomers] = useState([])
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerSearchedTerm, setCustomerSearchedTerm] = useState('')
+  const [customerLoading, setCustomerLoading] = useState(false)
   const [contacts, setContacts] = useState([])
   const [catalogueItems, setCatalogueItems] = useState([])
   const [salesUsers, setSalesUsers] = useState([])
@@ -542,18 +571,36 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   useEffect(() => {
     const load = async () => {
-      const [custs, cats, users, { data: txs }, { data: pts }] = await Promise.all([
-        fetchAllRows('customer', 'id, company_name, assigned', 'company_name'),
-        fetchAllRows('goodsservices', 'id, sku, name, price, description', 'name'),
+      const [users, { data: txs }, { data: pts }] = await Promise.all([
         fetchAssignableUsers(supabase),
         supabase.from('tax').select('id, name').order('name'),
         supabase.from('payment_term').select('id, name').order('name'),
       ])
-      setCustomers(custs || [])
-      setCatalogueItems(cats || [])
       setSalesUsers(users || [])
       setTaxes(txs || [])
       setPaymentTerms(pts || [])
+
+      if (invoice?.companyid) {
+        const { data: currentCustomer } = await supabase
+          .from('customer')
+          .select('id, company_name, assigned')
+          .eq('id', invoice.companyid)
+          .maybeSingle()
+        if (currentCustomer) {
+          setCustomers([currentCustomer])
+          setCustomerSearch(currentCustomer.company_name || '')
+        }
+      }
+
+      const itemIds = [...new Set((invoice?._items || []).map(item => item.itemid).filter(Boolean))]
+      if (itemIds.length) {
+        const { data: selectedItems } = await supabase
+          .from('goodsservices')
+          .select('id, sku, name, price, description')
+          .in('id', itemIds)
+        setCatalogueItems(selectedItems || [])
+      }
+
       if (!invoice) {
         const [invNum, { data: tplData }] = await Promise.all([
           getNextInvNumber(),
@@ -571,6 +618,35 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     }
     load()
   }, [isEdit, invoice])
+
+  const searchCustomers = async () => {
+    const term = customerSearch.trim()
+    setCustomerSearchedTerm(term)
+    setF('companyid', '')
+    setContacts([])
+    setError('')
+    if (term.length < 2) {
+      setCustomers([])
+      return
+    }
+    setCustomerLoading(true)
+    try {
+      let q = supabase
+        .from('customer')
+        .select('id, company_name, assigned')
+        .order('company_name')
+        .limit(100)
+      q = applyTokenIlike(q, 'company_name', term)
+      const { data, error: searchError } = await q
+      if (searchError) throw searchError
+      setCustomers(rankRowsBySearch(data || [], 'company_name', term).slice(0, 30))
+    } catch (searchError) {
+      setCustomers([])
+      setError(searchError.message || 'Unable to search customers.')
+    } finally {
+      setCustomerLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (form.companyid) {
@@ -738,10 +814,32 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
             <div className="md:col-span-2">
               <label className={labelCls}>Customer <span className="text-red-500">*</span></label>
-              <select className={inputCls} value={form.companyid} onChange={e => setF('companyid', e.target.value)} required>
+              <div className="flex gap-2 mb-2">
+                <input
+                  className={inputCls}
+                  value={customerSearch}
+                  onChange={e => setCustomerSearch(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchCustomers() } }}
+                  placeholder="Type customer name..."
+                />
+                <button type="button" onClick={searchCustomers} className="px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+                  Search
+                </button>
+              </div>
+              <select className={inputCls} value={form.companyid} onChange={e => setF('companyid', e.target.value)} disabled={customerLoading || customers.length === 0} required>
                 <option value="">Select Customer</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
               </select>
+              {customerLoading && <p className="mt-1 text-xs text-gray-400">Searching customers...</p>}
+              {!customerLoading && customerSearchedTerm.length > 0 && customerSearchedTerm.length < 2 && (
+                <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
+              )}
+              {!customerLoading && customerSearchedTerm.length >= 2 && customers.length === 0 && (
+                <p className="mt-1 text-xs text-gray-400">No matching customers found.</p>
+              )}
+              {!customerLoading && customerSearchedTerm.length >= 2 && customers.length > 0 && (
+                <p className="mt-1 text-xs text-gray-400">{customers.length} matching customer{customers.length === 1 ? '' : 's'} found.</p>
+              )}
             </div>
 
             <div>
