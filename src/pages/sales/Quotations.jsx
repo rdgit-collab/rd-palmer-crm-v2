@@ -1343,7 +1343,7 @@ export default function Quotations() {
 
   const fetchQuotations = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('quotation').select(QUOTATION_LIST_COLUMNS, { count: 'estimated' })
+    let q = supabase.from('quotation').select(QUOTATION_LIST_COLUMNS, { count: 'exact' })
     if (isSalesRole(profile?.role_id)) q = q.eq('user_id', getLegacyUserId(profile))
     if (submittedSearch.trim()) {
       const term = submittedSearch.trim()

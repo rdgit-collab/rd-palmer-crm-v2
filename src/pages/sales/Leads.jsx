@@ -16,29 +16,12 @@ import {
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const PAGE_SIZE = 30
-const LOOKUP_PAGE_SIZE = 1000
 const LEAD_LIST_COLUMNS = 'id, lead_source, status, type, company_id, contact_id, company_name, industry, account_type, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, salutation, first_name, last_name, position, department_id, contact_mobile_number, contact_email, assigned_to, created_at, updated_at'
 
 const lookupName = (items, id, fallbackPrefix) => {
   if (!id) return '—'
   const item = items.find((row) => String(row.id) === String(id))
   return item?.name || `${fallbackPrefix} #${id}`
-}
-
-async function fetchAllRows(tableName, columns = '*', orderField = 'id') {
-  let from = 0
-  let rows = []
-  while (true) {
-    const { data, error } = await supabase
-      .from(tableName)
-      .select(columns)
-      .order(orderField)
-      .range(from, from + LOOKUP_PAGE_SIZE - 1)
-    if (error) return rows
-    rows = rows.concat(data || [])
-    if (!data || data.length < LOOKUP_PAGE_SIZE) return rows
-    from += LOOKUP_PAGE_SIZE
-  }
 }
 
 function optionValue(items, value, field = 'name') {
@@ -646,6 +629,8 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [stages, setStages] = useState([])
   const [users, setUsers] = useState([])
   const [customers, setCustomers] = useState([])
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerLoading, setCustomerLoading] = useState(false)
   const [contacts, setContacts] = useState([])
   const [industries, setIndustries] = useState([])
   const [accountTypes, setAccountTypes] = useState([])
@@ -694,35 +679,66 @@ function LeadForm({ lead, onSave, onCancel }) {
         { data: sources },
         { data: stageRows },
         assignableUsers,
-        customerRows,
         { data: industryRows },
         { data: accountRows },
         { data: countryRows },
-        { data: stateRows },
-        { data: cityRows },
       ] = await Promise.all([
         supabase.from('lead').select('id, name').order('name'),
         supabase.from('stage').select('id, name').order('name'),
         fetchAssignableUsers(supabase),
-        fetchAllRows('customer', '*', 'company_name'),
         supabase.from('industries').select('id, name').order('name'),
         supabase.from('account_type').select('id, type').order('type'),
         supabase.from('country').select('id, name').order('name'),
-        supabase.from('state').select('id, name, country_id').order('name'),
-        supabase.from('city').select('id, name, state_id, country_id').order('name'),
       ])
       setLeadSources(sources || [])
       setStages(stageRows || [])
       setUsers(assignableUsers || [])
-      setCustomers(customerRows || [])
       setIndustries(industryRows || [])
       setAccountTypes(accountRows || [])
       setCountries(countryRows || [])
-      setStates(stateRows || [])
-      setCities(cityRows || [])
     }
     run()
   }, [])
+
+  useEffect(() => {
+    const loadSelectedCustomer = async () => {
+      if (!lead?.company_id) return
+      const { data } = await supabase
+        .from('customer')
+        .select('id, industry, account_type, company_name, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, assignto')
+        .eq('id', lead.company_id)
+        .maybeSingle()
+      if (!data) return
+      setCustomers([data])
+      setSelectedCustomerId(String(data.id))
+      setCustomerSearch(data.company_name || '')
+    }
+    loadSelectedCustomer()
+  }, [lead?.company_id])
+
+  useEffect(() => {
+    if (!form.country || countries.length === 0) { setStates([]); return }
+    const countryRow = countries.find(country => country.name === form.country || String(country.id) === String(form.country))
+    if (!countryRow) { setStates([]); return }
+    supabase
+      .from('state')
+      .select('id, name, country_id')
+      .eq('country_id', countryRow.id)
+      .order('name')
+      .then(({ data }) => setStates(data || []))
+  }, [form.country, countries])
+
+  useEffect(() => {
+    if (!form.state || states.length === 0) { setCities([]); return }
+    const stateRow = states.find(state => state.name === form.state || String(state.id) === String(form.state))
+    if (!stateRow) { setCities([]); return }
+    supabase
+      .from('city')
+      .select('id, name, state_id, country_id')
+      .eq('state_id', stateRow.id)
+      .order('name')
+      .then(({ data }) => setCities(data || []))
+  }, [form.state, states])
 
   useEffect(() => {
     if (isSalesRestricted && !form.assigned_to) {
@@ -736,6 +752,24 @@ function LeadForm({ lead, onSave, onCancel }) {
     if (!companyId) { setContacts([]); return }
     const { data } = await supabase.from('contact').select('*').eq('company_id', parseInt(companyId)).order('first_name')
     setContacts(data || [])
+  }
+
+  const searchCustomers = async () => {
+    const term = customerSearch.trim()
+    if (term.length < 2) {
+      setCustomers([])
+      return
+    }
+    setCustomerLoading(true)
+    let q = supabase
+      .from('customer')
+      .select('id, industry, account_type, company_name, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, assignto')
+      .order('company_name')
+      .limit(30)
+    q = applyTokenIlike(q, 'company_name', term)
+    const { data } = await q
+    setCustomers(data || [])
+    setCustomerLoading(false)
   }
 
   const applyCustomer = async (companyId) => {
@@ -752,8 +786,8 @@ function LeadForm({ lead, onSave, onCancel }) {
       address1: customer.address1 || '',
       address2: customer.address2 || '',
       country: optionValue(countries, customer.country),
-      state: optionValue(states, customer.state),
-      city: optionValue(cities, customer.city),
+      state: customer.state || '',
+      city: customer.city || '',
       zipcode: customer.zipcode || '',
       office_number: customer.office_number || '',
       mobile_number: customer.mobile_number || '',
@@ -960,12 +994,8 @@ function LeadForm({ lead, onSave, onCancel }) {
   const sectionCls = 'text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 mt-6 pb-1 border-b border-gray-100'
   const selectedCountry = countries.find(country => country.name === form.country || String(country.id) === String(form.country))
   const selectedState = states.find(state => state.name === form.state || String(state.id) === String(form.state))
-  const stateOptions = selectedCountry ? states.filter(state => String(state.country_id || '') === String(selectedCountry.id)) : states
-  const cityOptions = selectedState
-    ? cities.filter(city => String(city.state_id || '') === String(selectedState.id))
-    : selectedCountry
-      ? cities.filter(city => String(city.country_id || '') === String(selectedCountry.id))
-      : cities
+  const stateOptions = selectedCountry ? states : []
+  const cityOptions = selectedState ? cities : []
 
   return (
     <>
@@ -1017,10 +1047,26 @@ function LeadForm({ lead, onSave, onCancel }) {
         {form.type === '1' && (
           <div className="mb-4">
             <label className={labelCls}>Existing Company <span className="text-red-500">*</span></label>
+            <div className="flex gap-2 mb-2">
+              <input
+                className={inputCls}
+                value={customerSearch}
+                onChange={e => setCustomerSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchCustomers() } }}
+                placeholder="Type company name..."
+              />
+              <button type="button" onClick={searchCustomers} className="px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+                Search
+              </button>
+            </div>
             <select className={inputCls} value={selectedCustomerId} onChange={e => applyCustomer(e.target.value)} required={!isEdit && form.type === '1'}>
               <option value="">Please Select</option>
               {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
             </select>
+            {customerLoading && <p className="mt-1 text-xs text-gray-400">Searching customers...</p>}
+            {!customerLoading && customerSearch.trim().length > 0 && customerSearch.trim().length < 2 && (
+              <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
+            )}
           </div>
         )}
 
@@ -1256,7 +1302,7 @@ export default function Leads() {
   const fetchLeads = useCallback(async () => {
     if (!profile) return
     setLoading(true)
-    let q = supabase.from('sales_lead').select(LEAD_LIST_COLUMNS, { count: 'estimated' })
+    let q = supabase.from('sales_lead').select(LEAD_LIST_COLUMNS, { count: 'exact' })
     const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
 

@@ -570,7 +570,7 @@ export default function Customers() {
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('customer').select(CUSTOMER_LIST_COLUMNS, { count: 'estimated' })
+    let q = supabase.from('customer').select(CUSTOMER_LIST_COLUMNS, { count: 'exact' })
     if (submittedSearch.trim()) q = applyTokenIlike(q, 'company_name', submittedSearch)
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q

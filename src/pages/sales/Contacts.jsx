@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { fetchAllRows } from '../../lib/fetchAllRows'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
@@ -20,6 +19,8 @@ function ContactForm({ contact, onSave, onCancel }) {
   const isEdit = !!contact
   const { profile } = useAuth()
   const [customers, setCustomers] = useState([])
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerLoading, setCustomerLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -36,12 +37,39 @@ function ContactForm({ contact, onSave, onCancel }) {
   })
 
   useEffect(() => {
-    fetchAllRows('customer', 'id, company_name', 'company_name')
-      .then(data => setCustomers(data || []))
-      .catch(() => setCustomers([]))
-  }, [])
+    const loadSelectedCustomer = async () => {
+      if (!contact?.company_id) return
+      const { data } = await supabase
+        .from('customer')
+        .select('id, company_name')
+        .eq('id', contact.company_id)
+        .maybeSingle()
+      if (!data) return
+      setCustomers([data])
+      setCustomerSearch(data.company_name || '')
+    }
+    loadSelectedCustomer()
+  }, [contact?.company_id])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const searchCustomers = async () => {
+    const term = customerSearch.trim()
+    if (term.length < 2) {
+      setCustomers([])
+      return
+    }
+    setCustomerLoading(true)
+    let q = supabase
+      .from('customer')
+      .select('id, company_name')
+      .order('company_name')
+      .limit(30)
+    q = applyTokenIlike(q, 'company_name', term)
+    const { data } = await q
+    setCustomers(data || [])
+    setCustomerLoading(false)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -106,10 +134,26 @@ function ContactForm({ contact, onSave, onCancel }) {
         {/* Company */}
         <div className="mb-4">
           <label className={labelCls}>Company Name <span className="text-red-500">*</span></label>
+          <div className="flex gap-2 mb-2">
+            <input
+              className={inputCls}
+              value={customerSearch}
+              onChange={e => setCustomerSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchCustomers() } }}
+              placeholder="Type company name..."
+            />
+            <button type="button" onClick={searchCustomers} className="px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+              Search
+            </button>
+          </div>
           <select className={inputCls} value={form.company_id} onChange={e => set('company_id', e.target.value)} required>
             <option value="">Please Select</option>
             {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
           </select>
+          {customerLoading && <p className="mt-1 text-xs text-gray-400">Searching customers...</p>}
+          {!customerLoading && customerSearch.trim().length > 0 && customerSearch.trim().length < 2 && (
+            <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
+          )}
         </div>
 
         {/* Salutation */}
@@ -195,7 +239,7 @@ export default function Contacts() {
     const term = submittedSearch.trim()
     let q = supabase
       .from('contact')
-      .select(CONTACT_LIST_COLUMNS, { count: 'estimated' })
+      .select(CONTACT_LIST_COLUMNS, { count: 'exact' })
 
     if (term && searchField === 'company') {
       let customerQuery = supabase

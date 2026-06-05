@@ -1189,7 +1189,7 @@ export default function Invoices() {
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('invoice').select(INVOICE_LIST_COLUMNS, { count: 'estimated' })
+    let q = supabase.from('invoice').select(INVOICE_LIST_COLUMNS, { count: 'exact' })
     if (isSalesRole(profile?.role_id)) q = q.eq('user_id', getLegacyUserId(profile))
     if (submittedSearch.trim()) {
       const term = submittedSearch.trim()

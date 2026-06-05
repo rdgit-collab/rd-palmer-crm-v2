@@ -204,7 +204,7 @@ export default function Activities() {
 
     let activityQuery = supabase
       .from('activity')
-      .select(ACTIVITY_COLUMNS, { count: 'estimated' })
+      .select(ACTIVITY_COLUMNS, { count: 'exact' })
       .order('id', { ascending: false })
 
     const text = submittedSearch.trim()
