@@ -19,6 +19,7 @@ const emptyForm = {
   date: new Date().toISOString().split('T')[0], time: '',
   description: '', lead_id: '', company_id: '', assigned_to: '',
   lead_stage: '', followup_date: '', followup_time: '', followup_type: '',
+  source_activity_id: '',
 }
 
 const TABS = [
@@ -380,6 +381,7 @@ export default function Activities() {
   const filterUsers = isSalesRestricted
     ? (currentUserOption ? [currentUserOption] : [])
     : users
+  const completeStatusName = activityStatuses.find(status => String(status.name || '').toLowerCase().includes('complete'))?.name || ''
 
   const historyForDetail = (activity) => {
     if (!activity?.lead_id) return [activity]
@@ -418,13 +420,20 @@ export default function Activities() {
     setEditId(null)
     setEditOriginalAssignee('')
     setStageCloseBlockers([])
+    const isOpenActivity = !isTerminalActivityStatus(activity.status)
     setForm({
       ...emptyForm,
-      date: new Date().toISOString().split('T')[0],
+      date: activity.date || new Date().toISOString().split('T')[0],
+      time: activity.time || '',
+      type: activity.type || '',
+      priority: activity.priority || '',
+      status: isOpenActivity ? (completeStatusName || activity.status || '') : '',
       lead_id: activity.lead_id ? String(activity.lead_id) : '',
       company_id: activity.company_id ? String(activity.company_id) : '',
       assigned_to: isSalesRestricted ? String(currentLegacyUserId) : (activity.assignedTo ? String(activity.assignedTo) : ''),
       lead_stage: activity.lead?.status ? String(activity.lead.status) : '',
+      followup_type: activity.type || '',
+      source_activity_id: isOpenActivity ? String(activity.id) : '',
     })
     setError('')
     setView('form')
@@ -450,6 +459,7 @@ export default function Activities() {
       followup_date: '',
       followup_time: '',
       followup_type: '',
+      source_activity_id: '',
     })
     setError('')
     setView('form')
@@ -457,16 +467,22 @@ export default function Activities() {
 
   const selectedLead = form.lead_id ? leadsById[String(form.lead_id)] : null
   const isTerminalStatus = isTerminalActivityStatus(form.status)
-  const lockedFieldClass = isTerminalStatus ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
   const selectedStage = form.lead_stage || selectedLead?.status || ''
   const selectedStageName = stages.find(stage => String(stage.id) === String(selectedStage))?.name || ''
   const shouldMoveStage = selectedLead && selectedStage && String(selectedStage) !== String(selectedLead.status || '')
   const followupType = form.followup_type || form.type || 'Follow Up'
+  const sourceActivityId = form.source_activity_id ? parseInt(form.source_activity_id) : null
+  const isCompletingPlannedActivity = !editId && !!sourceActivityId
+  const shouldLockActivityFields = isTerminalStatus && !isCompletingPlannedActivity
+  const lockedFieldClass = shouldLockActivityFields ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
+  const requiresActivityDetails = !isTerminalStatus || isCompletingPlannedActivity
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!isTerminalStatus && !form.type) { setError('Activity type is required'); return }
-    if (!isTerminalStatus && !form.description.trim()) { setError('Description is required'); return }
+    if (requiresActivityDetails && !form.type) { setError('Activity type is required'); return }
+    if (requiresActivityDetails && !form.description.trim()) { setError('Description is required'); return }
+    if (isCompletingPlannedActivity && !form.status) { setError('Current activity outcome is required'); return }
+    if (isCompletingPlannedActivity && !form.description.trim()) { setError('Progress notes are required'); return }
     setSaving(true)
     setError('')
     setStageCloseBlockers([])
@@ -478,9 +494,10 @@ export default function Activities() {
       if (blockersError) { setError(blockersError.message); setSaving(false); return }
       const blockers = (leadActivities || []).filter(activity => {
         if (editId && isTerminalStatus && String(activity.id) === String(editId)) return false
+        if (sourceActivityId && isTerminalStatus && String(activity.id) === String(sourceActivityId)) return false
         return !isTerminalActivityStatus(activity.status)
       })
-      if (!isTerminalStatus) {
+      if (!isTerminalStatus && !sourceActivityId) {
         blockers.push({ id: 'current', type: form.type || 'Current update', status: form.status || 'No status', date: form.date || null })
       }
       if (blockers.length) {
@@ -494,8 +511,8 @@ export default function Activities() {
       type: form.type || (isTerminalStatus ? 'Status Update' : ''),
       priority: isTerminalStatus ? null : (form.priority || null),
       status: form.status || null,
-      date: isTerminalStatus ? null : (editId ? (form.date || null) : null),
-      time: isTerminalStatus ? null : (editId ? (form.time || null) : null),
+      date: isTerminalStatus ? null : (isCompletingPlannedActivity ? (form.followup_date || form.date || null) : (editId ? (form.date || null) : null)),
+      time: isTerminalStatus ? null : (isCompletingPlannedActivity ? (form.followup_time || form.time || null) : (editId ? (form.time || null) : null)),
       description: form.description || (isTerminalStatus ? `Marked activity as ${form.status}.` : ''),
       lead_id: form.lead_id ? parseInt(form.lead_id) : null,
       company_id: form.lead_id ? null : (form.company_id || null),
@@ -504,7 +521,9 @@ export default function Activities() {
     }
     const result = editId
       ? await supabase.from('activity').update(payload).eq('id', editId)
-      : await supabase.from('activity').insert([{ ...payload, user_id: getLegacyUserId(profile), created_at: new Date().toISOString() }])
+      : isCompletingPlannedActivity
+        ? await supabase.from('activity').update(payload).eq('id', sourceActivityId)
+        : await supabase.from('activity').insert([{ ...payload, user_id: getLegacyUserId(profile), created_at: new Date().toISOString() }])
     const { error: err } = result
     if (err) { setError(err.message); setSaving(false); return }
     if (shouldMoveStage) {
@@ -523,7 +542,7 @@ export default function Activities() {
         metadata: { status: selectedStage, status_name: selectedStageName },
       })
     }
-    if (!editId && form.followup_date) {
+    if (!editId && form.followup_date && (!isCompletingPlannedActivity || isTerminalStatus)) {
       const followupPayload = {
         type: followupType,
         priority: form.priority || null,
@@ -543,11 +562,11 @@ export default function Activities() {
     }
     logActivity({
       module: 'activities',
-      action: editId ? 'update' : 'create',
+      action: (editId || isCompletingPlannedActivity) ? 'update' : 'create',
       recordTable: 'activity',
-      recordId: editId || null,
+      recordId: editId || sourceActivityId || null,
       recordLabel: payload.type,
-      summary: `${editId ? 'Updated' : 'Created'} activity ${payload.type}`,
+      summary: `${(editId || isCompletingPlannedActivity) ? 'Updated' : 'Created'} activity ${payload.type}`,
       metadata: { lead_id: form.lead_id || null, company_id: payload.company_id || null, assigned_to: payload.assigned_to || null },
     })
     const assignee = payload.assigned_to ? String(payload.assigned_to) : ''
@@ -575,7 +594,7 @@ export default function Activities() {
       })
     }
     const followupAssignee = payload.assigned_to ? String(payload.assigned_to) : ''
-    if (!editId && form.followup_date && followupAssignee && followupAssignee !== String(currentLegacyUserId || '')) {
+    if (!editId && form.followup_date && (!isCompletingPlannedActivity || isTerminalStatus) && followupAssignee && followupAssignee !== String(currentLegacyUserId || '')) {
       await notifyUser(supabase, {
         userId: parseInt(followupAssignee),
         actorUserId: currentLegacyUserId,
@@ -680,13 +699,14 @@ export default function Activities() {
               <option value="">Please Select</option>
               {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
-            {isTerminalStatus && <p className="mt-1 text-xs text-gray-400">This status closes the activity, so the remaining fields are locked.</p>}
+            {isCompletingPlannedActivity && <p className="mt-1 text-xs text-gray-400">This is the outcome for the scheduled activity you clicked.</p>}
+            {isTerminalStatus && !isCompletingPlannedActivity && <p className="mt-1 text-xs text-gray-400">This status closes the activity, so the remaining fields are locked.</p>}
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Activity Type <span className="text-red-500">*</span></label>
           <div className="col-span-2">
-            <select value={form.type} onChange={e => setForm(f => ({...f, type: e.target.value}))} required={!isTerminalStatus} disabled={isTerminalStatus} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
+            <select value={form.type} onChange={e => setForm(f => ({...f, type: e.target.value}))} required={requiresActivityDetails} disabled={shouldLockActivityFields} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
               <option value="">Please Select</option>
               {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
             </select>
@@ -704,7 +724,7 @@ export default function Activities() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Priority</label>
           <div className="col-span-2">
-            <select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))} disabled={isTerminalStatus} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
+            <select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))} disabled={shouldLockActivityFields} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
               <option value="">Please Select</option>
               {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
             </select>
@@ -713,7 +733,7 @@ export default function Activities() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Assigned To</label>
           <div className="col-span-2">
-            <select value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} disabled={isTerminalStatus} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
+            <select value={form.assigned_to} onChange={e => setForm(f => ({...f, assigned_to: e.target.value}))} disabled={shouldLockActivityFields} className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`}>
               <option value="">Please Select</option>
               {formAssignableUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
             </select>
@@ -722,7 +742,7 @@ export default function Activities() {
         <div className="grid grid-cols-3 gap-4">
           <label className="text-sm font-medium text-gray-700 pt-2">Progress Notes <span className="text-red-500">*</span></label>
           <div className="col-span-2">
-            <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} required={!isTerminalStatus} disabled={isTerminalStatus} rows={4} placeholder="Activity notes..." className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
+            <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} required={requiresActivityDetails} disabled={shouldLockActivityFields} rows={4} placeholder="Activity notes..." className={`w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-none disabled:bg-gray-100 disabled:text-gray-400 ${lockedFieldClass}`} />
           </div>
         </div>
         {!editId && (
