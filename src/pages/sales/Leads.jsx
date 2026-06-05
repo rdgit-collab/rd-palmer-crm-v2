@@ -8,7 +8,7 @@ import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { hasAdminAccess, isSalesRole } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
-import { applyTokenIlike } from '../../lib/searchUtils'
+import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -630,6 +630,7 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [users, setUsers] = useState([])
   const [customers, setCustomers] = useState([])
   const [customerSearch, setCustomerSearch] = useState('')
+  const [customerSearchedTerm, setCustomerSearchedTerm] = useState('')
   const [customerLoading, setCustomerLoading] = useState(false)
   const [contacts, setContacts] = useState([])
   const [industries, setIndustries] = useState([])
@@ -756,20 +757,32 @@ function LeadForm({ lead, onSave, onCancel }) {
 
   const searchCustomers = async () => {
     const term = customerSearch.trim()
+    setCustomerSearchedTerm(term)
+    setSelectedCustomerId('')
+    setSelectedContactId('')
+    setContacts([])
+    setError('')
     if (term.length < 2) {
       setCustomers([])
       return
     }
     setCustomerLoading(true)
-    let q = supabase
-      .from('customer')
-      .select('id, industry, account_type, company_name, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, assignto')
-      .order('company_name')
-      .limit(30)
-    q = applyTokenIlike(q, 'company_name', term)
-    const { data } = await q
-    setCustomers(data || [])
-    setCustomerLoading(false)
+    try {
+      let q = supabase
+        .from('customer')
+        .select('id, industry, account_type, company_name, address1, address2, country, state, city, zipcode, office_number, mobile_number, email, website, assignto')
+        .order('company_name')
+        .limit(100)
+      q = applyTokenIlike(q, 'company_name', term)
+      const { data, error: searchError } = await q
+      if (searchError) throw searchError
+      setCustomers(rankRowsBySearch(data || [], 'company_name', term).slice(0, 30))
+    } catch (searchError) {
+      setCustomers([])
+      setError(searchError.message || 'Unable to search customers.')
+    } finally {
+      setCustomerLoading(false)
+    }
   }
 
   const applyCustomer = async (companyId) => {
@@ -825,6 +838,7 @@ function LeadForm({ lead, onSave, onCancel }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (form.type === '1' && !selectedCustomerId) { setError('Please search and select an existing company.'); return }
     if (!form.company_name.trim()) { setError('Company name is required'); return }
     setSaving(true); setError('')
     const assignedUser = users.find(u => String(u.id) === String(form.assigned_to))
@@ -1059,13 +1073,19 @@ function LeadForm({ lead, onSave, onCancel }) {
                 Search
               </button>
             </div>
-            <select className={inputCls} value={selectedCustomerId} onChange={e => applyCustomer(e.target.value)} required={!isEdit && form.type === '1'}>
+            <select className={inputCls} value={selectedCustomerId} onChange={e => applyCustomer(e.target.value)} required={!isEdit && form.type === '1'} disabled={customerLoading || customers.length === 0}>
               <option value="">Please Select</option>
               {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
             </select>
             {customerLoading && <p className="mt-1 text-xs text-gray-400">Searching customers...</p>}
-            {!customerLoading && customerSearch.trim().length > 0 && customerSearch.trim().length < 2 && (
+            {!customerLoading && customerSearchedTerm.length > 0 && customerSearchedTerm.length < 2 && (
               <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
+            )}
+            {!customerLoading && customerSearchedTerm.length >= 2 && customers.length === 0 && (
+              <p className="mt-1 text-xs text-gray-400">No matching customers found.</p>
+            )}
+            {!customerLoading && customerSearchedTerm.length >= 2 && customers.length > 0 && (
+              <p className="mt-1 text-xs text-gray-400">{customers.length} matching customer{customers.length !== 1 ? 's' : ''} found.</p>
             )}
           </div>
         )}

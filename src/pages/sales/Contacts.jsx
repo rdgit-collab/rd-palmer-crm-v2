@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
-import { applyTokenIlike } from '../../lib/searchUtils'
+import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
@@ -20,6 +20,7 @@ function ContactForm({ contact, onSave, onCancel }) {
   const { profile } = useAuth()
   const [customers, setCustomers] = useState([])
   const [customerSearch, setCustomerSearch] = useState('')
+  const [customerSearchedTerm, setCustomerSearchedTerm] = useState('')
   const [customerLoading, setCustomerLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -55,24 +56,35 @@ function ContactForm({ contact, onSave, onCancel }) {
 
   const searchCustomers = async () => {
     const term = customerSearch.trim()
+    setCustomerSearchedTerm(term)
+    set('company_id', '')
+    setError('')
     if (term.length < 2) {
       setCustomers([])
       return
     }
     setCustomerLoading(true)
-    let q = supabase
-      .from('customer')
-      .select('id, company_name')
-      .order('company_name')
-      .limit(30)
-    q = applyTokenIlike(q, 'company_name', term)
-    const { data } = await q
-    setCustomers(data || [])
-    setCustomerLoading(false)
+    try {
+      let q = supabase
+        .from('customer')
+        .select('id, company_name')
+        .order('company_name')
+        .limit(100)
+      q = applyTokenIlike(q, 'company_name', term)
+      const { data, error: searchError } = await q
+      if (searchError) throw searchError
+      setCustomers(rankRowsBySearch(data || [], 'company_name', term).slice(0, 30))
+    } catch (searchError) {
+      setCustomers([])
+      setError(searchError.message || 'Unable to search customers.')
+    } finally {
+      setCustomerLoading(false)
+    }
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!form.company_id) { setError('Please search and select a company.'); return }
     if (!form.first_name.trim()) { setError('First name is required'); return }
     if (!form.mobile_number.trim() && !form.email.trim()) {
       setError('Please enter at least a mobile number or email address.')
@@ -146,13 +158,19 @@ function ContactForm({ contact, onSave, onCancel }) {
               Search
             </button>
           </div>
-          <select className={inputCls} value={form.company_id} onChange={e => set('company_id', e.target.value)} required>
+          <select className={inputCls} value={form.company_id} onChange={e => set('company_id', e.target.value)} disabled={customerLoading || customers.length === 0} required>
             <option value="">Please Select</option>
             {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
           </select>
           {customerLoading && <p className="mt-1 text-xs text-gray-400">Searching customers...</p>}
-          {!customerLoading && customerSearch.trim().length > 0 && customerSearch.trim().length < 2 && (
+          {!customerLoading && customerSearchedTerm.length > 0 && customerSearchedTerm.length < 2 && (
             <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
+          )}
+          {!customerLoading && customerSearchedTerm.length >= 2 && customers.length === 0 && (
+            <p className="mt-1 text-xs text-gray-400">No matching customers found.</p>
+          )}
+          {!customerLoading && customerSearchedTerm.length >= 2 && customers.length > 0 && (
+            <p className="mt-1 text-xs text-gray-400">{customers.length} matching customer{customers.length === 1 ? '' : 's'} found.</p>
           )}
         </div>
 
