@@ -8,6 +8,7 @@ import { hasAdminAccess, isSalesManagerRole, isSalesRole } from '../../lib/roles
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
+import { applyTokenIlike } from '../../lib/searchUtils'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
@@ -215,17 +216,19 @@ export default function Activities() {
     let searchLeadIds = []
     let searchCustomerIds = []
     if (text) {
-      const [leadSearchR, customerSearchR] = await Promise.all([
-        supabase
+      let leadSearchQ = supabase
           .from('sales_lead')
           .select('id')
-          .or(`company_name.ilike.%${text}%,first_name.ilike.%${text}%,last_name.ilike.%${text}%`)
-          .limit(200),
-        supabase
+          .limit(200)
+      let customerSearchQ = supabase
           .from('customer')
           .select('id')
-          .ilike('company_name', `%${text}%`)
-          .limit(200),
+          .limit(200)
+      leadSearchQ = applyTokenIlike(leadSearchQ, 'company_name', text)
+      customerSearchQ = applyTokenIlike(customerSearchQ, 'company_name', text)
+      const [leadSearchR, customerSearchR] = await Promise.all([
+        leadSearchQ,
+        customerSearchQ,
       ])
       searchLeadIds = (leadSearchR.data || []).map(row => row.id).filter(Boolean)
       searchCustomerIds = (customerSearchR.data || []).map(row => row.id).filter(Boolean)
@@ -270,20 +273,18 @@ export default function Activities() {
       )
     }
     if (text) {
-      requests.push(
-        supabase
+      let leadSearchQ = supabase
           .from('sales_lead')
           .select('id')
-          .or(`company_name.ilike.%${text}%,first_name.ilike.%${text}%,last_name.ilike.%${text}%`)
           .limit(200)
-      )
-      requests.push(
-        supabase
+      let customerSearchQ = supabase
           .from('customer')
           .select('id')
-          .ilike('company_name', `%${text}%`)
           .limit(200)
-      )
+      leadSearchQ = applyTokenIlike(leadSearchQ, 'company_name', text)
+      customerSearchQ = applyTokenIlike(customerSearchQ, 'company_name', text)
+      requests.push(leadSearchQ)
+      requests.push(customerSearchQ)
     }
 
     const results = requests.length ? await Promise.all(requests) : []

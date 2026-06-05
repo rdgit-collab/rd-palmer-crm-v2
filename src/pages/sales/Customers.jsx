@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
+import { applyTokenIlike } from '../../lib/searchUtils'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
@@ -562,22 +563,28 @@ export default function Customers() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
   const [deleteError, setDeleteError] = useState('')
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const fetchCustomers = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('customer').select(CUSTOMER_LIST_COLUMNS, { count: 'estimated' })
-    if (search.trim()) q = q.ilike('company_name', `%${search.trim()}%`)
+    if (debouncedSearch.trim()) q = applyTokenIlike(q, 'company_name', debouncedSearch)
     q = q.order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
     const { data, count, error } = await q
     if (!error) { setCustomers(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, page])
+  }, [debouncedSearch, page])
 
   useEffect(() => { fetchCustomers() }, [fetchCustomers])
-  useEffect(() => { setPage(0) }, [search])
+  useEffect(() => { setPage(0) }, [debouncedSearch])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 

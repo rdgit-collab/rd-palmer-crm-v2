@@ -4,6 +4,7 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
+import { applyTokenIlike } from '../../lib/searchUtils'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
@@ -184,22 +185,30 @@ export default function Contacts() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchField, setSearchField] = useState('name')
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const fetchContacts = useCallback(async () => {
     setLoading(true)
-    const term = search.trim()
+    const term = debouncedSearch.trim()
     let q = supabase
       .from('contact')
       .select(CONTACT_LIST_COLUMNS, { count: 'estimated' })
 
     if (term && searchField === 'company') {
-      const { data: matchingCustomers, error: customerError } = await supabase
+      let customerQuery = supabase
         .from('customer')
         .select('id')
-        .ilike('company_name', `%${term}%`)
+        .limit(1000)
+      customerQuery = applyTokenIlike(customerQuery, 'company_name', term)
+      const { data: matchingCustomers, error: customerError } = await customerQuery
 
       if (customerError || !matchingCustomers?.length) {
         setContacts([])
@@ -235,10 +244,10 @@ export default function Contacts() {
       setTotal(count || 0)
     }
     setLoading(false)
-  }, [search, searchField, page])
+  }, [debouncedSearch, searchField, page])
 
   useEffect(() => { fetchContacts() }, [fetchContacts])
-  useEffect(() => { setPage(0) }, [search, searchField])
+  useEffect(() => { setPage(0) }, [debouncedSearch, searchField])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 

@@ -8,6 +8,7 @@ import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import { hasAdminAccess, isSalesRole } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
+import { applyTokenIlike } from '../../lib/searchUtils'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
@@ -1275,9 +1276,7 @@ export default function Leads() {
       q = q.or(`status.is.null,status.not.in.(${closedStageIds.join(',')})`)
     }
 
-    if (debouncedSearch.trim()) {
-      q = q.ilike('company_name', `%${debouncedSearch.trim()}%`)
-    }
+    if (debouncedSearch.trim()) q = applyTokenIlike(q, 'company_name', debouncedSearch)
     if (filterStatus) {
       q = q.eq('status', filterStatus)
     }
