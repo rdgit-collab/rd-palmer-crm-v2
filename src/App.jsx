@@ -3,7 +3,13 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/layout/Layout'
 import ErrorBoundary from './components/ErrorBoundary'
-import { ROLE_ADMIN, ROLE_SUPER_ADMIN } from './lib/roles'
+import {
+  ROLE_ADMIN,
+  ROLE_SALES,
+  ROLE_SALES_MANAGER,
+  ROLE_SERVICE,
+  ROLE_SUPER_ADMIN,
+} from './lib/roles'
 
 const Login = lazy(() => import('./pages/Login'))
 const DashboardModule = lazy(() => import('./pages/Dashboard'))
@@ -69,6 +75,11 @@ function PermissionRoute({ children, module }) {
 function AppRoutes() {
   const { user } = useAuth()
   const location = useLocation()
+  const adminRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN]
+  const salesRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SALES, ROLE_SALES_MANAGER]
+  const serviceRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SERVICE]
+  const sharedWorkRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_SERVICE]
+
   return (
     <ErrorBoundary resetKey={location.pathname}>
       <Suspense fallback={<LoadingScreen />}>
@@ -76,23 +87,23 @@ function AppRoutes() {
           <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<DashboardModule />} />
-            <Route path="sales-dashboard"   element={<SalesDashboardPage />} />
-            <Route path="service-dashboard" element={<ServiceDashboardPage />} />
-            <Route path="customers"     element={<PermissionRoute module="customers">   <Customers />   </PermissionRoute>} />
-            <Route path="contacts"      element={<PermissionRoute module="contacts">    <Contacts />    </PermissionRoute>} />
-            <Route path="leads"         element={<PermissionRoute module="leads">       <Leads />       </PermissionRoute>} />
-            <Route path="activities"    element={<PermissionRoute module="activities">  <Activities />  </PermissionRoute>} />
-            <Route path="quotations"    element={<PermissionRoute module="quotations">  <Quotations />  </PermissionRoute>} />
-            <Route path="invoices"      element={<PermissionRoute module="invoices">    <Invoices />    </PermissionRoute>} />
-            <Route path="tickets"       element={<PermissionRoute module="tickets">     <Tickets />     </PermissionRoute>} />
-            <Route path="tasks"         element={<PermissionRoute module="tasks">       <Tasks />       </PermissionRoute>} />
-            <Route path="onsite-tickets"element={<PermissionRoute module="onsite-tickets"><OnsiteTickets /></PermissionRoute>} />
-            <Route path="rma"           element={<PermissionRoute module="rma">         <RMA />         </PermissionRoute>} />
-            <Route path="calibration"   element={<PermissionRoute module="calibration"> <Calibration /> </PermissionRoute>} />
-            <Route path="serial-numbers"element={<PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute>} />
-            <Route path="catalogue"     element={<ProtectedRoute roles={[ROLE_ADMIN, ROLE_SUPER_ADMIN]}><Catalogue /></ProtectedRoute>} />
-            <Route path="admin/users"   element={<ProtectedRoute roles={[ROLE_ADMIN, ROLE_SUPER_ADMIN]}><Users /></ProtectedRoute>} />
-            <Route path="settings"      element={<ProtectedRoute roles={[ROLE_ADMIN, ROLE_SUPER_ADMIN]}><Settings /></ProtectedRoute>} />
+            <Route path="sales-dashboard"   element={<ProtectedRoute roles={salesRoles}><SalesDashboardPage /></ProtectedRoute>} />
+            <Route path="service-dashboard" element={<ProtectedRoute roles={serviceRoles}><ServiceDashboardPage /></ProtectedRoute>} />
+            <Route path="customers"     element={<ProtectedRoute roles={salesRoles}><PermissionRoute module="customers">   <Customers />   </PermissionRoute></ProtectedRoute>} />
+            <Route path="contacts"      element={<ProtectedRoute roles={salesRoles}><PermissionRoute module="contacts">    <Contacts />    </PermissionRoute></ProtectedRoute>} />
+            <Route path="leads"         element={<ProtectedRoute roles={salesRoles}><PermissionRoute module="leads">       <Leads />       </PermissionRoute></ProtectedRoute>} />
+            <Route path="activities"    element={<ProtectedRoute roles={salesRoles}><PermissionRoute module="activities">  <Activities />  </PermissionRoute></ProtectedRoute>} />
+            <Route path="quotations"    element={<ProtectedRoute roles={salesRoles}><PermissionRoute module="quotations">  <Quotations />  </PermissionRoute></ProtectedRoute>} />
+            <Route path="invoices"      element={<ProtectedRoute roles={salesRoles}><PermissionRoute module="invoices">    <Invoices />    </PermissionRoute></ProtectedRoute>} />
+            <Route path="tickets"       element={<ProtectedRoute roles={sharedWorkRoles}><PermissionRoute module="tickets">     <Tickets />     </PermissionRoute></ProtectedRoute>} />
+            <Route path="tasks"         element={<ProtectedRoute roles={sharedWorkRoles}><PermissionRoute module="tasks">       <Tasks />       </PermissionRoute></ProtectedRoute>} />
+            <Route path="onsite-tickets"element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="onsite-tickets"><OnsiteTickets /></PermissionRoute></ProtectedRoute>} />
+            <Route path="rma"           element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="rma">         <RMA />         </PermissionRoute></ProtectedRoute>} />
+            <Route path="calibration"   element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="calibration"> <Calibration /> </PermissionRoute></ProtectedRoute>} />
+            <Route path="serial-numbers"element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute></ProtectedRoute>} />
+            <Route path="catalogue"     element={<ProtectedRoute roles={adminRoles}><Catalogue /></ProtectedRoute>} />
+            <Route path="admin/users"   element={<ProtectedRoute roles={adminRoles}><Users /></ProtectedRoute>} />
+            <Route path="settings"      element={<ProtectedRoute roles={adminRoles}><Settings /></ProtectedRoute>} />
             <Route path="admin/activity-log" element={<ProtectedRoute roles={[ROLE_SUPER_ADMIN]}><ActivityLog /></ProtectedRoute>} />
             <Route path="profile"       element={<Profile />} />
           </Route>
