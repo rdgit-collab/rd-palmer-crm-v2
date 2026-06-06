@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
 import { getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
 import { fetchAllRows } from '../../lib/fetchAllRows'
+import SearchSelect from '../../components/SearchSelect'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import { displayText } from '../../lib/displayText'
@@ -282,7 +283,6 @@ export default function Tickets() {
 
   // Dropdown data
   const [categories, setCategories] = useState([])
-  const [customers, setCustomers]   = useState([])
   const [contacts, setContacts]     = useState([])
   const [users, setUsers]           = useState([])
   const [allUsers, setAllUsers]     = useState([])
@@ -399,11 +399,10 @@ export default function Tickets() {
     formDataLoadedRef.current = true
     setDropdownLoading(true)
     try {
-      const [custR, skuR] = await Promise.all([
-        fetchAllRows('customer', 'id, company_name', 'company_name'),
-        fetchAllRows('goodsservices', 'id, sku, name, description', 'sku'),
-      ])
-      setCustomers(custR || [])
+      // Customers are no longer pulled whole here — the company picker below uses
+      // <SearchSelect>, which queries on demand. Only the catalogue (goodsservices)
+      // is loaded, and only when the ticket form is opened.
+      const skuR = await fetchAllRows('goodsservices', 'id, sku, name, description', 'sku')
       setSkuList(skuR || [])
     } catch (err) {
       formDataLoadedRef.current = false
@@ -1259,20 +1258,20 @@ export default function Tickets() {
           <div className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">Company Name <span className="text-red-500">*</span></label>
             <div className="col-span-2">
-              <select
+              <SearchSelect
+                table="customer"
+                searchColumn="company_name"
                 value={form.company_id}
-                onChange={async e => {
-                  const cid  = e.target.value
-                  const cname = customers.find(c => String(c.id) === cid)?.company_name || ''
-                  setForm(f => ({ ...f, company_id: cid, company_name: cname, contact_person: '' }))
-                  await loadContacts(cid)
-                }}
+                displayLabel={form.company_name}
                 required
-                className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-              >
-                <option value="">Please select a customer</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-              </select>
+                placeholder="Search customer…"
+                onSelect={async (id, row) => {
+                  const cid = id ? String(id) : ''
+                  setForm(f => ({ ...f, company_id: cid, company_name: row?.company_name || '', contact_person: '' }))
+                  if (cid) await loadContacts(cid)
+                  else setContacts([])
+                }}
+              />
             </div>
           </div>
 

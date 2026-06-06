@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
-import { fetchAllRows } from '../../lib/fetchAllRows'
+import SearchSelect from '../../components/SearchSelect'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate } from '../../lib/dateFormat'
 import PaginationControls from '../../components/PaginationControls'
@@ -54,8 +54,6 @@ export default function SerialNumbers() {
   const [deleteId, setDeleteId] = useState(null)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
-  const [skuList, setSkuList]   = useState([])
-  const [customerList, setCustomerList] = useState([])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -151,20 +149,6 @@ export default function SerialNumbers() {
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
-  useEffect(() => {
-    if (view !== 'form' || skuList.length) return
-    fetchAllRows('goodsservices', 'id, sku', 'sku')
-      .then(data => setSkuList(data || []))
-      .catch(() => setSkuList([]))
-  }, [view, skuList.length])
-
-  useEffect(() => {
-    if (view !== 'form' || customerList.length) return
-    fetchAllRows('customer', 'id, company_name', 'company_name')
-      .then(data => setCustomerList(data || []))
-      .catch(() => setCustomerList([]))
-  }, [view, customerList.length])
-
   const openAdd = () => { setForm({ ...emptyForm, date: new Date().toISOString().split('T')[0] }); setEditId(null); setError(''); setView('form') }
   const openEdit = (r) => {
     setForm({
@@ -231,7 +215,6 @@ export default function SerialNumbers() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const activeSearchField = SEARCH_FIELDS.find(field => field.value === draftSearchField) || SEARCH_FIELDS[0]
-  const hasCurrentCustomerOption = !form.customername || customerList.some(c => c.company_name === form.customername)
   const hasCurrentWarrantyOption = !form.warranty_period || WARRANTY_PERIODS.some(w => w.value === form.warranty_period)
 
   if (view === 'list') return (
@@ -327,20 +310,29 @@ export default function SerialNumbers() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Customer Name</label>
           <div className="col-span-2">
-            <select value={form.customername} onChange={e => setForm(f => ({...f, customername: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              <option value="">Please Select</option>
-              {!hasCurrentCustomerOption && <option value={form.customername}>{form.customername}</option>}
-              {customerList.map(c => <option key={c.id} value={c.company_name}>{c.company_name}</option>)}
-            </select>
+            <SearchSelect
+              table="customer"
+              searchColumn="company_name"
+              valueKey="company_name"
+              value={form.customername}
+              displayLabel={form.customername}
+              placeholder="Search customer…"
+              onSelect={(val) => setForm(f => ({ ...f, customername: val || '' }))}
+            />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">SKU</label>
           <div className="col-span-2">
-            <select value={form.sku} onChange={e => setForm(f => ({...f, sku: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              <option value="">Please Select</option>
-              {skuList.map(s => <option key={s.id} value={s.sku}>{s.sku}</option>)}
-            </select>
+            <SearchSelect
+              table="goodsservices"
+              searchColumn="sku"
+              valueKey="sku"
+              value={form.sku}
+              displayLabel={form.sku}
+              placeholder="Search SKU…"
+              onSelect={(val) => setForm(f => ({ ...f, sku: val || '' }))}
+            />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
