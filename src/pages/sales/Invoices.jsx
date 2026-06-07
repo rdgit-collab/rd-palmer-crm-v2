@@ -206,7 +206,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
       <title>${escapeHtml(invoice.invoice_number || 'Proforma Invoice')}</title>
       <style>
         @page { size: A4; margin: 0; }
-        body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
+        body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
         .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
         .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
         .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
@@ -236,8 +236,11 @@ function invoiceHtml(invoice, items, contactName, customer) {
         .totals { width: 250px; margin-left: auto; border-top: 1px solid #aaa; padding-top: 8px; }
         .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
         .total { border-top: 1px solid #111; margin-top: 4px; font-weight: 700; font-size: 13px; }
-        .section { margin-top: 10px; line-height: 1.35; }
+        .section { margin-top: 10px; font-size: 11px; line-height: 1.35; }
+        .section, .section * { font-family: Arial, sans-serif !important; font-size: 11px !important; line-height: 1.35 !important; }
         .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin-bottom: 6px; }
+        .section h2, .section h2 * { font-size: 11px !important; font-weight: 700 !important; }
+        .section p, .section div { margin-top: 0; margin-bottom: 4px; }
         .text-column { width: calc(100% - 278px); }
         .terms-column { margin-top: 22px; }
         .text-column .section, .below-table .section { text-align: justify; text-align-last: left; hyphens: auto; overflow-wrap: break-word; }
