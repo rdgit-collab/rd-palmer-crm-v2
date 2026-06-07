@@ -255,6 +255,17 @@ function invoiceHtml(invoice, items, contactName, customer) {
             -webkit-box-decoration-break: clone;
           }
         }
+        @media screen and (max-width: 800px) {
+          body { background: #fff; }
+          .sheet { width: 100%; min-height: 0; padding: 16px; }
+          .top, .intro, .below-table { grid-template-columns: 1fr; gap: 14px; }
+          .company, .doc-title { text-align: left; }
+          .meta, .totals, .text-column { width: 100%; margin-left: 0; }
+          table { font-size: 10px; }
+          th, td { padding: 6px 5px; }
+          td:nth-child(4), th:nth-child(4) { width: 58px; }
+          td:nth-child(6), th:nth-child(6) { width: 68px; }
+        }
       </style>
     </head>
     <body>
@@ -310,12 +321,20 @@ function invoiceHtml(invoice, items, contactName, customer) {
 
 function openPrintable(html, autoPrint = false) {
   const win = window.open('', '_blank')
-  if (!win) return
+  if (!win) {
+    alert('Please allow popups for this site to open the document.')
+    return
+  }
   win.document.write(html)
   win.document.close()
   if (autoPrint) {
     win.onload = () => { win.focus(); win.print() }
   }
+}
+
+function shouldAutoPrintDocument() {
+  if (typeof window === 'undefined') return true
+  return !window.matchMedia('(max-width: 800px), (pointer: coarse)').matches
 }
 
 // ─── Auto-generate next invoice number ────────────────────────────────────────
@@ -1101,7 +1120,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const contactName = resolvedContactName(invoice.contact_person, contact)
   const printableHtml = () => invoiceHtml(invoice, items, contactName, customer)
   const openPreview = () => openPrintable(printableHtml())
-  const downloadPdf = () => openPrintable(printableHtml(), true)
+  const downloadPdf = () => openPrintable(printableHtml(), shouldAutoPrintDocument())
 
   return (
     <div>
