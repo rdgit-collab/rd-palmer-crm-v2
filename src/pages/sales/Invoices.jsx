@@ -23,13 +23,10 @@ const markedRate = (baseRate, markup) => {
 }
 const PAGE_SIZE = 30
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
-const DEFAULT_INVOICE_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
-const DEFAULT_INVOICE_TERMS = `Availability:
-Validity: 30 days from invoice date.
-Warranty: 12 months standard manufacturer warranty unless otherwise specified.
-Prices quoted are EX-Work Kuala Lumpur, Malaysia unless other specified.
-
-Please confirm your agreement to the terms and conditions stated therein by signing at the below.`
+const DEFAULT_INVOICE_NOTES = 'Thank you for your business. Please retain this invoice for your records.'
+const DEFAULT_INVOICE_TERMS = `Payment is due according to the payment term stated above.
+Goods and services supplied remain subject to RD-Palmer standard warranty and service conditions unless otherwise specified.
+Please quote the invoice number for payment and account reference.`
 
 const emptyContactForm = {
   Salutation: '',

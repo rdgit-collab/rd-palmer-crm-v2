@@ -9,6 +9,7 @@ import SearchSelect from '../../components/SearchSelect'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import { displayText } from '../../lib/displayText'
+import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import {
   useAssignableUsers,
   useCategories,
@@ -20,15 +21,38 @@ import {
   useVendors,
 } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
 const TICKET_LIST_COLUMNS = 'id, ticket_id, date, warranty, category, company_id, company_name, contact_person, description, priority, due_date, status, is_completed, assigned_to, remark, user_id, created_at, serial_number'
 const TICKET_STATUSES = ['Open', 'Pending', 'Completed']
 const TICKET_STATUS_FILTERS = [...TICKET_STATUSES, 'Overdue']
 const SERIAL_SEARCH_TIMEOUT_MS = 6000
+const DEFAULT_TICKET_REPORT_TERMS = `1. Work performed is based on information available at the time of service.
+2. Parts used, findings, and service notes are recorded for internal and customer reference.
+3. Any further repair, replacement, or calibration work may require separate approval.`
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
+const stripHtml = (value = '') => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+
+function sanitizeHtml(value = '') {
+  const raw = String(value || '')
+  if (!raw) return ''
+  if (!/<\/?[a-z][\s\S]*>/i.test(raw)) return escapeHtml(raw).replace(/\n/g, '<br>')
+  if (typeof window === 'undefined') return raw
+  const doc = new DOMParser().parseFromString(raw, 'text/html')
+  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(el => el.remove())
+  doc.body.querySelectorAll('*').forEach(el => {
+    ;[...el.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase()
+      const val = attr.value || ''
+      if (name.startsWith('on') || name === 'style' || (['href', 'src'].includes(name) && val.trim().toLowerCase().startsWith('javascript:'))) {
+        el.removeAttribute(attr.name)
+      }
+    })
+  })
+  return doc.body.innerHTML
+}
 
 function LoadingHint({ text = 'Loading options...' }) {
   return (
@@ -228,6 +252,176 @@ function workDone(item) {
 
 function timelineDate(item) {
   return item?.created_at || item?.date || item?.startdate || item?.date_sent || ''
+}
+
+function openPrintable(html, autoPrint = false) {
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+  if (autoPrint) {
+    win.onload = () => { win.focus(); win.print() }
+  }
+}
+
+function ticketReportHtml(ticket, {
+  assignedTo,
+  categoryName,
+  contact,
+  contactName,
+  createdBy,
+  products,
+  progress,
+  terms,
+  timelineItems,
+  users,
+}) {
+  const productRows = products.length
+    ? products.map(product => `
+      <tr>
+        <td>${escapeHtml(product.serial_number || '-')}</td>
+        <td>${escapeHtml(formatDate(product.serial_date || product.date))}</td>
+        <td>${escapeHtml(product.warranty_period || '-')}</td>
+        <td>${escapeHtml(stripHtml(product.item_description || '') || '-')}</td>
+        <td>${escapeHtml(product.sku || '-')}</td>
+        <td>${escapeHtml(product.remark || '-')}</td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="6" class="empty">No products recorded.</td></tr>'
+
+  const timelineRows = timelineItems.length
+    ? timelineItems.map(item => `
+      <div class="timeline-item">
+        <div class="timeline-head">
+          <span class="timeline-type">${escapeHtml(displayText(item.type))}</span>
+          <strong>${escapeHtml(displayText(item.label))}</strong>
+          ${item.status ? `<span class="badge">${escapeHtml(displayText(item.status))}</span>` : ''}
+          <span class="timeline-date">${escapeHtml(formatDateTime(item.date))}</span>
+        </div>
+        <div class="timeline-meta">Owner: ${escapeHtml(item.owner ? formatUserName(users, item.owner) : '-')}</div>
+        ${item.spare ? `<div class="timeline-meta">Spare Used: ${escapeHtml(displayText(item.spare))}</div>` : ''}
+        ${item.text ? `<div class="timeline-text">${escapeHtml(stripHtml(displayText(item.text, '')))}</div>` : ''}
+      </div>
+    `).join('')
+    : '<div class="empty-block">No progress updates recorded.</div>'
+
+  return `<!doctype html>
+  <html>
+    <head>
+      <title>Service Report - TID${escapeHtml(ticket.ticket_id || '-')}</title>
+      <style>
+        @page { size: A4; margin: 0; }
+        body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
+        .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
+        .top { display: grid; grid-template-columns: 1fr 1.45fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
+        .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
+        .company { text-align: right; line-height: 1.35; font-size: 11px; }
+        .company strong { font-size: 12px; }
+        .doc-title { text-align: left; font-size: 26px; font-weight: 700; margin: 16px 0 8px; }
+        .meta { width: 240px; }
+        .meta-row { display: grid; grid-template-columns: 76px 1fr; gap: 8px; line-height: 1.35; }
+        .meta-row .value { text-align: left; font-weight: 600; }
+        .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin: 18px 0; border: 1px solid #222; border-radius: 3px; padding: 12px; }
+        .summary-row { display: grid; grid-template-columns: 105px 1fr; gap: 8px; line-height: 1.4; }
+        .summary-row span:first-child { color: #555; font-weight: 700; }
+        .section { margin-top: 14px; line-height: 1.45; break-inside: avoid; page-break-inside: avoid; }
+        .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin: 0 0 6px; }
+        .text-box { border: 1px solid #d4d4d4; min-height: 60px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #d4d4d4; padding: 7px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+        th { background: #f3f4f6; font-size: 10px; text-transform: uppercase; }
+        .timeline-item { border: 1px solid #d4d4d4; padding: 9px; margin-bottom: 8px; break-inside: avoid; page-break-inside: avoid; }
+        .timeline-head { display: grid; grid-template-columns: 62px 1fr auto auto; gap: 8px; align-items: center; }
+        .timeline-type { color: #555; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        .timeline-date { color: #555; font-size: 10px; white-space: nowrap; }
+        .timeline-meta { color: #555; font-size: 10px; margin-top: 4px; }
+        .timeline-text { margin-top: 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .badge { border: 1px solid #d4d4d4; padding: 2px 6px; font-size: 10px; border-radius: 999px; white-space: nowrap; }
+        .terms-box { border: 1px solid #222; min-height: 80px; padding: 10px; line-height: 1.45; }
+        .document-signature { display: grid; grid-template-columns: 270px 270px; gap: 48px; margin-top: 34px; break-inside: avoid; page-break-inside: avoid; }
+        .signature-line { border-top: 1px dotted #111; padding-top: 10px; font-style: italic; min-height: 64px; line-height: 1.45; }
+        .empty, .empty-block { color: #777; font-style: italic; }
+        @media print {
+          body { background: #fff; }
+          .sheet { width: auto; min-height: 0; margin: 0; padding: 15mm; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="sheet">
+        <div class="top">
+          <div>
+            <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
+            <div class="doc-title">Service Report</div>
+            <div class="meta">
+              <div class="meta-row"><span>Ticket:</span><span class="value">TID${escapeHtml(ticket.ticket_id || '-')}</span></div>
+              <div class="meta-row"><span>Date:</span><span class="value">${escapeHtml(formatDate(ticket.date))}</span></div>
+              <div class="meta-row"><span>Status:</span><span class="value">${escapeHtml(ticket.status || '-')}</span></div>
+            </div>
+          </div>
+          <div class="company">
+            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (200301008311)<br>
+            63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
+            Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
+            Website: www.rd-palmer.com
+          </div>
+        </div>
+
+        <div class="summary">
+          <div class="summary-row"><span>Company:</span><span>${escapeHtml(ticket.company_name || '-')}</span></div>
+          <div class="summary-row"><span>Assigned To:</span><span>${escapeHtml(assignedTo || '-')}</span></div>
+          <div class="summary-row"><span>Contact:</span><span>${escapeHtml(contactName || '-')}</span></div>
+          <div class="summary-row"><span>Priority:</span><span>${escapeHtml(ticket.priority || '-')}</span></div>
+          <div class="summary-row"><span>Mobile:</span><span>${escapeHtml(contact?.mobile_number || '-')}</span></div>
+          <div class="summary-row"><span>Due Date:</span><span>${escapeHtml(formatDate(ticket.due_date))}</span></div>
+          <div class="summary-row"><span>Email:</span><span>${escapeHtml(contact?.email || '-')}</span></div>
+          <div class="summary-row"><span>Category:</span><span>${escapeHtml(categoryName || '-')}</span></div>
+          <div class="summary-row"><span>Created By:</span><span>${escapeHtml(createdBy || '-')}</span></div>
+          <div class="summary-row"><span>Progress:</span><span>${escapeHtml(`${progress}%`)}</span></div>
+          <div class="summary-row"><span>Created:</span><span>${escapeHtml(formatDateTime(ticket.created_at))}</span></div>
+          <div class="summary-row"><span>Warranty:</span><span>${ticket.warranty == 1 ? 'Yes' : 'No'}</span></div>
+        </div>
+
+        <div class="section">
+          <h2>Ticket Description</h2>
+          <div class="text-box">${escapeHtml(ticket.description || '-')}</div>
+        </div>
+
+        ${ticket.remark ? `<div class="section"><h2>Ticket Remarks</h2><div class="text-box">${escapeHtml(ticket.remark)}</div></div>` : ''}
+
+        <div class="section">
+          <h2>Product Item List</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Serial No.</th>
+                <th>Date</th>
+                <th>Warranty</th>
+                <th>Item Description</th>
+                <th>SKU</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>${productRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <h2>Progress Timeline</h2>
+          ${timelineRows}
+        </div>
+
+        <div class="section">
+          <h2>Terms & Conditions</h2>
+          <div class="terms-box">${sanitizeHtml(terms || DEFAULT_TICKET_REPORT_TERMS)}</div>
+        </div>
+        <div class="document-signature">
+          <div class="signature-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
+          <div class="signature-line">(Co. Stamp)</div>
+        </div>
+      </div>
+    </body>
+  </html>`
 }
 
 const emptyForm = {
@@ -1557,6 +1751,22 @@ export default function Tickets() {
     ]
       .filter(item => item.date || item.text || item.label)
       .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+    const reportUsers = allUsers.length ? allUsers : users
+    const downloadTicketReport = async () => {
+      const { data: termsRow } = await supabase.from('app_setting').select('value').eq('key', 'task_terms').maybeSingle()
+      openPrintable(ticketReportHtml(detail, {
+        assignedTo: formatUserName(reportUsers, detail.assigned_to),
+        categoryName: category?.name || detail.category || '',
+        contact: detailContact,
+        contactName: getContactName(detailContact),
+        createdBy: formatUserName(reportUsers, detail.user_id),
+        products: detailProds,
+        progress,
+        terms: termsRow?.value || DEFAULT_TICKET_REPORT_TERMS,
+        timelineItems,
+        users: reportUsers,
+      }), true)
+    }
 
     return (
       <div className="p-6 max-w-4xl">
@@ -1575,6 +1785,12 @@ export default function Tickets() {
             )}
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={downloadTicketReport}
+              className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+            >
+              <Download size={14} /> Service Report
+            </button>
             <button
               onClick={() => openEdit(detail)}
               className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"

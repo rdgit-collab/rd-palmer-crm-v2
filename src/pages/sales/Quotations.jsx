@@ -30,6 +30,10 @@ Warranty: 12 months standard manufacturer warranty unless otherwise specified.
 Prices quoted are EX-Work Kuala Lumpur, Malaysia unless other specified.
 
 Please confirm your agreement to the terms and conditions stated therein by signing at the below.`
+const DEFAULT_INVOICE_NOTES = 'Thank you for your business. Please retain this invoice for your records.'
+const DEFAULT_INVOICE_TERMS = `Payment is due according to the payment term stated above.
+Goods and services supplied remain subject to RD-Palmer standard warranty and service conditions unless otherwise specified.
+Please quote the invoice number for payment and account reference.`
 
 const emptyContactForm = {
   Salutation: '',
@@ -1166,7 +1170,12 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
   const handleConvert = async () => {
     if (!window.confirm('Convert this quotation to an invoice? The quotation will be marked as converted.')) return
     setConverting(true)
-    const invoiceNumber = await getNextInvoiceNumber()
+    const [invoiceNumber, { data: tplData }] = await Promise.all([
+      getNextInvoiceNumber(),
+      supabase.from('app_setting').select('key, value').in('key', ['invoice_notes', 'invoice_terms']),
+    ])
+    const invoiceTemplate = {}
+    ;(tplData || []).forEach(row => { invoiceTemplate[row.key] = row.value || '' })
     const now = new Date().toISOString()
     const invoicePayload = {
       user_id: quotation.user_id || getLegacyUserId(profile),
@@ -1178,11 +1187,11 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       date: new Date().toISOString().split('T')[0],
       due_date: quotation.expiry_date || null,
       terms: quotation.payment_term,
-      term_condition: quotation.terms,
+      term_condition: invoiceTemplate.invoice_terms || DEFAULT_INVOICE_TERMS,
       sales_person: quotation.sales_person,
       contact_person: quotation.contact_person,
       currency: quotation.currency || 'MYR',
-      notes: quotation.notes,
+      notes: invoiceTemplate.invoice_notes || DEFAULT_INVOICE_NOTES,
       subtotal: quotation.subtotal,
       discount: quotation.discount,
       discouttype: quotation.discouttype,
