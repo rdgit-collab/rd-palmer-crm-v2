@@ -254,14 +254,22 @@ function timelineDate(item) {
   return item?.created_at || item?.date || item?.startdate || item?.date_sent || ''
 }
 
-function openPrintable(html, autoPrint = false) {
+function openPrintable(html, autoPrint = false, win = null) {
+  const targetWin = win || window.open('', '_blank')
+  if (!targetWin) return
+  targetWin.document.write(html)
+  targetWin.document.close()
+  if (autoPrint) {
+    targetWin.onload = () => { targetWin.focus(); targetWin.print() }
+  }
+}
+
+function openPrintWindow() {
   const win = window.open('', '_blank')
   if (!win) return
-  win.document.write(html)
+  win.document.write('<!doctype html><html><head><title>Loading...</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#444">Preparing service report...</body></html>')
   win.document.close()
-  if (autoPrint) {
-    win.onload = () => { win.focus(); win.print() }
-  }
+  return win
 }
 
 function ticketReportHtml(ticket, {
@@ -1753,6 +1761,8 @@ export default function Tickets() {
       .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
     const reportUsers = allUsers.length ? allUsers : users
     const downloadTicketReport = async () => {
+      const reportWindow = openPrintWindow()
+      if (!reportWindow) return
       const { data: termsRow } = await supabase.from('app_setting').select('value').eq('key', 'task_terms').maybeSingle()
       openPrintable(ticketReportHtml(detail, {
         assignedTo: formatUserName(reportUsers, detail.assigned_to),
@@ -1765,7 +1775,7 @@ export default function Tickets() {
         terms: termsRow?.value || DEFAULT_TICKET_REPORT_TERMS,
         timelineItems,
         users: reportUsers,
-      }), true)
+      }), true, reportWindow)
     }
 
     return (
