@@ -5,6 +5,7 @@ import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as
 import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate } from '../../lib/dateFormat'
+import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
@@ -163,16 +164,11 @@ export default function Calibration() {
     const requestId = serialSearchId.current + 1
     serialSearchId.current = requestId
     setSerialLoading(true)
+    const searchTerm = term.trim()
     try {
-      let q = supabase.from('serialnumber')
-        .select('id, serial_number, sku, customername')
-        .not('serial_number', 'is', null)
-        .order('serial_number')
-        .limit(200)
-      if (term.trim()) q = q.ilike('serial_number', `%${term.trim()}%`)
-      const { data, error: err } = await q
+      const data = searchTerm ? await searchSerialNumberOptions(searchTerm, 50) : []
       if (serialSearchId.current !== requestId) return
-      if (!err) setSerialOptions(data || [])
+      setSerialOptions(data || [])
     } finally {
       if (serialSearchId.current === requestId) setSerialLoading(false)
     }

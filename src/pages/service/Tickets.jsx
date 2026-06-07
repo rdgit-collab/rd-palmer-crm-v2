@@ -9,6 +9,7 @@ import SearchSelect from '../../components/SearchSelect'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import { displayText } from '../../lib/displayText'
+import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import {
   useAssignableUsers,
@@ -895,52 +896,18 @@ export default function Tickets() {
     setSerialOptions(prev => ({ ...prev, [idx]: [] }))
     setSerialLoading(prev => ({ ...prev, [idx]: false }))
   }
-  const runSerialQuery = async (query) => {
-    let timer
-    const timeout = new Promise(resolve => {
-      timer = setTimeout(() => resolve({ data: [], error: { message: 'Search timed out' } }), SERIAL_SEARCH_TIMEOUT_MS)
-    })
-    try {
-      return await Promise.race([query, timeout])
-    } finally {
-      clearTimeout(timer)
-    }
-  }
   const fetchSerialMatches = async (term, limit = 50) => {
     const searchTerm = term.trim()
     if (!searchTerm) return []
-    const columns = 'id, serial_number, sku, customername, date, warranty_period'
-    const exactSerial = await runSerialQuery(supabase
-      .from('serialnumber')
-      .select(columns)
-      .eq('serial_number', searchTerm)
-      .order('serial_number')
-      .limit(limit))
-    if (!exactSerial.error && (exactSerial.data || []).length > 0) {
-      return exactSerial.data || []
-    }
-
-    const serialLike = runSerialQuery(supabase
-      .from('serialnumber')
-      .select(columns)
-      .ilike('serial_number', `%${searchTerm}%`)
-      .order('serial_number')
-      .limit(limit))
-    const skuLike = runSerialQuery(supabase
-      .from('serialnumber')
-      .select(columns)
-      .ilike('sku', `%${searchTerm}%`)
-      .order('serial_number')
-      .limit(limit))
-    const results = await Promise.allSettled([serialLike, skuLike])
-    const byId = new Map()
-    results.forEach(result => {
-      if (result.status !== 'fulfilled' || result.value.error) return
-      ;(result.value.data || []).forEach(row => {
-        if (!byId.has(row.id)) byId.set(row.id, row)
-      })
+    let timer
+    const timeout = new Promise(resolve => {
+      timer = setTimeout(() => resolve([]), SERIAL_SEARCH_TIMEOUT_MS)
     })
-    return Array.from(byId.values()).slice(0, limit)
+    try {
+      return await Promise.race([searchSerialNumberOptions(searchTerm, limit), timeout])
+    } finally {
+      clearTimeout(timer)
+    }
   }
   const loadSerialOptions = async (idx, term = '') => {
     const searchTerm = term.trim()

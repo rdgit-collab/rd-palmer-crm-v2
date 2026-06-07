@@ -6,6 +6,7 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
 import { formatDate } from '../../lib/dateFormat'
+import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -233,15 +234,9 @@ export default function OnsiteTickets() {
     setSerialLoading(true)
     const searchTerm = term.trim()
     try {
-      let q = supabase
-        .from('serialnumber')
-        .select('id, serial_number, sku, customername')
-        .order('serial_number')
-        .limit(200)
-      if (searchTerm) q = q.or(`serial_number.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
-      const { data, error: err } = await q
+      const data = searchTerm ? await searchSerialNumberOptions(searchTerm, 50) : []
       if (serialSearchId.current !== requestId) return
-      if (!err) setSerialOptions(data || [])
+      setSerialOptions(data || [])
     } finally {
       if (serialSearchId.current === requestId) setSerialLoading(false)
     }
