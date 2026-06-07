@@ -188,21 +188,11 @@ function AdminDashboard({ firstName }) {
   useEffect(() => {
     if (!profile) return
     setLoading(true)
-    const today = new Date().toISOString().split('T')[0]
-    Promise.all([
-      supabase.from('customer').select('id', { count: 'estimated', head: true }),
-      supabase.from('ticket').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('quotation').select('id', { count: 'estimated', head: true }),
-      supabase.from('invoice').select('id', { count: 'estimated', head: true }),
-      supabase.from('task').select('id', { count: 'exact', head: true }).eq('is_completed', 0),
-      supabase.from('sales_lead').select('id', { count: 'estimated', head: true }),
-      supabase.from('invoice').select('id', { count: 'exact', head: true }).lt('due_date', today),
-      supabase.from('ticket').select('id, ticket_id, company_name, priority, due_date').eq('is_completed', 0).order('id', { ascending: false }).limit(5),
-      supabase.from('activity').select('id, type, date, description, company_id').order('date', { ascending: false }).limit(6),
-    ]).then(([c, t, q, inv, tsk, l, ov, rTick, rAct]) => {
-      setStats({ customers: c.count||0, openTickets: t.count||0, quotations: q.count||0, invoices: inv.count||0, openTasks: tsk.count||0, leads: l.count||0, overdueInvoices: ov.count||0 })
-      setRecentTickets(rTick.data || [])
-      setRecentActivities(rAct.data || [])
+    supabase.rpc('get_admin_dashboard_summary').then(({ data }) => {
+      const summary = data || {}
+      setStats(summary.stats || {})
+      setRecentTickets(summary.recentTickets || [])
+      setRecentActivities(summary.recentActivities || [])
     }).finally(() => setLoading(false))
   }, [profile])
 
