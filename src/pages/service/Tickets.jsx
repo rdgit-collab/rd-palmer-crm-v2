@@ -257,6 +257,7 @@ function timelineDate(item) {
 function openPrintable(html, autoPrint = false, win = null) {
   const targetWin = win || window.open('', '_blank')
   if (!targetWin) return
+  targetWin.document.open()
   targetWin.document.write(html)
   targetWin.document.close()
   if (autoPrint) {
@@ -267,9 +268,30 @@ function openPrintable(html, autoPrint = false, win = null) {
 function openPrintWindow() {
   const win = window.open('', '_blank')
   if (!win) return
+  win.document.open()
   win.document.write('<!doctype html><html><head><title>Loading...</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#444">Preparing service report...</body></html>')
   win.document.close()
   return win
+}
+
+function showReportError(win, error) {
+  if (!win) return
+  const message = error?.message || 'Unable to generate service report.'
+  win.document.open()
+  win.document.write(`<!doctype html><html><head><title>Report Error</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#991b1b"><h2>Service report could not load</h2><p>${escapeHtml(message)}</p></body></html>`)
+  win.document.close()
+}
+
+async function fetchTaskTermsWithTimeout() {
+  const timeout = new Promise(resolve => setTimeout(() => resolve(null), 1200))
+  const query = supabase
+    .from('app_setting')
+    .select('value')
+    .eq('key', 'task_terms')
+    .maybeSingle()
+    .then(({ data }) => data?.value || null)
+    .catch(() => null)
+  return Promise.race([query, timeout])
 }
 
 function ticketReportHtml(ticket, {
@@ -1763,19 +1785,23 @@ export default function Tickets() {
     const downloadTicketReport = async () => {
       const reportWindow = openPrintWindow()
       if (!reportWindow) return
-      const { data: termsRow } = await supabase.from('app_setting').select('value').eq('key', 'task_terms').maybeSingle()
-      openPrintable(ticketReportHtml(detail, {
-        assignedTo: formatUserName(reportUsers, detail.assigned_to),
-        categoryName: category?.name || detail.category || '',
-        contact: detailContact,
-        contactName: getContactName(detailContact),
-        createdBy: formatUserName(reportUsers, detail.user_id),
-        products: detailProds,
-        progress,
-        terms: termsRow?.value || DEFAULT_TICKET_REPORT_TERMS,
-        timelineItems,
-        users: reportUsers,
-      }), true, reportWindow)
+      try {
+        const terms = await fetchTaskTermsWithTimeout()
+        openPrintable(ticketReportHtml(detail, {
+          assignedTo: formatUserName(reportUsers, detail.assigned_to),
+          categoryName: category?.name || detail.category || '',
+          contact: detailContact,
+          contactName: getContactName(detailContact),
+          createdBy: formatUserName(reportUsers, detail.user_id),
+          products: detailProds,
+          progress,
+          terms: terms || DEFAULT_TICKET_REPORT_TERMS,
+          timelineItems,
+          users: reportUsers,
+        }), true, reportWindow)
+      } catch (err) {
+        showReportError(reportWindow, err)
+      }
     }
 
     return (
