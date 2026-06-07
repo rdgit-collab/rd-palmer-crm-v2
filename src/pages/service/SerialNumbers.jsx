@@ -70,79 +70,91 @@ export default function SerialNumbers() {
       }
       return query.order('id', { ascending: false })
     }
+    const applyReverseSort = (query) => {
+      if (sortMode === 'date_asc') {
+        return query.order('date', { ascending: false, nullsFirst: false }).order('id', { ascending: true })
+      }
+      if (sortMode === 'date_desc') {
+        return query.order('date', { ascending: true, nullsFirst: false }).order('id', { ascending: true })
+      }
+      return query.order('id', { ascending: true })
+    }
 
     if (term) {
-      const exactCountResult = await supabase
+      const searchResult = await applySort(supabase
         .from('serialnumber')
-        .select('id', { count: 'exact', head: true })
-        .eq(searchField, term)
-
-      if (exactCountResult.error) {
-        setRows([])
-        setTotal(0)
-        setError(exactCountResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      const exactCount = exactCountResult.count || 0
-
-      if (exactCount > 0) {
-        const exactResult = await applySort(supabase
-          .from('serialnumber')
-          .select(SERIAL_COLUMNS)
-          .eq(searchField, term))
-          .range(from, to)
-
-        if (exactResult.error) {
-          setRows([])
-          setTotal(exactCount)
-          setError(exactResult.error.message)
-          setLoading(false)
-          return
-        }
-
-        setRows(exactResult.data)
-        setTotal(exactCount)
-        setLoading(false)
-        return
-      }
-
-      const fuzzyResult = await applySort(supabase
-        .from('serialnumber')
-        .select(SERIAL_COLUMNS, { count: 'estimated' })
+        .select(SERIAL_COLUMNS)
         .ilike(searchField, `%${term}%`))
-        .range(from, to)
+        .range(from, from + PAGE_SIZE)
 
-      if (fuzzyResult.error) {
+      if (searchResult.error) {
         setRows([])
         setTotal(0)
-        setError(fuzzyResult.error.message)
+        setError(searchResult.error.message)
         setLoading(false)
         return
       }
 
-      const fuzzyRows = fuzzyResult.data || []
-      setRows(fuzzyRows)
-      setTotal(fuzzyResult.count || 0)
+      const searchRows = searchResult.data || []
+      const hasMore = searchRows.length > PAGE_SIZE
+      setRows(searchRows.slice(0, PAGE_SIZE))
+      setTotal(hasMore ? from + PAGE_SIZE + 1 : from + searchRows.length)
+      setLoading(false)
+      return
+    }
+
+    const countResult = await supabase
+      .from('serialnumber')
+      .select('id', { count: 'exact', head: true })
+
+    if (countResult.error) {
+      setRows([])
+      setTotal(0)
+      setError(countResult.error.message)
+      setLoading(false)
+      return
+    }
+
+    const exactTotal = countResult.count || 0
+    const exactTotalPages = Math.max(1, Math.ceil(exactTotal / PAGE_SIZE))
+    const isLastPage = page >= exactTotalPages
+    const safePage = Math.min(page, exactTotalPages)
+
+    if (isLastPage && exactTotal > 0) {
+      const lastPageSize = exactTotal % PAGE_SIZE || PAGE_SIZE
+      const lastPageResult = await applyReverseSort(supabase
+        .from('serialnumber')
+        .select(SERIAL_COLUMNS))
+        .range(0, lastPageSize - 1)
+
+      if (lastPageResult.error) {
+        setRows([])
+        setTotal(exactTotal)
+        setError(lastPageResult.error.message)
+      } else {
+        setRows([...(lastPageResult.data || [])].reverse())
+        setTotal(exactTotal)
+        if (page !== exactTotalPages) setPage(exactTotalPages)
+      }
       setLoading(false)
       return
     }
 
     let q = supabase
       .from('serialnumber')
-      .select(SERIAL_COLUMNS, { count: 'estimated' })
+      .select(SERIAL_COLUMNS)
 
     q = applySort(q)
-    q = q.range(from, to)
-    const { data, count, error: err } = await q
+    q = q.range((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE - 1)
+    const { data, error: err } = await q
     if (err) {
       setRows([])
-      setTotal(0)
+      setTotal(exactTotal)
       setError(err.message)
     } else {
       setRows(data || [])
-      setTotal(count || 0)
+      setTotal(exactTotal)
+      if (page !== safePage) setPage(safePage)
     }
     setLoading(false)
   }, [search, searchField, sortMode, page])
