@@ -10,6 +10,7 @@ import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-r
 
 const PAGE_SIZE = 30
 const SERIAL_COLUMNS = 'id, date, ref_number, customername, sku, serial_number, warranty_period'
+const SERIAL_VIEW_COLUMNS = `${SERIAL_COLUMNS}, category_id, category_name, category_status`
 
 const SEARCH_FIELDS = [
   { value: 'serial_number', label: 'Serial Number', placeholder: 'Search serial number...' },
@@ -22,6 +23,19 @@ const SORT_OPTIONS = [
   { value: 'latest', label: 'Latest Record' },
   { value: 'date_desc', label: 'Date Newest' },
   { value: 'date_asc', label: 'Date Oldest' },
+]
+
+const CATEGORY_TABS = [
+  { value: 'all', label: 'All' },
+  { value: '1', label: 'Locator' },
+  { value: '8', label: 'Sparepart' },
+  { value: '11', label: 'Batteries' },
+  { value: '12', label: 'Obsolete' },
+  { value: '2', label: 'GPR' },
+  { value: '4', label: 'Cable Test' },
+  { value: '6', label: 'Pipe Rehab' },
+  { value: '5', label: 'Water' },
+  { value: 'unmatched', label: 'Unmatched SKU' },
 ]
 
 const WARRANTY_PERIODS = [
@@ -48,6 +62,7 @@ export default function SerialNumbers() {
   const [searchField, setSearchField] = useState('serial_number')
   const [draftSearchField, setDraftSearchField] = useState('serial_number')
   const [sortMode, setSortMode] = useState('latest')
+  const [categoryTab, setCategoryTab] = useState('all')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
@@ -61,6 +76,11 @@ export default function SerialNumbers() {
     const term = search.trim()
     const from = (page - 1) * PAGE_SIZE
     const to = page * PAGE_SIZE - 1
+    const applyCategory = (query) => {
+      if (categoryTab === 'all') return query
+      if (categoryTab === 'unmatched') return query.in('category_status', ['unmatched', 'ambiguous'])
+      return query.eq('category_id', categoryTab)
+    }
     const applySort = (query) => {
       if (sortMode === 'date_asc') {
         return query.order('date', { ascending: true, nullsFirst: false }).order('id', { ascending: false })
@@ -81,10 +101,10 @@ export default function SerialNumbers() {
     }
 
     if (term) {
-      const searchResult = await applySort(supabase
-        .from('serialnumber')
-        .select(SERIAL_COLUMNS)
-        .ilike(searchField, `%${term}%`))
+      const searchResult = await applySort(applyCategory(supabase
+        .from('serialnumber_with_category')
+        .select(SERIAL_VIEW_COLUMNS)
+        .ilike(searchField, `%${term}%`)))
         .range(from, from + PAGE_SIZE)
 
       if (searchResult.error) {
@@ -103,18 +123,18 @@ export default function SerialNumbers() {
       return
     }
 
-    let q = supabase
-      .from('serialnumber')
-      .select(SERIAL_COLUMNS, { count: 'estimated' })
+    let q = applyCategory(supabase
+      .from('serialnumber_with_category')
+      .select(SERIAL_VIEW_COLUMNS, { count: 'estimated' }))
 
     q = applySort(q)
     q = q.range(from, to)
     const { data, count, error: err } = await q
 
     if (err && /statement timeout|canceling statement/i.test(err.message || '')) {
-      const countResult = await supabase
-        .from('serialnumber')
-        .select('id', { count: 'exact', head: true })
+      const countResult = await applyCategory(supabase
+        .from('serialnumber_with_category')
+        .select('id', { count: 'exact', head: true }))
       if (countResult.error) {
         setRows([])
         setTotal(0)
@@ -126,9 +146,9 @@ export default function SerialNumbers() {
       const exactTotal = countResult.count || 0
       const exactTotalPages = Math.max(1, Math.ceil(exactTotal / PAGE_SIZE))
       const lastPageSize = exactTotal % PAGE_SIZE || PAGE_SIZE
-      const lastPageResult = await applyReverseSort(supabase
-        .from('serialnumber')
-        .select(SERIAL_COLUMNS))
+      const lastPageResult = await applyReverseSort(applyCategory(supabase
+        .from('serialnumber_with_category')
+        .select(SERIAL_VIEW_COLUMNS)))
         .range(0, lastPageSize - 1)
 
       if (lastPageResult.error) {
@@ -152,7 +172,7 @@ export default function SerialNumbers() {
       setTotal(count || 0)
     }
     setLoading(false)
-  }, [search, searchField, sortMode, page])
+  }, [search, searchField, sortMode, categoryTab, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -220,6 +240,11 @@ export default function SerialNumbers() {
     setPage(1)
   }
 
+  const changeCategoryTab = (value) => {
+    setCategoryTab(value)
+    setPage(1)
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const activeSearchField = SEARCH_FIELDS.find(field => field.value === draftSearchField) || SEARCH_FIELDS[0]
   const hasCurrentWarrantyOption = !form.warranty_period || WARRANTY_PERIODS.some(w => w.value === form.warranty_period)
@@ -257,6 +282,24 @@ export default function SerialNumbers() {
         <button type="submit" disabled={loading} className="px-4 py-2 bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60">Search</button>
         {search && <button type="button" onClick={clearSearch} className="px-4 py-2 border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Clear</button>}
       </form>
+      <div className="mb-4 overflow-x-auto border-b border-gray-200">
+        <div className="flex min-w-max gap-1">
+          {CATEGORY_TABS.map(tab => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => changeCategoryTab(tab.value)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 ${
+                categoryTab === tab.value
+                  ? 'border-red-600 text-red-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       <div className="bg-white border border-gray-200">
         <table className="w-full text-sm">
@@ -264,6 +307,7 @@ export default function SerialNumbers() {
             <tr className="border-b border-gray-200 bg-gray-50">
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Serial Number</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">SKU</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Category</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Customer</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Date</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Ref Number</th>
@@ -272,12 +316,15 @@ export default function SerialNumbers() {
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No serial number records found.</td></tr>
+            {loading ? <tr><td colSpan={8} className="text-center py-12 text-gray-400">Loading...</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={8} className="text-center py-12 text-gray-400">No serial number records found.</td></tr>
             : rows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-semibold text-red-600">{r.serial_number || '—'}</td>
                 <td className="px-4 py-3 text-gray-700">{r.sku || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">
+                  {r.category_status === 'matched' ? (r.category_name || '—') : 'Unmatched SKU'}
+                </td>
                 <td className="px-4 py-3 text-gray-700">{r.customername || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{formatDate(r.date)}</td>
                 <td className="px-4 py-3 text-gray-600">{r.ref_number || '—'}</td>
