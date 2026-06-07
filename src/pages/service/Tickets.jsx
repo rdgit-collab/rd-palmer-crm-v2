@@ -254,44 +254,14 @@ function timelineDate(item) {
   return item?.created_at || item?.date || item?.startdate || item?.date_sent || ''
 }
 
-function openPrintable(html, autoPrint = false, win = null) {
-  const targetWin = win || window.open('', '_blank')
-  if (!targetWin) return
-  targetWin.document.open()
-  targetWin.document.write(html)
-  targetWin.document.close()
-  if (autoPrint) {
-    targetWin.onload = () => { targetWin.focus(); targetWin.print() }
-  }
-}
-
-function openPrintWindow() {
+function openPrintable(html, autoPrint = false) {
   const win = window.open('', '_blank')
   if (!win) return
-  win.document.open()
-  win.document.write('<!doctype html><html><head><title>Loading...</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#444">Preparing service report...</body></html>')
+  win.document.write(html)
   win.document.close()
-  return win
-}
-
-function showReportError(win, error) {
-  if (!win) return
-  const message = error?.message || 'Unable to generate service report.'
-  win.document.open()
-  win.document.write(`<!doctype html><html><head><title>Report Error</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#991b1b"><h2>Service report could not load</h2><p>${escapeHtml(message)}</p></body></html>`)
-  win.document.close()
-}
-
-async function fetchTaskTermsWithTimeout() {
-  const timeout = new Promise(resolve => setTimeout(() => resolve(null), 1200))
-  const query = supabase
-    .from('app_setting')
-    .select('value')
-    .eq('key', 'task_terms')
-    .maybeSingle()
-    .then(({ data }) => data?.value || null)
-    .catch(() => null)
-  return Promise.race([query, timeout])
+  if (autoPrint) {
+    win.onload = () => { win.focus(); win.print() }
+  }
 }
 
 function ticketReportHtml(ticket, {
@@ -1782,26 +1752,19 @@ export default function Tickets() {
       .filter(item => item.date || item.text || item.label)
       .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
     const reportUsers = allUsers.length ? allUsers : users
-    const downloadTicketReport = async () => {
-      const reportWindow = openPrintWindow()
-      if (!reportWindow) return
-      try {
-        const terms = await fetchTaskTermsWithTimeout()
-        openPrintable(ticketReportHtml(detail, {
-          assignedTo: formatUserName(reportUsers, detail.assigned_to),
-          categoryName: category?.name || detail.category || '',
-          contact: detailContact,
-          contactName: getContactName(detailContact),
-          createdBy: formatUserName(reportUsers, detail.user_id),
-          products: detailProds,
-          progress,
-          terms: terms || DEFAULT_TICKET_REPORT_TERMS,
-          timelineItems,
-          users: reportUsers,
-        }), true, reportWindow)
-      } catch (err) {
-        showReportError(reportWindow, err)
-      }
+    const downloadTicketReport = () => {
+      openPrintable(ticketReportHtml(detail, {
+        assignedTo: formatUserName(reportUsers, detail.assigned_to),
+        categoryName: category?.name || detail.category || '',
+        contact: detailContact,
+        contactName: getContactName(detailContact),
+        createdBy: formatUserName(reportUsers, detail.user_id),
+        products: detailProds,
+        progress,
+        terms: DEFAULT_TICKET_REPORT_TERMS,
+        timelineItems,
+        users: reportUsers,
+      }), true)
     }
 
     return (
