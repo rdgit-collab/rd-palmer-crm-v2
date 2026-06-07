@@ -100,6 +100,32 @@ export default function SerialNumbers() {
       return query.order('id', { ascending: true })
     }
 
+    if (categoryTab !== 'all' && categoryTab !== 'unmatched') {
+      const { data: categoryRows, error: categoryError } = await supabase.rpc('search_serialnumbers_by_category', {
+        p_category_id: categoryTab,
+        p_search_field: searchField,
+        p_search_term: term,
+        p_sort_mode: sortMode,
+        p_limit: PAGE_SIZE,
+        p_offset: from,
+      })
+
+      if (categoryError) {
+        setRows([])
+        setTotal(0)
+        setError(categoryError.message)
+        setLoading(false)
+        return
+      }
+
+      const nextRows = categoryRows || []
+      const nextTotal = nextRows.length > 0 ? Number(nextRows[0].total_count || 0) : 0
+      setRows(nextRows.map(({ total_count, ...row }) => row))
+      setTotal(nextTotal)
+      setLoading(false)
+      return
+    }
+
     if (term) {
       const searchResult = await applySort(applyCategory(supabase
         .from('serialnumber_with_category')
