@@ -8,6 +8,7 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import { displayText } from '../../lib/displayText'
+import { searchTicketOptions, ticketOptionLabel } from '../../lib/ticketSearch'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
@@ -24,6 +25,106 @@ function LoadingHint({ text = 'Loading options...' }) {
     <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
       <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-red-600 animate-spin" />
       {text}
+    </div>
+  )
+}
+
+function TicketSearchSelect({ value, displayLabel, onSelect, openOnly = false, required = false }) {
+  const [text, setText] = useState(displayLabel || '')
+  const [open, setOpen] = useState(false)
+  const [options, setOptions] = useState([])
+  const [loading, setLoading] = useState(false)
+  const wrapRef = useRef(null)
+  const timerRef = useRef(null)
+  const requestRef = useRef(0)
+  const editingRef = useRef(false)
+
+  useEffect(() => {
+    if (!editingRef.current) setText(displayLabel || '')
+  }, [displayLabel, value])
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (!wrapRef.current?.contains(e.target)) {
+        setOpen(false)
+        editingRef.current = false
+        setText(displayLabel || '')
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [displayLabel])
+
+  async function runSearch(term) {
+    const requestId = requestRef.current + 1
+    requestRef.current = requestId
+    setLoading(true)
+    try {
+      const rows = await searchTicketOptions(term, { openOnly, limit: 30 })
+      if (requestRef.current === requestId) setOptions(rows)
+    } catch {
+      if (requestRef.current === requestId) setOptions([])
+    } finally {
+      if (requestRef.current === requestId) setLoading(false)
+    }
+  }
+
+  const scheduleSearch = (term) => {
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => runSearch(term), 250)
+  }
+
+  const pick = (row) => {
+    editingRef.current = false
+    setText(ticketOptionLabel(row))
+    setOpen(false)
+    onSelect?.(row)
+  }
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <input
+        value={text}
+        onFocus={() => {
+          editingRef.current = true
+          setText('')
+          setOpen(true)
+          runSearch('')
+        }}
+        onChange={e => {
+          editingRef.current = true
+          setText(e.target.value)
+          setOpen(true)
+          scheduleSearch(e.target.value)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') {
+            setOpen(false)
+            editingRef.current = false
+            setText(displayLabel || '')
+          }
+        }}
+        required={required && !value}
+        placeholder="Search TID or company..."
+        autoComplete="off"
+        className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+      />
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-60 overflow-y-auto border border-gray-200 bg-white shadow-lg">
+          {loading && <div className="px-3 py-2 text-xs text-gray-400">Searching...</div>}
+          {!loading && options.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No matches</div>}
+          {!loading && options.map(row => (
+            <button
+              key={row.id}
+              type="button"
+              onClick={() => pick(row)}
+              className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+            >
+              {ticketOptionLabel(row)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -274,7 +375,6 @@ export default function Tasks() {
   const [uploadFile, setUploadFile] = useState(null)
   const [fileInputKey, setFileInputKey] = useState(0)
 
-  const [tickets, setTickets]         = useState([])
   const [ticketLabels, setTicketLabels] = useState({})
   const [serviceTypes, setServiceTypes] = useState([])
   const [users, setUsers]             = useState([])
@@ -283,7 +383,6 @@ export default function Tasks() {
   const [dropdownLoading, setDropdownLoading] = useState(true)
   const origAssignedTo                = useRef(null)
   const origFile                      = useRef('')
-  const ticketDataLoadedRef           = useRef(false)
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
@@ -385,24 +484,8 @@ export default function Tasks() {
     run().catch(() => setDropdownLoading(false))
   }, [])
 
-  const ensureTicketData = async () => {
-    if (ticketDataLoadedRef.current) return
-    ticketDataLoadedRef.current = true
-    setDropdownLoading(true)
-    try {
-      const tickR = await fetchAllRows('ticket', 'id, ticket_id, company_name, is_completed', 'id', { ascending: false })
-      setTickets(tickR || [])
-    } catch (err) {
-      ticketDataLoadedRef.current = false
-      throw err
-    } finally {
-      setDropdownLoading(false)
-    }
-  }
-
   // ── Open add ─────────────────────────────────────────────────────
   const openAdd = async () => {
-    await ensureTicketData()
     setForm({ ...emptyForm, startdate: new Date().toISOString().split('T')[0] })
     setUploadFile(null)
     setFileInputKey(key => key + 1)
@@ -414,7 +497,6 @@ export default function Tasks() {
 
   // ── Open edit ─────────────────────────────────────────────────────
   const openEdit = async (t) => {
-    await ensureTicketData()
     setForm({
       ticket_id:   String(t.ticket_id   || ''),
       servicetype: t.servicetype        || '',
@@ -497,7 +579,7 @@ export default function Tasks() {
       (!editId || String(newAssignee) !== oldAssignee)
 
     if (isNewAssignment) {
-      const tickRef = tickets.find(t => String(t.id) === String(form.ticket_id))
+      const tickRef = ticketLabels[String(form.ticket_id)]
       const assignedBy = getUserName(currentLegacyUserId)
       await notifyUser(supabase, {
         userId: parseInt(newAssignee),
@@ -586,8 +668,6 @@ export default function Tasks() {
   }
 
   const getTicketLabel = (ticketId) => {
-    const t = tickets.find(t => t.id == ticketId || t.ticket_id == ticketId)
-    if (t) return formatTicketLabel(t)
     const label = ticketLabels[String(ticketId)]
     if (label) return typeof label === 'object' ? formatTicketLabel(label) : displayText(label)
     return ticketId ? `TID${displayText(ticketId, '')}` : '—'
@@ -783,10 +863,16 @@ export default function Tasks() {
           <div className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">Ticket <span className="text-red-500">*</span></label>
             <div className="col-span-2">
-              <select value={form.ticket_id} onChange={e => setForm(f => ({ ...f, ticket_id: e.target.value }))} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                <option value="">Please Select</option>
-                {tickets.filter(t => t.is_completed != 1).map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}
-              </select>
+              <TicketSearchSelect
+                value={form.ticket_id}
+                displayLabel={getTicketLabel(form.ticket_id)}
+                openOnly
+                required
+                onSelect={(ticket) => {
+                  setForm(f => ({ ...f, ticket_id: ticket ? String(ticket.id) : '' }))
+                  if (ticket) setTicketLabels(prev => ({ ...prev, [String(ticket.id)]: ticket }))
+                }}
+              />
             </div>
           </div>
 
