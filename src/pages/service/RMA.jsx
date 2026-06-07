@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
-import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate } from '../../lib/dateFormat'
 import PaginationControls from '../../components/PaginationControls'
+import TicketSearchSelect from '../../components/TicketSearchSelect'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -32,7 +32,7 @@ export default function RMA() {
   const [deleteId, setDeleteId] = useState(null)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
-  const [tickets, setTickets]   = useState([])
+  const [ticketLabels, setTicketLabels] = useState({})
   const [vendors, setVendors]   = useState([])
   const [modes, setModes]       = useState([])
 
@@ -57,7 +57,24 @@ export default function RMA() {
     }
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
-    if (!err) { setRows(data || []); setTotal(count || 0) }
+    if (!err) {
+      const pageRows = data || []
+      setRows(pageRows)
+      setTotal(count || 0)
+      const ticketIds = [...new Set(pageRows.map(row => row.ticket_id).filter(Boolean))]
+      if (ticketIds.length) {
+        const { data: ticketRows, error: ticketErr } = await supabase
+          .from('ticket')
+          .select('id, ticket_id, company_name')
+          .in('id', ticketIds)
+        if (!ticketErr) {
+          setTicketLabels(prev => ({
+            ...prev,
+            ...Object.fromEntries((ticketRows || []).map(ticket => [String(ticket.id), ticket])),
+          }))
+        }
+      }
+    }
     setLoading(false)
   }, [search, page, tab])
 
@@ -65,12 +82,10 @@ export default function RMA() {
 
   useEffect(() => {
     const run = async () => {
-      const [tickR, venR, modeR] = await Promise.all([
-        fetchAllRows('ticket', 'id, ticket_id, company_name', 'id', { ascending: false }),
+      const [venR, modeR] = await Promise.all([
         supabase.from('vendor').select('id, name').order('name'),
         supabase.from('mode').select('id, name').order('name'),
       ])
-      setTickets(tickR || [])
       if (!venR.error)  setVendors(venR.data || [])
       if (!modeR.error) setModes(modeR.data || [])
     }
@@ -78,7 +93,7 @@ export default function RMA() {
   }, [])
 
   const getTicketLabel = (tid) => {
-    const t = tickets.find(t => t.id == tid)
+    const t = ticketLabels[String(tid)]
     return t ? `TID${t.ticket_id} — ${t.company_name || ''}` : tid ? `#${tid}` : '—'
   }
   const getVendorName = (vendor) => {
@@ -221,7 +236,16 @@ export default function RMA() {
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Ticket</label>
-          <div className="col-span-2"><select value={form.ticket_id} onChange={e => setForm(f => ({...f, ticket_id: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="">Please Select</option>{tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}</select></div>
+          <div className="col-span-2">
+            <TicketSearchSelect
+              value={form.ticket_id}
+              displayLabel={getTicketLabel(form.ticket_id)}
+              onSelect={(ticket) => {
+                setForm(f => ({ ...f, ticket_id: ticket ? String(ticket.id) : '' }))
+                if (ticket) setTicketLabels(prev => ({ ...prev, [String(ticket.id)]: ticket }))
+              }}
+            />
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Vendor</label>

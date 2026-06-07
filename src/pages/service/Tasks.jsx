@@ -8,10 +8,10 @@ import { fetchAllRows } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate, formatDateTime } from '../../lib/dateFormat'
 import { displayText } from '../../lib/displayText'
-import { searchTicketOptions, ticketOptionLabel } from '../../lib/ticketSearch'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
+import TicketSearchSelect from '../../components/TicketSearchSelect'
 import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -25,106 +25,6 @@ function LoadingHint({ text = 'Loading options...' }) {
     <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
       <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-red-600 animate-spin" />
       {text}
-    </div>
-  )
-}
-
-function TicketSearchSelect({ value, displayLabel, onSelect, openOnly = false, required = false }) {
-  const [text, setText] = useState(displayLabel || '')
-  const [open, setOpen] = useState(false)
-  const [options, setOptions] = useState([])
-  const [loading, setLoading] = useState(false)
-  const wrapRef = useRef(null)
-  const timerRef = useRef(null)
-  const requestRef = useRef(0)
-  const editingRef = useRef(false)
-
-  useEffect(() => {
-    if (!editingRef.current) setText(displayLabel || '')
-  }, [displayLabel, value])
-
-  useEffect(() => {
-    function onDocClick(e) {
-      if (!wrapRef.current?.contains(e.target)) {
-        setOpen(false)
-        editingRef.current = false
-        setText(displayLabel || '')
-      }
-    }
-    document.addEventListener('mousedown', onDocClick)
-    return () => document.removeEventListener('mousedown', onDocClick)
-  }, [displayLabel])
-
-  async function runSearch(term) {
-    const requestId = requestRef.current + 1
-    requestRef.current = requestId
-    setLoading(true)
-    try {
-      const rows = await searchTicketOptions(term, { openOnly, limit: 30 })
-      if (requestRef.current === requestId) setOptions(rows)
-    } catch {
-      if (requestRef.current === requestId) setOptions([])
-    } finally {
-      if (requestRef.current === requestId) setLoading(false)
-    }
-  }
-
-  const scheduleSearch = (term) => {
-    clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => runSearch(term), 250)
-  }
-
-  const pick = (row) => {
-    editingRef.current = false
-    setText(ticketOptionLabel(row))
-    setOpen(false)
-    onSelect?.(row)
-  }
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <input
-        value={text}
-        onFocus={() => {
-          editingRef.current = true
-          setText('')
-          setOpen(true)
-          runSearch('')
-        }}
-        onChange={e => {
-          editingRef.current = true
-          setText(e.target.value)
-          setOpen(true)
-          scheduleSearch(e.target.value)
-        }}
-        onKeyDown={e => {
-          if (e.key === 'Escape') {
-            setOpen(false)
-            editingRef.current = false
-            setText(displayLabel || '')
-          }
-        }}
-        required={required && !value}
-        placeholder="Search TID or company..."
-        autoComplete="off"
-        className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-      />
-      {open && (
-        <div className="absolute z-30 mt-1 w-full max-h-60 overflow-y-auto border border-gray-200 bg-white shadow-lg">
-          {loading && <div className="px-3 py-2 text-xs text-gray-400">Searching...</div>}
-          {!loading && options.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No matches</div>}
-          {!loading && options.map(row => (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => pick(row)}
-              className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
-            >
-              {ticketOptionLabel(row)}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
