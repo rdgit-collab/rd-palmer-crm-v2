@@ -298,6 +298,7 @@ export default function SerialNumbers() {
               value={form.customername}
               displayLabel={form.customername}
               placeholder="Search customer…"
+              minSearchLength={2}
               onSelect={(val) => setForm(f => ({ ...f, customername: val || '' }))}
             />
           </div>
@@ -312,6 +313,7 @@ export default function SerialNumbers() {
               value={form.sku}
               displayLabel={form.sku}
               placeholder="Search SKU…"
+              minSearchLength={2}
               onSelect={(val) => setForm(f => ({ ...f, sku: val || '' }))}
             />
           </div>

@@ -20,6 +20,7 @@ import { applyTokenIlike } from '../lib/searchUtils'
  *   onSelect       - (value, row) => void
  *   filter         - optional eq filters, e.g. { is_completed: 0 }
  *   limit          - max rows to fetch (default 20)
+ *   minSearchLength - chars required before querying (default 0)
  *   placeholder, className, disabled, required, allowClear
  */
 export default function SearchSelect({
@@ -33,6 +34,7 @@ export default function SearchSelect({
   onSelect,
   filter,
   limit = 20,
+  minSearchLength = 0,
   placeholder = 'Search…',
   className = '',
   disabled = false,
@@ -70,6 +72,13 @@ export default function SearchSelect({
   }, [displayLabel])
 
   async function runSearch(term) {
+    const cleanTerm = term.trim()
+    if (cleanTerm.length < minSearchLength) {
+      reqRef.current += 1
+      setOptions([])
+      setLoading(false)
+      return
+    }
     const requestId = reqRef.current + 1
     reqRef.current = requestId
     setLoading(true)
@@ -78,7 +87,7 @@ export default function SearchSelect({
       if (filter) {
         Object.entries(filter).forEach(([col, val]) => { query = query.eq(col, val) })
       }
-      if (term.trim()) query = applyTokenIlike(query, searchColumn, term)
+      if (cleanTerm) query = applyTokenIlike(query, searchColumn, cleanTerm)
       query = query.order(searchColumn, { ascending: true }).limit(limit)
       const { data, error } = await query
       if (reqRef.current !== requestId) return
@@ -101,7 +110,8 @@ export default function SearchSelect({
     setOpen(true)
     editingRef.current = true
     setText('')
-    runSearch('')
+    if (minSearchLength === 0) runSearch('')
+    else setOptions([])
   }
 
   function handleChange(e) {
@@ -156,7 +166,11 @@ export default function SearchSelect({
         <div className="absolute z-30 mt-1 w-full max-h-60 overflow-y-auto border border-gray-200 bg-white shadow-lg">
           {loading && <div className="px-3 py-2 text-xs text-gray-400">Searching…</div>}
           {!loading && options.length === 0 && (
-            <div className="px-3 py-2 text-xs text-gray-400">No matches</div>
+            <div className="px-3 py-2 text-xs text-gray-400">
+              {text.trim().length < minSearchLength
+                ? `Type at least ${minSearchLength} characters`
+                : 'No matches'}
+            </div>
           )}
           {!loading && options.map((row) => (
             <button

@@ -1431,6 +1431,7 @@ export default function Tickets() {
                 displayLabel={form.company_name}
                 required
                 placeholder="Search customer…"
+                minSearchLength={2}
                 onSelect={async (id, row) => {
                   const cid = id ? String(id) : ''
                   setForm(f => ({ ...f, company_id: cid, company_name: row?.company_name || '', contact_person: '' }))
