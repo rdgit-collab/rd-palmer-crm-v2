@@ -288,62 +288,32 @@ export default function Tasks() {
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
     setLoading(true)
-    let q = supabase
-      .from('task')
-      .select(TASK_LIST_COLUMNS, { count: 'estimated' })
-      .eq('is_completed', tab === 'open' ? 0 : 1)
-      .order('id', { ascending: false })
-
-    const term = search.trim()
-    if (term) {
-      const tid = term.replace(/^TID/i, '')
-      const { data: companyTickets, error: companyTicketErr } = await supabase
-        .from('ticket')
-        .select('id')
-        .ilike('company_name', `%${term}%`)
-        .limit(1000)
-      let numberTickets = []
-      if (/^\d+$/.test(tid)) {
-        const { data: numberTicketRows, error: numberTicketErr } = await supabase
-          .from('ticket')
-          .select('id')
-          .eq('ticket_id', parseInt(tid))
-          .limit(1000)
-        if (!numberTicketErr) numberTickets = numberTicketRows || []
-      }
-      const matchingTickets = [
-        ...(!companyTicketErr ? companyTickets || [] : []),
-        ...numberTickets,
-      ]
-      const ticketIds = [...new Set(matchingTickets.map(t => t.id))]
-      if (ticketIds.length > 0) {
-        q = q.in('ticket_id', ticketIds)
-      } else {
-        q = q.eq('id', -1)
-      }
-    }
-    if (scope === 'mine') q = q.eq('assigned_to', getLegacyUserId(profile))
-    if (assignedFilter) q = q.eq('assigned_to', parseInt(assignedFilter))
-    if (serviceTypeFilter) q = q.eq('servicetype', serviceTypeFilter)
-    q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
-
-    const { data, count, error: err } = await q
+    const { data, error: err } = await supabase.rpc('search_tasks', {
+      p_tab: tab,
+      p_search: search.trim(),
+      p_scope: scope,
+      p_current_user_id: getLegacyUserId(profile),
+      p_assigned_filter: assignedFilter ? parseInt(assignedFilter) : null,
+      p_service_type_filter: serviceTypeFilter || '',
+      p_limit: PAGE_SIZE,
+      p_offset: (page - 1) * PAGE_SIZE,
+    })
     if (!err) {
-      const pageRows = data || []
-      setTasks(pageRows)
-      setTotal(count || 0)
-      const ticketIds = [...new Set(pageRows.map(row => row.ticket_id).filter(Boolean))]
-      if (ticketIds.length) {
-        const { data: ticketRows, error: ticketErr } = await supabase
-          .from('ticket')
-          .select('id, ticket_id, company_name')
-          .in('id', ticketIds)
-        if (!ticketErr) {
-          setTicketLabels(Object.fromEntries((ticketRows || []).map(t => [String(t.id), t])))
-        }
-      } else {
-        setTicketLabels({})
+      if ((data || []).length === 0 && page > 1) {
+        setPage(1)
+        setLoading(false)
+        return
       }
+      const pageRows = (data || []).map(({ ticket_number, ticket_company_name, total_count, ...row }) => row)
+      setTasks(pageRows)
+      setTotal(data?.[0]?.total_count || 0)
+      setTicketLabels(Object.fromEntries((data || [])
+        .filter(row => row.ticket_id)
+        .map(row => [String(row.ticket_id), {
+          id: row.ticket_id,
+          ticket_id: row.ticket_number,
+          company_name: row.ticket_company_name,
+        }])))
     }
     setLoading(false)
   }, [search, page, tab, scope, profile, assignedFilter, serviceTypeFilter])
