@@ -103,24 +103,28 @@ export default function SerialNumbers() {
       return
     }
 
-    const countResult = await supabase
+    let q = supabase
       .from('serialnumber')
-      .select('id', { count: 'exact', head: true })
+      .select(SERIAL_COLUMNS, { count: 'estimated' })
 
-    if (countResult.error) {
-      setRows([])
-      setTotal(0)
-      setError(countResult.error.message)
-      setLoading(false)
-      return
-    }
+    q = applySort(q)
+    q = q.range(from, to)
+    const { data, count, error: err } = await q
 
-    const exactTotal = countResult.count || 0
-    const exactTotalPages = Math.max(1, Math.ceil(exactTotal / PAGE_SIZE))
-    const isLastPage = page >= exactTotalPages
-    const safePage = Math.min(page, exactTotalPages)
+    if (err && /statement timeout|canceling statement/i.test(err.message || '')) {
+      const countResult = await supabase
+        .from('serialnumber')
+        .select('id', { count: 'exact', head: true })
+      if (countResult.error) {
+        setRows([])
+        setTotal(0)
+        setError(countResult.error.message)
+        setLoading(false)
+        return
+      }
 
-    if (isLastPage && exactTotal > 0) {
+      const exactTotal = countResult.count || 0
+      const exactTotalPages = Math.max(1, Math.ceil(exactTotal / PAGE_SIZE))
       const lastPageSize = exactTotal % PAGE_SIZE || PAGE_SIZE
       const lastPageResult = await applyReverseSort(supabase
         .from('serialnumber')
@@ -134,27 +138,18 @@ export default function SerialNumbers() {
       } else {
         setRows([...(lastPageResult.data || [])].reverse())
         setTotal(exactTotal)
-        if (page !== exactTotalPages) setPage(exactTotalPages)
+        setPage(exactTotalPages)
       }
       setLoading(false)
       return
     }
-
-    let q = supabase
-      .from('serialnumber')
-      .select(SERIAL_COLUMNS)
-
-    q = applySort(q)
-    q = q.range((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE - 1)
-    const { data, error: err } = await q
     if (err) {
       setRows([])
-      setTotal(exactTotal)
+      setTotal(0)
       setError(err.message)
     } else {
       setRows(data || [])
-      setTotal(exactTotal)
-      if (page !== safePage) setPage(safePage)
+      setTotal(count || 0)
     }
     setLoading(false)
   }, [search, searchField, sortMode, page])
