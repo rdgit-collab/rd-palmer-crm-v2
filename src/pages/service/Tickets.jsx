@@ -34,6 +34,8 @@ const DEFAULT_TICKET_REPORT_TERMS = `1. Work performed is based on information a
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 const stripHtml = (value = '') => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+const escapeHtml = (value = '') =>
+  String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 
 function sanitizeHtml(value = '') {
   const raw = String(value || '')
@@ -256,7 +258,10 @@ function timelineDate(item) {
 
 function openPrintable(html, autoPrint = false) {
   const win = window.open('', '_blank')
-  if (!win) return
+  if (!win) {
+    alert('Please allow popups for this site to open the service report.')
+    return
+  }
   win.document.write(html)
   win.document.close()
   if (autoPrint) {
@@ -1753,18 +1758,22 @@ export default function Tickets() {
       .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
     const reportUsers = allUsers.length ? allUsers : users
     const downloadTicketReport = () => {
-      openPrintable(ticketReportHtml(detail, {
-        assignedTo: formatUserName(reportUsers, detail.assigned_to),
-        categoryName: category?.name || detail.category || '',
-        contact: detailContact,
-        contactName: getContactName(detailContact),
-        createdBy: formatUserName(reportUsers, detail.user_id),
-        products: detailProds,
-        progress,
-        terms: DEFAULT_TICKET_REPORT_TERMS,
-        timelineItems,
-        users: reportUsers,
-      }), true)
+      try {
+        openPrintable(ticketReportHtml(detail, {
+          assignedTo: formatUserName(reportUsers, detail.assigned_to),
+          categoryName: category?.name || detail.category || '',
+          contact: detailContact,
+          contactName: getContactName(detailContact),
+          createdBy: formatUserName(reportUsers, detail.user_id),
+          products: detailProds,
+          progress,
+          terms: DEFAULT_TICKET_REPORT_TERMS,
+          timelineItems,
+          users: reportUsers,
+        }), true)
+      } catch (err) {
+        alert(`Unable to generate service report: ${err?.message || err}`)
+      }
     }
 
     return (
