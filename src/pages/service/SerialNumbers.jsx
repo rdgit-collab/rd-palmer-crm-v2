@@ -9,8 +9,6 @@ import PaginationControls from '../../components/PaginationControls'
 import { Plus, Search, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
-const SERIAL_COLUMNS = 'id, date, ref_number, customername, sku, serial_number, warranty_period'
-const SERIAL_VIEW_COLUMNS = `${SERIAL_COLUMNS}, category_id, category_name, category_status`
 
 const SEARCH_FIELDS = [
   { value: 'serial_number', label: 'Serial Number', placeholder: 'Search serial number...' },
@@ -75,127 +73,30 @@ export default function SerialNumbers() {
     setError('')
     const term = search.trim()
     const from = (page - 1) * PAGE_SIZE
-    const to = page * PAGE_SIZE - 1
-    const applyCategory = (query) => {
-      if (categoryTab === 'all') return query
-      if (categoryTab === 'unmatched') return query.in('category_status', ['unmatched', 'ambiguous'])
-      return query.eq('category_id', categoryTab)
-    }
-    const applySort = (query) => {
-      if (sortMode === 'date_asc') {
-        return query.order('date', { ascending: true, nullsFirst: false }).order('id', { ascending: false })
-      }
-      if (sortMode === 'date_desc') {
-        return query.order('date', { ascending: false, nullsFirst: false }).order('id', { ascending: false })
-      }
-      return query.order('id', { ascending: false })
-    }
-    const applyReverseSort = (query) => {
-      if (sortMode === 'date_asc') {
-        return query.order('date', { ascending: false, nullsFirst: false }).order('id', { ascending: true })
-      }
-      if (sortMode === 'date_desc') {
-        return query.order('date', { ascending: true, nullsFirst: false }).order('id', { ascending: true })
-      }
-      return query.order('id', { ascending: true })
-    }
 
-    if (categoryTab !== 'all' && categoryTab !== 'unmatched') {
-      const { data: categoryRows, error: categoryError } = await supabase.rpc('search_serialnumbers_by_category', {
-        p_category_id: categoryTab,
-        p_search_field: searchField,
-        p_search_term: term,
-        p_sort_mode: sortMode,
-        p_limit: PAGE_SIZE,
-        p_offset: from,
-      })
+    const { data, error: err } = await supabase.rpc('search_serialnumbers_fast', {
+      p_category_id: categoryTab,
+      p_search_field: searchField,
+      p_search_term: term,
+      p_sort_mode: sortMode,
+      p_limit: PAGE_SIZE,
+      p_offset: from,
+    })
 
-      if (categoryError) {
-        setRows([])
-        setTotal(0)
-        setError(categoryError.message)
-        setLoading(false)
-        return
-      }
-
-      const nextRows = categoryRows || []
-      const nextTotal = nextRows.length > 0 ? Number(nextRows[0].total_count || 0) : 0
-      setRows(nextRows.map(({ total_count, ...row }) => row))
-      setTotal(nextTotal)
-      setLoading(false)
-      return
-    }
-
-    if (term) {
-      const searchResult = await applySort(applyCategory(supabase
-        .from('serialnumber_with_category')
-        .select(SERIAL_VIEW_COLUMNS)
-        .ilike(searchField, `%${term}%`)))
-        .range(from, from + PAGE_SIZE)
-
-      if (searchResult.error) {
-        setRows([])
-        setTotal(0)
-        setError(searchResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      const searchRows = searchResult.data || []
-      const hasMore = searchRows.length > PAGE_SIZE
-      setRows(searchRows.slice(0, PAGE_SIZE))
-      setTotal(hasMore ? from + PAGE_SIZE + 1 : from + searchRows.length)
-      setLoading(false)
-      return
-    }
-
-    let q = applyCategory(supabase
-      .from('serialnumber_with_category')
-      .select(SERIAL_VIEW_COLUMNS, { count: 'estimated' }))
-
-    q = applySort(q)
-    q = q.range(from, to)
-    const { data, count, error: err } = await q
-
-    if (err && /statement timeout|canceling statement/i.test(err.message || '')) {
-      const countResult = await applyCategory(supabase
-        .from('serialnumber_with_category')
-        .select('id', { count: 'exact', head: true }))
-      if (countResult.error) {
-        setRows([])
-        setTotal(0)
-        setError(countResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      const exactTotal = countResult.count || 0
-      const exactTotalPages = Math.max(1, Math.ceil(exactTotal / PAGE_SIZE))
-      const lastPageSize = exactTotal % PAGE_SIZE || PAGE_SIZE
-      const lastPageResult = await applyReverseSort(applyCategory(supabase
-        .from('serialnumber_with_category')
-        .select(SERIAL_VIEW_COLUMNS)))
-        .range(0, lastPageSize - 1)
-
-      if (lastPageResult.error) {
-        setRows([])
-        setTotal(exactTotal)
-        setError(lastPageResult.error.message)
-      } else {
-        setRows([...(lastPageResult.data || [])].reverse())
-        setTotal(exactTotal)
-        setPage(exactTotalPages)
-      }
-      setLoading(false)
-      return
-    }
     if (err) {
       setRows([])
       setTotal(0)
       setError(err.message)
     } else {
-      setRows(data || [])
-      setTotal(count || 0)
+      const nextRows = data || []
+      if (nextRows.length === 0 && page > 1) {
+        setPage(1)
+        setLoading(false)
+        return
+      }
+      const nextTotal = nextRows.length > 0 ? Number(nextRows[0].total_count || 0) : 0
+      setRows(nextRows.map(({ total_count, ...row }) => row))
+      setTotal(nextTotal)
     }
     setLoading(false)
   }, [search, searchField, sortMode, categoryTab, page])

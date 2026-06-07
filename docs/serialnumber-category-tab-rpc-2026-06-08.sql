@@ -6,6 +6,12 @@
 -- categories may scan many serial rows before finding the latest matching rows.
 -- This RPC first materializes the small category SKU list, then fetches matching
 -- serial rows through the serialnumber.sku index.
+--
+-- Follow-up on 2026-06-08:
+-- The frontend now calls public.search_serialnumbers_fast(...) instead. That
+-- newer RPC also handles All, Locator, Unmatched SKU, and customer-name search
+-- to avoid statement timeouts. This original category-only RPC is kept in the
+-- database but is no longer used by src/pages/service/SerialNumbers.jsx.
 
 create or replace function public.search_serialnumbers_by_category(
   p_category_id text,
