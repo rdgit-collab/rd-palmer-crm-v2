@@ -23,7 +23,7 @@ import {
 } from '../../hooks/useLookups'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
-  X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock
+  X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock, Edit2
 } from 'lucide-react'
 
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -109,8 +109,10 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const [activityStatuses, setActivityStatuses] = useState([])
   const [showActivityForm, setShowActivityForm] = useState(false)
   const [activityForm, setActivityForm] = useState(defaultActivityForm)
+  const [activityEditId, setActivityEditId] = useState(null)
   const [activitySaving, setActivitySaving] = useState(false)
   const [activityError, setActivityError] = useState('')
+  const [activityDeleteId, setActivityDeleteId] = useState(null)
   const [leadStatusError, setLeadStatusError] = useState('')
   const [leadCloseBlockers, setLeadCloseBlockers] = useState([])
   const [blockedCloseStatus, setBlockedCloseStatus] = useState(null)
@@ -166,6 +168,45 @@ function LeadDetail({ leadId, onBack, onEdit }) {
   const activityLockedClass = isTerminalActivity ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
   const selectedUpdateStage = activityForm.lead_stage || lead.status || ''
   const followupType = activityForm.followup_type || activityForm.type || 'Follow Up'
+  const isOwnActivity = (activity) => (
+    String(activity.assigned_to || '') === String(getLegacyUserId(profile) || '') ||
+    String(activity.user_id || '') === String(getLegacyUserId(profile) || '') ||
+    String(lead.assigned_to || '') === String(getLegacyUserId(profile) || '')
+  )
+  const canEditActivity = (activity) => (
+    hasAdminAccess(profile?.role_id) ||
+    (!isTerminalActivityStatus(activity.status) && isOwnActivity(activity))
+  )
+  const resetActivityForm = () => {
+    setActivityForm(defaultActivityForm())
+    setActivityEditId(null)
+    setActivityError('')
+    setShowActivityForm(false)
+  }
+  const openNewActivityForm = () => {
+    setActivityForm(defaultActivityForm())
+    setActivityEditId(null)
+    setActivityError('')
+    setShowActivityForm(true)
+  }
+  const openEditActivityForm = (activity) => {
+    setActivityForm({
+      type: activity.type || '',
+      priority: activity.priority || '',
+      status: activity.status || '',
+      date: activity.date || '',
+      time: activity.time || '',
+      description: activity.description || '',
+      lead_stage: lead.status || '',
+      followup_date: '',
+      followup_time: '',
+      followup_type: '',
+    })
+    setActivityEditId(activity.id)
+    setActivityError('')
+    setShowActivityForm(true)
+  }
+  const canDeleteActivities = hasAdminAccess(profile?.role_id)
 
   const stageNameFor = (stageId) => lookupName(stages, stageId, 'Status')
   const allActivitiesReadyToClose = () => (
@@ -269,7 +310,10 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     const selectedStageName = selectedUpdateStage ? stageNameFor(selectedUpdateStage) : ''
     const shouldMoveStage = selectedUpdateStage && String(selectedUpdateStage) !== String(lead.status || '')
     if (shouldMoveStage && isClosedStageName(selectedStageName) && (!allActivitiesReadyToClose() || !isTerminalActivity)) {
-      const blockers = activities.filter(activity => !isTerminalActivityStatus(activity.status))
+      const blockers = activities.filter(activity => {
+        if (activityEditId && isTerminalActivity && String(activity.id) === String(activityEditId)) return false
+        return !isTerminalActivityStatus(activity.status)
+      })
       if (!isTerminalActivity) {
         blockers.push({ id: 'current', type: activityForm.type || 'Current update', status: activityForm.status || 'No status', date: null })
       }
@@ -280,34 +324,36 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       return
     }
     const payload = {
-      user_id: getLegacyUserId(profile),
       lead_id: lead.id,
       company_id: null,
       assigned_to: lead.assigned_to || null,
       type: activityForm.type || (isTerminalActivity ? 'Status Update' : ''),
       priority: isTerminalActivity ? null : (activityForm.priority || null),
       status: activityForm.status || null,
-      date: null,
-      time: null,
+      date: activityEditId ? (activityForm.date || null) : null,
+      time: activityEditId ? (activityForm.time || null) : null,
       description: activityForm.description || (isTerminalActivity ? `Marked activity as ${activityForm.status}.` : ''),
-      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
-    const { error } = await supabase.from('activity').insert([payload])
+    const result = activityEditId
+      ? await supabase.from('activity').update(payload).eq('id', activityEditId)
+      : await supabase.from('activity').insert([{ ...payload, user_id: getLegacyUserId(profile), created_at: new Date().toISOString() }])
+    const { error } = result
     if (error) { setActivitySaving(false); setActivityError(error.message); return }
     logActivity({
       module: 'activities',
-      action: 'create',
+      action: activityEditId ? 'update' : 'create',
       recordTable: 'activity',
+      recordId: activityEditId || null,
       recordLabel: payload.type,
-      summary: `Added ${payload.type} progress update for lead ${lead.company_name || lead.id}`,
+      summary: `${activityEditId ? 'Updated' : 'Added'} ${payload.type} progress update for lead ${lead.company_name || lead.id}`,
       metadata: { lead_id: lead.id, assigned_to: lead.assigned_to || null },
     })
     if (shouldMoveStage) {
       const moved = await updateLeadStatus(selectedUpdateStage)
       if (!moved) { setActivitySaving(false); return }
     }
-    if (activityForm.followup_date) {
+    if (!activityEditId && activityForm.followup_date) {
       const followupPayload = {
         user_id: getLegacyUserId(profile),
         lead_id: lead.id,
@@ -345,14 +391,38 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       }
     }
     setActivitySaving(false)
-    setActivityForm(defaultActivityForm())
-    setShowActivityForm(false)
+    resetActivityForm()
     const { data: nextActivities } = await supabase
       .from('activity')
       .select('*')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: false })
     setActivities(nextActivities || [])
+  }
+
+  const deleteActivity = async () => {
+    if (!activityDeleteId || !canDeleteActivities) return
+    setActivitySaving(true)
+    setActivityError('')
+    const activity = activities.find(row => String(row.id) === String(activityDeleteId))
+    const { error } = await supabase.from('activity').delete().eq('id', activityDeleteId)
+    setActivitySaving(false)
+    if (error) {
+      setActivityError(error.message)
+      return
+    }
+    logActivity({
+      module: 'activities',
+      action: 'delete',
+      recordTable: 'activity',
+      recordId: activityDeleteId,
+      recordLabel: activity?.type || 'Activity',
+      summary: `Deleted activity ${activity?.type || activityDeleteId} from lead ${lead.company_name || lead.id}`,
+      metadata: { lead_id: lead.id },
+    })
+    setActivities(current => current.filter(row => String(row.id) !== String(activityDeleteId)))
+    setActivityDeleteId(null)
+    if (String(activityEditId || '') === String(activityDeleteId)) resetActivityForm()
   }
 
   return (
@@ -482,7 +552,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       </div>
 
       <div className="mb-4 flex justify-end">
-        <button onClick={() => setShowActivityForm(v => !v)}
+        <button onClick={showActivityForm && !activityEditId ? resetActivityForm : openNewActivityForm}
           className="flex items-center gap-2 px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
           <Plus size={14} /> New Update
         </button>
@@ -491,8 +561,8 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       {showActivityForm && (
         <form onSubmit={saveActivity} className="bg-white rounded-lg border border-gray-200 p-5 mb-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">New Activity Update</h2>
-            <button type="button" onClick={() => setShowActivityForm(false)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">{activityEditId ? 'Edit Activity Update' : 'New Activity Update'}</h2>
+            <button type="button" onClick={resetActivityForm} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
           </div>
           {activityError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{activityError}</div>}
           <div className="mb-4">
@@ -548,7 +618,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
               {stages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
             </select>
           </div>
-          <div className="border-t border-gray-100 pt-4 mb-4">
+          {!activityEditId && <div className="border-t border-gray-100 pt-4 mb-4">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Schedule next follow-up</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -567,11 +637,11 @@ function LeadDetail({ leadId, onBack, onEdit }) {
                 </select>
               </div>
             </div>
-          </div>
+          </div>}
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={() => setShowActivityForm(false)} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={resetActivityForm} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={activitySaving} className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 disabled:opacity-50">
-              <Save size={14} /> {activitySaving ? 'Saving...' : 'Save Update'}
+              <Save size={14} /> {activitySaving ? 'Saving...' : activityEditId ? 'Update Activity' : 'Save Update'}
             </button>
           </div>
         </form>
@@ -594,10 +664,24 @@ function LeadDetail({ leadId, onBack, onEdit }) {
                     <CalendarClock size={15} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-semibold text-gray-900 text-sm">{a.type || 'Activity'}</span>
-                      {a.priority && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activityPriorityColor(a.priority)}`}>{a.priority}</span>}
-                      {a.status && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activityStatusColor(a.status)}`}>{a.status}</span>}
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-gray-900 text-sm">{a.type || 'Activity'}</span>
+                        {a.priority && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activityPriorityColor(a.priority)}`}>{a.priority}</span>}
+                        {a.status && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${activityStatusColor(a.status)}`}>{a.status}</span>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {canEditActivity(a) && (
+                          <button type="button" onClick={() => openEditActivityForm(a)} className="text-gray-400 hover:text-green-700" title="Edit activity">
+                            <Edit2 size={15} />
+                          </button>
+                        )}
+                        {canDeleteActivities && (
+                          <button type="button" onClick={() => setActivityDeleteId(a.id)} className="text-gray-400 hover:text-red-700" title="Delete activity">
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{a.description || '—'}</p>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
@@ -612,6 +696,21 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           </div>
         )}
       </div>
+
+      {activityDeleteId && canDeleteActivities && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg w-full max-w-sm p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Activity</h3>
+            <p className="text-sm text-gray-600 mb-4">Only this activity row will be removed from the lead history.</p>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => setActivityDeleteId(null)} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={deleteActivity} disabled={activitySaving} className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700 disabled:opacity-50">
+                {activitySaving ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingCloseStatus && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
