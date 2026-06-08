@@ -42,6 +42,77 @@ function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 }
 
+function pad(value, length) {
+  return String(value).padStart(length, '0')
+}
+
+function certificateDatePrefix(date = new Date()) {
+  return `${String(date.getFullYear()).slice(-2)}${pad(date.getMonth() + 1, 2)}${pad(date.getDate(), 2)}`
+}
+
+function termTitle(value = '') {
+  const firstLine = String(value || '').split(/\r?\n/).find(line => line.trim())
+  const text = (firstLine || value || '').trim()
+  return text.length > 55 ? `${text.slice(0, 55)}...` : text
+}
+
+function termPreview(value = '') {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function TermsSelect({ value, options, onChange }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const selected = options.find(option => String(option.id) === String(value))
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (!wrapRef.current?.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(current => !current)}
+        className="w-full border border-gray-200 px-3 py-2 text-left text-sm focus:outline-none focus:border-red-400"
+      >
+        <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
+          {selected ? termTitle(selected.name) : 'Select T&C'}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-64 overflow-y-auto border border-gray-200 bg-white shadow-lg">
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(false) }}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+          >
+            Select T&C
+          </button>
+          {options.map(option => {
+            const preview = termPreview(option.name)
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => { onChange(String(option.id)); setOpen(false) }}
+                className="block w-full px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+              >
+                <span className="block text-sm font-medium text-gray-800">{termTitle(option.name)}</span>
+                {preview && <span className="block truncate text-xs text-gray-400">{preview}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Calibration() {
   const { profile } = useAuth()
   const [view, setView]             = useState('list')
@@ -124,6 +195,17 @@ export default function Calibration() {
 
   const getTermName = (id) => termOptions.find(t => String(t.id) === String(id))?.name || '-'
 
+  const generateCertificateNumber = async () => {
+    const { data, error: err } = await supabase
+      .from('calibration')
+      .select('id')
+      .order('id', { ascending: false })
+      .limit(1)
+    if (err) throw err
+    const nextId = Number(data?.[0]?.id || 0) + 1
+    return `${certificateDatePrefix()}-${pad(nextId, 5)}`
+  }
+
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase()
     const sorted = [...rows].sort((a, b) => {
@@ -188,14 +270,21 @@ export default function Calibration() {
     }))
   }
 
-  const openAdd = () => {
-    setForm(emptyForm)
+  const openAdd = async () => {
+    setForm({ ...emptyForm, certificate_number: 'Generating...' })
     setChecklistRows(presetChecklistRows())
     setUploadFile(null)
     setEditId(null)
     setError('')
     setView('form')
     loadSerialOptions()
+    try {
+      const certificateNumber = await generateCertificateNumber()
+      setForm(f => ({ ...f, certificate_number: certificateNumber }))
+    } catch (err) {
+      setForm(emptyForm)
+      setError(err.message || 'Unable to generate certificate number.')
+    }
   }
 
   const openEdit = async (r) => {
@@ -248,6 +337,12 @@ export default function Calibration() {
     e.preventDefault()
     setSaving(true)
     setError('')
+    let certificateNumber = form.certificate_number.trim()
+    if (editId && !/^\d{6}-\d{5}$/.test(certificateNumber)) {
+      setError('Certificate number must follow YYMMDD-##### format, for example 260608-00345.')
+      setSaving(false)
+      return
+    }
 
     let filePath = form.file || null
     if (uploadFile) {
@@ -259,7 +354,7 @@ export default function Calibration() {
 
     const payload = {
       ticket_id: form.ticket_id || null,
-      certificate_number: form.certificate_number || null,
+      certificate_number: editId ? certificateNumber : null,
       serial_number: form.serial_number || null,
       snumber: form.snumber || null,
       conduct_by: form.conduct_by || null,
@@ -268,12 +363,23 @@ export default function Calibration() {
       termid: form.termid ? parseInt(form.termid) : null,
       file: filePath,
       user_id: getLegacyUserId(profile),
+      updated_at: new Date().toISOString(),
     }
+    if (!editId) payload.created_at = new Date().toISOString()
 
     const result = editId
       ? await supabase.from('calibration').update(payload).eq('id', editId).select('id').single()
       : await supabase.from('calibration').insert([payload]).select('id').single()
     if (result.error) { setError(result.error.message); setSaving(false); return }
+
+    if (!editId) {
+      certificateNumber = `${certificateDatePrefix()}-${pad(result.data.id, 5)}`
+      const { error: certificateErr } = await supabase
+        .from('calibration')
+        .update({ certificate_number: certificateNumber, updated_at: new Date().toISOString() })
+        .eq('id', result.data.id)
+      if (certificateErr) { setError(certificateErr.message); setSaving(false); return }
+    }
 
     const checklistResult = await saveChecklist(result.data.id)
     if (checklistResult?.error) { setError(checklistResult.error.message); setSaving(false); return }
@@ -282,8 +388,8 @@ export default function Calibration() {
       action: editId ? 'update' : 'create',
       recordTable: 'calibration',
       recordId: result.data.id,
-      recordLabel: form.certificate_number,
-      summary: `${editId ? 'Updated' : 'Created'} calibration ${form.certificate_number}`,
+      recordLabel: certificateNumber,
+      summary: `${editId ? 'Updated' : 'Created'} calibration ${certificateNumber}`,
       metadata: { ticket_id: form.ticket_id || null, status: form.status || null },
     })
 
@@ -487,7 +593,16 @@ export default function Calibration() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Certificate Number *</label>
-            <input type="text" value={form.certificate_number} onChange={e => setForm(f => ({...f, certificate_number: e.target.value}))} required placeholder="CERT-001" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+            <input
+              type="text"
+              value={form.certificate_number}
+              onChange={e => setForm(f => ({...f, certificate_number: e.target.value}))}
+              required
+              readOnly={!editId}
+              placeholder="YYMMDD-#####"
+              className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 read-only:bg-gray-50 read-only:text-gray-600"
+            />
+            <p className="mt-1 text-xs text-gray-400">Format: YYMMDD-#####</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Ticket</label>
@@ -582,10 +697,7 @@ export default function Calibration() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Terms & Conditions</label>
-            <select value={form.termid} onChange={e => setForm(f => ({...f, termid: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              <option value="">Select T&C</option>
-              {termOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+            <TermsSelect value={form.termid} options={termOptions} onChange={termid => setForm(f => ({ ...f, termid }))} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Certificate / Document</label>
