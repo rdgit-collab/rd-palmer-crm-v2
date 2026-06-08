@@ -70,7 +70,14 @@ function applyPdfLayout(doc) {
     .section p,
     .section div {
       margin-top: 0 !important;
-      margin-bottom: 4px !important;
+      margin-bottom: 7px !important;
+    }
+    .desc {
+      display: block !important;
+      padding-bottom: 8px !important;
+    }
+    .section {
+      padding-bottom: 10px !important;
     }
   `
   doc.head.appendChild(fontStyle)
@@ -152,22 +159,76 @@ export async function downloadHtmlPdf(html, filename) {
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
     const pageWidth = 210
     const pageHeight = 297
-    const imageData = canvas.toDataURL('image/jpeg', 0.98)
+    const continuationMarginTop = 15
+    const continuationMarginBottom = 15
     const imageHeight = (canvas.height * pageWidth) / canvas.width
     const fittedHeight = imageHeight > pageHeight && imageHeight <= pageHeight * 1.08 ? pageHeight : imageHeight
+    const pxPerMm = canvas.width / pageWidth
+    const canvasContext = canvas.getContext('2d')
+    const canvasPixels = canvasContext.getImageData(0, 0, canvas.width, canvas.height).data
+
+    const isMostlyBlankRow = (y) => {
+      const row = Math.max(0, Math.min(canvas.height - 1, Math.round(y)))
+      let samples = 0
+      let ink = 0
+      for (let x = 0; x < canvas.width; x += 8) {
+        const index = ((row * canvas.width) + x) * 4
+        const r = canvasPixels[index]
+        const g = canvasPixels[index + 1]
+        const b = canvasPixels[index + 2]
+        const a = canvasPixels[index + 3]
+        samples += 1
+        if (a > 10 && (r < 245 || g < 245 || b < 245)) ink += 1
+      }
+      return ink / samples < 0.003
+    }
+
+    const findPageBreak = (targetY, minY, maxY) => {
+      const low = Math.max(1, Math.floor(minY))
+      const high = Math.min(canvas.height - 1, Math.ceil(maxY))
+      const target = Math.max(low, Math.min(high, Math.round(targetY)))
+      for (let offset = 0; offset <= Math.max(target - low, high - target); offset += 2) {
+        const before = target - offset
+        if (before >= low && isMostlyBlankRow(before) && isMostlyBlankRow(before - 3) && isMostlyBlankRow(before + 3)) return before
+        const after = target + offset
+        if (after <= high && isMostlyBlankRow(after) && isMostlyBlankRow(after - 3) && isMostlyBlankRow(after + 3)) return after
+      }
+      return target
+    }
+
+    const addCanvasSlice = (sourceY, sourceHeight, targetY = 0) => {
+      const slice = document.createElement('canvas')
+      slice.width = canvas.width
+      slice.height = sourceHeight
+      const context = slice.getContext('2d')
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, slice.width, slice.height)
+      context.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, slice.width, slice.height)
+      const sliceHeightMm = sourceHeight / pxPerMm
+      pdf.addImage(slice.toDataURL('image/jpeg', 0.98), 'JPEG', 0, targetY, pageWidth, sliceHeightMm)
+    }
 
     if (fittedHeight <= pageHeight) {
-      pdf.addImage(imageData, 'JPEG', 0, 0, pageWidth, fittedHeight)
+      addCanvasSlice(0, canvas.height)
     } else {
-      let remainingHeight = fittedHeight
-      let position = 0
-      pdf.addImage(imageData, 'JPEG', 0, position, pageWidth, fittedHeight)
-      remainingHeight -= pageHeight
-      while (remainingHeight > 0) {
-        position -= pageHeight
+      const firstTargetPx = Math.floor((pageHeight - 10) * pxPerMm)
+      const firstPageHeightPx = Math.min(
+        canvas.height,
+        findPageBreak(firstTargetPx, firstTargetPx - Math.floor(18 * pxPerMm), firstTargetPx + Math.floor(4 * pxPerMm))
+      )
+      const continuationHeightPx = Math.floor((pageHeight - continuationMarginTop - continuationMarginBottom) * pxPerMm)
+      addCanvasSlice(0, firstPageHeightPx)
+
+      let sourceY = firstPageHeightPx
+      while (sourceY < canvas.height) {
         pdf.addPage()
-        pdf.addImage(imageData, 'JPEG', 0, position, pageWidth, fittedHeight)
-        remainingHeight -= pageHeight
+        const targetBreak = sourceY + continuationHeightPx
+        const nextBreak = targetBreak < canvas.height
+          ? findPageBreak(targetBreak, targetBreak - Math.floor(18 * pxPerMm), targetBreak + Math.floor(4 * pxPerMm))
+          : canvas.height
+        const sourceHeight = Math.min(nextBreak - sourceY, canvas.height - sourceY)
+        addCanvasSlice(sourceY, sourceHeight, continuationMarginTop)
+        sourceY += sourceHeight
       }
     }
 
