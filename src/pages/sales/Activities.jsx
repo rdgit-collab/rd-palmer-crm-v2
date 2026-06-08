@@ -7,7 +7,6 @@ import { hasAdminAccess, isSalesManagerRole, isSalesRole } from '../../lib/roles
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
-import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import {
   useActivityStatuses,
   useActivityTypes,
@@ -17,6 +16,7 @@ import {
   useStages,
 } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
+import SearchSelect from '../../components/SearchSelect'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -114,10 +114,6 @@ export default function Activities() {
   const [activityStatuses, setActivityStatuses] = useState([])
   const [stages, setStages] = useState([])
   const [stageCloseBlockers, setStageCloseBlockers] = useState([])
-  const [leadResults, setLeadResults] = useState([])
-  const [leadSearch, setLeadSearch] = useState('')
-  const [leadSearchedTerm, setLeadSearchedTerm] = useState('')
-  const [leadLoading, setLeadLoading] = useState(false)
   const activityTypesQuery = useActivityTypes()
   const prioritiesQuery = usePriorities()
   const activityStatusesQuery = useActivityStatuses()
@@ -245,42 +241,10 @@ export default function Activities() {
     (!isTerminalActivityStatus(activity.status) && isOwnRow(activity))
   )
 
-  const searchLeads = async () => {
-    const term = leadSearch.trim()
-    setLeadSearchedTerm(term)
-    setForm(f => ({ ...f, lead_id: '', lead_stage: '' }))
-    setLeadResults([])
-    setStageCloseBlockers([])
-    setError('')
-    if (term.length < 2) return
-    setLeadLoading(true)
-    try {
-      let q = supabase
-        .from('sales_lead')
-        .select('id, company_name, first_name, last_name, assigned_to, status')
-        .order('company_name')
-        .limit(100)
-      if (isSalesRestricted && !isSalesManager) q = q.eq('assigned_to', currentLegacyUserId)
-      q = applyTokenIlike(q, 'company_name', term)
-      const { data, error: searchError } = await q
-      if (searchError) throw searchError
-      const ranked = rankRowsBySearch(data || [], 'company_name', term).slice(0, 30)
-      setLeadResults(ranked)
-      mergeLeads(ranked)
-    } catch (searchError) {
-      setError(searchError.message || 'Unable to search leads.')
-    } finally {
-      setLeadLoading(false)
-    }
-  }
-
   const openAdd = async () => {
     setEditId(null)
     setEditOriginalAssignee('')
     setStageCloseBlockers([])
-    setLeadSearch('')
-    setLeadSearchedTerm('')
-    setLeadResults([])
     setForm({
       ...emptyForm,
       date: new Date().toISOString().split('T')[0],
@@ -296,9 +260,6 @@ export default function Activities() {
     setStageCloseBlockers([])
     const isOpenActivity = !isTerminalActivityStatus(activity.status)
     const currentLead = activity.lead_id ? leadsById[String(activity.lead_id)] || activity.lead : null
-    setLeadSearch(currentLead?.company_name || '')
-    setLeadSearchedTerm('')
-    setLeadResults(currentLead ? [currentLead] : [])
     if (currentLead) mergeLeads([currentLead])
     setForm({
       ...emptyForm,
@@ -321,9 +282,6 @@ export default function Activities() {
   const openEdit = async (activity) => {
     const assignedTo = activity.assigned_to || activity.assignedTo || ''
     const currentLead = activity.lead_id ? leadsById[String(activity.lead_id)] || activity.lead : null
-    setLeadSearch(currentLead?.company_name || '')
-    setLeadSearchedTerm('')
-    setLeadResults(currentLead ? [currentLead] : [])
     if (currentLead) mergeLeads([currentLead])
     setEditId(activity.id)
     setEditOriginalAssignee(String(assignedTo || ''))
@@ -520,9 +478,9 @@ export default function Activities() {
     fetchRows()
   }
 
-  const setLeadContext = (leadId) => {
-    const lead = leadsById[String(leadId)]
-    if (lead) setLeadSearch(lead.company_name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim())
+  const setLeadContext = (leadId, leadRecord = null) => {
+    const lead = leadRecord || leadsById[String(leadId)]
+    if (lead) mergeLeads([lead])
     setForm(f => ({
       ...f,
       lead_id: leadId,
@@ -546,32 +504,22 @@ export default function Activities() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Lead</label>
           <div className="col-span-2">
-            <div className="flex gap-2 mb-2">
-              <input
-                value={leadSearch}
-                onChange={e => setLeadSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchLeads() } }}
-                placeholder="Type lead company name..."
-                className="flex-1 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-              />
-              <button type="button" onClick={searchLeads} className="px-3 py-2 bg-[#CC0000] text-white text-sm hover:bg-red-700">
-                Search
-              </button>
-            </div>
-            <select value={form.lead_id} onChange={e => setLeadContext(e.target.value)} disabled={leadLoading || leadResults.length === 0} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400">
-              <option value="">Please Select</option>
-              {leadResults.map(l => <option key={l.id} value={l.id}>{l.company_name || `${l.first_name || ''} ${l.last_name || ''}`.trim()}</option>)}
-            </select>
-            {leadLoading && <p className="mt-1 text-xs text-gray-400">Searching leads...</p>}
-            {!leadLoading && leadSearchedTerm.length > 0 && leadSearchedTerm.length < 2 && (
-              <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
-            )}
-            {!leadLoading && leadSearchedTerm.length >= 2 && leadResults.length === 0 && (
-              <p className="mt-1 text-xs text-gray-400">No matching leads found.</p>
-            )}
-            {!leadLoading && leadSearchedTerm.length >= 2 && leadResults.length > 0 && (
-              <p className="mt-1 text-xs text-gray-400">{leadResults.length} matching lead{leadResults.length === 1 ? '' : 's'} found.</p>
-            )}
+            <SearchSelect
+              table="sales_lead"
+              searchColumn="company_name"
+              selectColumns="id, company_name, first_name, last_name, assigned_to, status"
+              value={form.lead_id}
+              displayLabel={selectedLead?.company_name || ''}
+              onSelect={(value, lead) => {
+                setStageCloseBlockers([])
+                setError('')
+                setLeadContext(value, lead)
+              }}
+              filter={isSalesRestricted && !isSalesManager ? { assigned_to: currentLegacyUserId } : undefined}
+              limit={30}
+              minSearchLength={2}
+              placeholder="Search lead company name..."
+            />
           </div>
         </div>
         {!editId && form.lead_id && (
