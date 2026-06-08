@@ -161,6 +161,25 @@ function resolvedContactName(value, contact) {
   return isNumericId(value) ? (contactDisplayName(contact) || value || '-') : (value || '-')
 }
 
+function normalizedName(value = '') {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function contactPhone(contact) {
+  return contact?.mobile_number || contact?.phone || ''
+}
+
+async function resolveSalesContactNumber(salesPerson) {
+  const targetName = normalizedName(salesPerson)
+  if (!targetName) return ''
+  const [{ data: users }, { data: legacyUsers }] = await Promise.all([
+    supabase.from('users').select('first_name, last_name, phone'),
+    supabase.from('legacy_users').select('first_name, last_name, phone'),
+  ])
+  const match = [...(users || []), ...(legacyUsers || [])].find(user => normalizedName(userDisplayName(user)) === targetName)
+  return match?.phone || ''
+}
+
 function userDisplayName(user) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
 }
@@ -186,7 +205,7 @@ function addressLines(customer) {
   ].filter(Boolean)
 }
 
-function invoiceHtml(invoice, items, contactName, customer) {
+function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', salesContactNumber = '') {
   const billTo = addressLines(customer)
   const notes = sanitizeHtml(invoice.notes)
   const terms = printableText(invoice.term_condition, { dropConfirmation: true, dropSignature: true })
@@ -287,6 +306,7 @@ function invoiceHtml(invoice, items, contactName, customer) {
             <div class="bill-title">Bill To</div>
             <div class="bill-lines">${billTo.map(escapeHtml).join('<br>') || escapeHtml(invoice.name || '-')}</div>
             <div style="margin-top:12px;">Attn: ${escapeHtml(contactName || '-')}</div>
+            ${contactMobile ? `<div>Mobile: ${escapeHtml(contactMobile)}</div>` : ''}
           </div>
           <div>
             <div class="doc-title">Proforma Invoice</div>
@@ -294,6 +314,8 @@ function invoiceHtml(invoice, items, contactName, customer) {
               <div class="meta-row"><span>Invoice No.:</span><span class="value">${escapeHtml(invoice.invoice_number || '-')}</span></div>
               <div class="meta-row"><span>Date:</span><span class="value">${fmt(invoice.date)}</span></div>
               <div class="meta-row"><span>Order No.:</span><span class="value">${escapeHtml(invoice.order_number || '-')}</span></div>
+              <div class="meta-row"><span>Sales Person:</span><span class="value">${escapeHtml(invoice.sales_person || '-')}</span></div>
+              ${salesContactNumber ? `<div class="meta-row"><span>Sales Contact:</span><span class="value">${escapeHtml(salesContactNumber)}</span></div>` : ''}
               <div class="meta-row"><span>Payment Term:</span><span class="value">${escapeHtml(invoice.terms || '-')}</span></div>
               <div class="meta-row"><span>Currency:</span><span class="value">${escapeHtml(invoice.currency || 'MYR')}</span></div>
               <div class="meta-row"><span>Due Date:</span><span class="value">${fmt(invoice.due_date)}</span></div>
@@ -1082,6 +1104,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const [items, setItems] = useState([])
   const [contact, setContact] = useState(null)
   const [customer, setCustomer] = useState(null)
+  const [salesContactNumber, setSalesContactNumber] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -1101,6 +1124,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
         const { data } = await supabase.from('customer').select('*').eq('id', inv.companyid).maybeSingle()
         customerRow = data || null
       }
+      const salesPhone = await resolveSalesContactNumber(inv?.sales_person)
       const itemIds = [...new Set((ii || []).map(item => item.itemid).filter(Boolean))]
       let skuByItemId = {}
       if (itemIds.length > 0) {
@@ -1111,6 +1135,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
       setItems((ii || []).map(item => ({ ...item, sku: skuByItemId[String(item.itemid)] || item.sku || '' })))
       setContact(contactRow)
       setCustomer(customerRow)
+      setSalesContactNumber(salesPhone)
       setLoading(false)
     }
     load()
@@ -1121,7 +1146,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
 
   const isOverdue = invoice.due_date && new Date(invoice.due_date) < new Date()
   const contactName = resolvedContactName(invoice.contact_person, contact)
-  const printableHtml = () => invoiceHtml(invoice, items, contactName, customer)
+  const printableHtml = () => invoiceHtml(invoice, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => openPrintable(printableHtml())
   const downloadPdf = () => openPrintable(printableHtml(), shouldAutoPrintDocument())
 
