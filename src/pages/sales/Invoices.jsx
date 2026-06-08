@@ -1417,6 +1417,7 @@ export default function Invoices() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Invoice No.</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Customer</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Sales</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Due Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">First Item</th>
@@ -1428,10 +1429,10 @@ export default function Invoices() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">Loading...</td></tr>
+                <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400 text-sm">Loading...</td></tr>
               ) : invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">
+                  <td colSpan={10} className="px-4 py-10 text-center text-gray-400 text-sm">
                     {search ? 'No invoices match your search.' : 'No invoices yet. Click "New Invoice" to get started.'}
                   </td>
                 </tr>
@@ -1447,6 +1448,7 @@ export default function Invoices() {
                         </button>
                       </td>
                       <td className="px-4 py-3 text-gray-800 text-xs">{inv.name || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{inv.sales_person || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{fmt(inv.date)}</td>
                       <td className="px-4 py-3 text-xs">
                         <span className={isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'}>{fmt(inv.due_date)}</span>

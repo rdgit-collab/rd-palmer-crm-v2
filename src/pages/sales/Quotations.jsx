@@ -1590,6 +1590,7 @@ export default function Quotations() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Quot. No.</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Customer</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Sales</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Expiry</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">First Item</th>
@@ -1600,10 +1601,10 @@ export default function Quotations() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-sm">Loading...</td></tr>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">Loading...</td></tr>
               ) : quotations.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-sm">
+                  <td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">
                     {search ? 'No quotations match your search.' : 'No quotations yet. Click "New Quotation" to get started.'}
                   </td>
                 </tr>
@@ -1618,6 +1619,7 @@ export default function Quotations() {
                       </button>
                     </td>
                     <td className="px-4 py-3 text-gray-800 text-xs">{q.name || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{q.sales_person || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{fmt(q.date)}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{fmt(q.expiry_date)}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate">{q.first_item || '—'}</td>
