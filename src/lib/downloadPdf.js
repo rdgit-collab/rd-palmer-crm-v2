@@ -27,6 +27,93 @@ export async function downloadHtmlPdf(html, filename) {
     doc.write(html)
     doc.close()
 
+    const pdfStyle = doc.createElement('style')
+    pdfStyle.textContent = `
+      @media screen {
+        body { background: #fff !important; }
+        .sheet {
+          width: 794px !important;
+          min-height: 1123px !important;
+          margin: 0 auto !important;
+          padding: 76px 57px !important;
+          box-sizing: border-box !important;
+        }
+        .top {
+          display: flex !important;
+          align-items: flex-start !important;
+          justify-content: space-between !important;
+          gap: 24px !important;
+          margin-bottom: 20px !important;
+        }
+        .brand-logo {
+          width: 175px !important;
+          max-width: 175px !important;
+          flex: 0 0 175px !important;
+        }
+        .company {
+          flex: 1 1 auto !important;
+          text-align: right !important;
+        }
+        .intro {
+          display: flex !important;
+          align-items: flex-start !important;
+          justify-content: space-between !important;
+          gap: 28px !important;
+        }
+        .intro > div:first-child {
+          flex: 1 1 auto !important;
+          min-width: 0 !important;
+        }
+        .intro > div:last-child {
+          flex: 0 0 270px !important;
+          min-width: 270px !important;
+        }
+        .doc-title { text-align: right !important; }
+        .meta {
+          width: 230px !important;
+          margin-left: auto !important;
+        }
+        .meta-row {
+          display: flex !important;
+          justify-content: space-between !important;
+          gap: 8px !important;
+        }
+        .meta-row span:first-child {
+          flex: 0 0 90px !important;
+        }
+        .meta-row .value {
+          flex: 1 1 auto !important;
+          text-align: right !important;
+        }
+        .below-table {
+          display: flex !important;
+          align-items: flex-start !important;
+          gap: 28px !important;
+        }
+        .below-table > div:first-child {
+          flex: 1 1 auto !important;
+          min-width: 0 !important;
+        }
+        .totals {
+          flex: 0 0 250px !important;
+          width: 250px !important;
+          margin-left: auto !important;
+        }
+        .text-column {
+          width: calc(100% - 278px) !important;
+        }
+        .document-signature {
+          display: flex !important;
+          gap: 48px !important;
+          align-items: flex-start !important;
+        }
+        .signature-line {
+          flex: 0 0 270px !important;
+        }
+      }
+    `
+    doc.head.appendChild(pdfStyle)
+
     await new Promise(resolve => {
       if (iframe.contentWindow?.document?.readyState === 'complete') resolve()
       else iframe.onload = resolve
