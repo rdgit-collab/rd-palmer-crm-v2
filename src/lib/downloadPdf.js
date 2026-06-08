@@ -9,12 +9,13 @@ export function pdfFileName(value = 'document') {
 
 export async function downloadHtmlPdf(html, filename) {
   const { default: html2pdf } = await import('html2pdf.js')
+  const renderWidth = 1024
   const iframe = document.createElement('iframe')
   iframe.style.position = 'fixed'
   iframe.style.left = '-10000px'
   iframe.style.top = '0'
-  iframe.style.width = '210mm'
-  iframe.style.height = '297mm'
+  iframe.style.width = `${renderWidth}px`
+  iframe.style.height = '1400px'
   iframe.style.opacity = '0'
   iframe.setAttribute('aria-hidden', 'true')
   document.body.appendChild(iframe)
@@ -50,7 +51,7 @@ export async function downloadHtmlPdf(html, filename) {
           scale: 2,
           useCORS: true,
           backgroundColor: '#ffffff',
-          windowWidth: sheet.scrollWidth || 794,
+          windowWidth: renderWidth,
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] },
