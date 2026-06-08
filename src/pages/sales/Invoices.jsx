@@ -9,6 +9,7 @@ import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLo
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
+import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline, Copy
@@ -195,6 +196,22 @@ function salesDocumentSkuTitle(item) {
   return sku || name
 }
 
+function finalItemAmount(item) {
+  const qty = parseFloat(item?.qty) || 0
+  const rate = parseFloat(item?.rate) || 0
+  const amount = parseFloat(item?.amount)
+  if (Number.isFinite(amount)) return amount
+  return qty * rate
+}
+
+function finalItemRate(item) {
+  const qty = parseFloat(item?.qty) || 0
+  const rate = parseFloat(item?.rate) || 0
+  const amount = finalItemAmount(item)
+  if (qty > 0 && Math.abs(amount - qty * rate) > 0.01) return amount / qty
+  return rate
+}
+
 function addressLines(customer) {
   if (!customer) return []
   return [
@@ -215,9 +232,9 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
       <td>${idx + 1}</td>
       <td><strong>${escapeHtml(salesDocumentSkuTitle(item))}</strong><div class="desc">${printableText(item.description || '')}</div></td>
       <td>${escapeHtml(item.qty || '')}</td>
-      <td>${fmtMoney(item.rate)}</td>
+      <td>${fmtMoney(finalItemRate(item))}</td>
       <td>${escapeHtml(item.taxlbl || '-')}</td>
-      <td>${fmtMoney(item.amount)}</td>
+      <td>${fmtMoney(finalItemAmount(item))}</td>
     </tr>
   `).join('')
   return `<!doctype html>
@@ -356,11 +373,6 @@ function openPrintable(html, autoPrint = false) {
   if (autoPrint) {
     win.onload = () => { win.focus(); win.print() }
   }
-}
-
-function shouldAutoPrintDocument() {
-  if (typeof window === 'undefined') return true
-  return !window.matchMedia('(max-width: 800px), (pointer: coarse)').matches
 }
 
 // ─── Auto-generate next invoice number ────────────────────────────────────────
@@ -1115,7 +1127,13 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const contactName = resolvedContactName(invoice.contact_person, contact)
   const printableHtml = () => invoiceHtml(invoice, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => openPrintable(printableHtml())
-  const downloadPdf = () => openPrintable(printableHtml(), shouldAutoPrintDocument())
+  const downloadPdf = async () => {
+    try {
+      await downloadHtmlPdf(printableHtml(), pdfFileName(invoice.invoice_number || 'proforma-invoice'))
+    } catch (error) {
+      alert(error.message || 'Unable to download PDF.')
+    }
+  }
 
   return (
     <div>
@@ -1213,9 +1231,9 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
                   <td className="px-4 py-3 font-medium text-gray-900">{item.item}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs max-w-xs"><HtmlBlock value={item.description || '—'} /></td>
                   <td className="px-4 py-3 text-gray-700">{item.qty}</td>
-                  <td className="px-4 py-3 text-gray-700">{fmtMoney(item.rate)}</td>
+                  <td className="px-4 py-3 text-gray-700">{fmtMoney(finalItemRate(item))}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{item.taxlbl || '—'}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{fmtMoney(item.amount)}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{fmtMoney(finalItemAmount(item))}</td>
                 </tr>
               ))}
             </tbody>

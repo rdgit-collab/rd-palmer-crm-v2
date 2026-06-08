@@ -9,6 +9,7 @@ import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLo
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
+import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, FileText, RefreshCw, Download, Bold, Underline, Copy
@@ -367,11 +368,6 @@ function openPrintable(html, autoPrint = false) {
   if (autoPrint) {
     win.onload = () => { win.focus(); win.print() }
   }
-}
-
-function shouldAutoPrintDocument() {
-  if (typeof window === 'undefined') return true
-  return !window.matchMedia('(max-width: 800px), (pointer: coarse)').matches
 }
 
 // ─── Generate next quotation number ───────────────────────────────────────────
@@ -1267,7 +1263,13 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
   const contactName = resolvedContactName(quotation.contact_person, contact)
   const printableHtml = () => quotationHtml(quotation, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => openPrintable(printableHtml())
-  const downloadPdf = () => openPrintable(printableHtml(), shouldAutoPrintDocument())
+  const downloadPdf = async () => {
+    try {
+      await downloadHtmlPdf(printableHtml(), pdfFileName(quotation.number || 'quotation'))
+    } catch (error) {
+      alert(error.message || 'Unable to download PDF.')
+    }
+  }
 
   return (
     <div>
