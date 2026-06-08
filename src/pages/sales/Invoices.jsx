@@ -8,6 +8,7 @@ import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLookups'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
+import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline, Copy
@@ -556,9 +557,6 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
   const { profile } = useAuth()
   const isEdit = !!invoice?.id
   const [customers, setCustomers] = useState([])
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customerSearchedTerm, setCustomerSearchedTerm] = useState('')
-  const [customerLoading, setCustomerLoading] = useState(false)
   const [contacts, setContacts] = useState([])
   const [catalogueItems, setCatalogueItems] = useState([])
   const [salesUsers, setSalesUsers] = useState([])
@@ -622,12 +620,11 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       if (invoice?.companyid) {
         const { data: currentCustomer } = await supabase
           .from('customer')
-          .select('id, company_name, assigned')
+          .select('id, company_name, assigned, assignto')
           .eq('id', invoice.companyid)
           .maybeSingle()
         if (currentCustomer) {
           setCustomers([currentCustomer])
-          setCustomerSearch(currentCustomer.company_name || '')
         }
       }
 
@@ -658,40 +655,12 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     load()
   }, [isEdit, invoice])
 
-  const searchCustomers = async () => {
-    const term = customerSearch.trim()
-    setCustomerSearchedTerm(term)
-    setF('companyid', '')
-    setContacts([])
-    setError('')
-    if (term.length < 2) {
-      setCustomers([])
-      return
-    }
-    setCustomerLoading(true)
-    try {
-      const { data, error: searchError } = await supabase.rpc('search_customers', {
-        p_search: term,
-        p_limit: 30,
-        p_offset: 0,
-      })
-      if (searchError) throw searchError
-      const result = Array.isArray(data) ? data[0] : data
-      setCustomers(Array.isArray(result?.rows) ? result.rows : [])
-    } catch (searchError) {
-      setCustomers([])
-      setError(searchError.message || 'Unable to search customers.')
-    } finally {
-      setCustomerLoading(false)
-    }
-  }
-
   useEffect(() => {
     if (form.companyid) {
       supabase.from('contact').select('id, Salutation, first_name, last_name, email').eq('company_id', parseInt(form.companyid))
         .then(({ data }) => setContacts(data || []))
       const cust = customers.find(c => String(c.id) === form.companyid)
-      const assignedUser = salesUsers.find(user => String(user.id) === String(cust?.assigned))
+      const assignedUser = salesUsers.find(user => String(user.id) === String(cust?.assignto || cust?.assigned))
       if (cust) setForm(f => ({
         ...f,
         name: cust.company_name,
@@ -704,6 +673,22 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const setContact = (k, v) => setContactForm(f => ({ ...f, [k]: v }))
+  const selectedCustomer = customers.find(c => String(c.id) === String(form.companyid))
+  const selectCustomer = (customer) => {
+    setError('')
+    if (!customer) {
+      setCustomers([])
+      setForm(f => ({ ...f, companyid: '', name: '', contact_person: '' }))
+      setContacts([])
+      return
+    }
+    setCustomers(prev => {
+      const map = new Map(prev.map(row => [String(row.id), row]))
+      map.set(String(customer.id), { ...map.get(String(customer.id)), ...customer })
+      return Array.from(map.values())
+    })
+    setF('companyid', String(customer.id))
+  }
 
   const openContactForm = () => {
     if (!form.companyid) { setError('Please select a customer before adding a contact'); return }
@@ -852,32 +837,14 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
             <div className="md:col-span-2">
               <label className={labelCls}>Customer <span className="text-red-500">*</span></label>
-              <div className="flex gap-2 mb-2">
-                <input
-                  className={inputCls}
-                  value={customerSearch}
-                  onChange={e => setCustomerSearch(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchCustomers() } }}
-                  placeholder="Type customer name..."
-                />
-                <button type="button" onClick={searchCustomers} className="px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
-                  Search
-                </button>
-              </div>
-              <select className={inputCls} value={form.companyid} onChange={e => setF('companyid', e.target.value)} disabled={customerLoading || customers.length === 0} required>
-                <option value="">Select Customer</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-              </select>
-              {customerLoading && <p className="mt-1 text-xs text-gray-400">Searching customers...</p>}
-              {!customerLoading && customerSearchedTerm.length > 0 && customerSearchedTerm.length < 2 && (
-                <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
-              )}
-              {!customerLoading && customerSearchedTerm.length >= 2 && customers.length === 0 && (
-                <p className="mt-1 text-xs text-gray-400">No matching customers found.</p>
-              )}
-              {!customerLoading && customerSearchedTerm.length >= 2 && customers.length > 0 && (
-                <p className="mt-1 text-xs text-gray-400">{customers.length} matching customer{customers.length === 1 ? '' : 's'} found.</p>
-              )}
+              <CustomerSearchSelect
+                value={form.companyid}
+                displayLabel={selectedCustomer?.company_name || form.name || ''}
+                onSelect={selectCustomer}
+                placeholder="Search customer name..."
+                required
+                className={inputCls}
+              />
             </div>
 
             <div>
