@@ -16,7 +16,7 @@ import {
   useStages,
 } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
-import SearchSelect from '../../components/SearchSelect'
+import LeadSearchSelect from '../../components/LeadSearchSelect'
 import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CalendarClock, ArrowLeft, Save, X } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -123,6 +123,10 @@ export default function Activities() {
 
   const leadsById = useMemo(() => Object.fromEntries(leads.map(l => [String(l.id), l])), [leads])
   const customersById = useMemo(() => Object.fromEntries(customers.map(c => [String(c.id), c])), [customers])
+  const closedStageIds = useMemo(
+    () => stages.filter(stage => isClosedStageName(stage.name)).map(stage => String(stage.id)),
+    [stages]
+  )
 
   const mergeLeads = useCallback((nextLeads = []) => {
     setLeads(prev => {
@@ -504,20 +508,17 @@ export default function Activities() {
         <div className="grid grid-cols-3 gap-4 items-center">
           <label className="text-sm font-medium text-gray-700">Lead</label>
           <div className="col-span-2">
-            <SearchSelect
-              table="sales_lead"
-              searchColumn="company_name"
-              selectColumns="id, company_name, first_name, last_name, assigned_to, status"
+            <LeadSearchSelect
               value={form.lead_id}
               displayLabel={selectedLead?.company_name || ''}
-              onSelect={(value, lead) => {
+              onSelect={(lead) => {
                 setStageCloseBlockers([])
                 setError('')
-                setLeadContext(value, lead)
+                setLeadContext(lead ? String(lead.id) : '', lead)
               }}
-              filter={isSalesRestricted && !isSalesManager ? { assigned_to: currentLegacyUserId } : undefined}
-              limit={30}
-              minSearchLength={2}
+              closedStageIds={closedStageIds}
+              currentUserId={currentLegacyUserId}
+              restricted={isSalesRestricted && !isSalesManager}
               placeholder="Search lead company name..."
             />
           </div>
