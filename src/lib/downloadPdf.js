@@ -13,193 +13,100 @@ function applyStyle(element, styles) {
 }
 
 function applyPdfLayout(doc) {
+  const fontStyle = doc.createElement('style')
+  fontStyle.textContent = `
+    .sheet,
+    .sheet * {
+      font-family: Arial, sans-serif !important;
+      font-synthesis: none;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+    }
+    .sheet {
+      font-size: 11px !important;
+      font-weight: 400 !important;
+      line-height: 1.35 !important;
+    }
+    .company,
+    .company * {
+      font-size: 10px !important;
+      line-height: 1.3 !important;
+    }
+    .company strong {
+      font-size: 10.5px !important;
+      font-weight: 700 !important;
+    }
+    .doc-title {
+      font-size: 20px !important;
+      line-height: 1.2 !important;
+      font-weight: 700 !important;
+    }
+    .bill-title,
+    .bill-lines,
+    .meta-row,
+    .meta-row *,
+    table,
+    th,
+    td,
+    .desc,
+    .totals,
+    .totals *,
+    .section,
+    .section *,
+    .signature-line,
+    .signature-line * {
+      font-size: 11px !important;
+      line-height: 1.35 !important;
+    }
+    th,
+    strong,
+    .meta-row .value,
+    .section h2,
+    .section h2 *,
+    .total,
+    .total * {
+      font-weight: 700 !important;
+    }
+    .section p,
+    .section div {
+      margin-top: 0 !important;
+      margin-bottom: 4px !important;
+    }
+  `
+  doc.head.appendChild(fontStyle)
+
   applyStyle(doc.body, {
     background: '#fff',
-    fontFamily: 'Arial, sans-serif',
-    fontSize: '11px',
-    margin: '0',
   })
 
   const sheet = doc.querySelector('.sheet')
   applyStyle(sheet, {
-    width: '794px',
-    minHeight: '1123px',
-    margin: '0 auto',
-    padding: '76px 57px',
-    boxSizing: 'border-box',
-    background: '#fff',
-  })
-
-  const top = doc.querySelector('.top')
-  applyStyle(top, {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '24px',
-    paddingTop: '8px',
-    marginBottom: '20px',
-  })
-
-  applyStyle(doc.querySelector('.brand-logo'), {
-    display: 'block',
-    width: '175px',
-    maxWidth: '175px',
-    height: 'auto',
-    flex: '0 0 175px',
-    marginTop: '0',
-  })
-
-  applyStyle(doc.querySelector('.company'), {
-    flex: '1 1 auto',
-    textAlign: 'right',
-    lineHeight: '1.35',
-    fontSize: '11px',
-  })
-
-  const intro = doc.querySelector('.intro')
-  applyStyle(intro, {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '28px',
-    marginBottom: '12px',
-  })
-  applyStyle(intro?.children?.[0], {
-    flex: '1 1 auto',
-    minWidth: '0',
-  })
-  applyStyle(intro?.children?.[1], {
-    flex: '0 0 270px',
-    minWidth: '270px',
-  })
-
-  applyStyle(doc.querySelector('.doc-title'), {
-    textAlign: 'right',
-    fontSize: '20px',
-    fontWeight: '700',
-    margin: '8px 0 10px',
-  })
-  applyStyle(doc.querySelector('.meta'), {
-    width: '230px',
-    marginLeft: 'auto',
-  })
-  doc.querySelectorAll('.meta-row').forEach(row => {
-    applyStyle(row, {
-      display: 'flex',
-      justifyContent: 'space-between',
-      gap: '8px',
-      lineHeight: '1.35',
-    })
-    applyStyle(row.children?.[0], { flex: '0 0 90px' })
-    applyStyle(row.querySelector('.value'), {
-      flex: '1 1 auto',
-      textAlign: 'right',
-      fontWeight: '600',
-    })
-  })
-
-  doc.querySelectorAll('table').forEach(table => {
-    applyStyle(table, {
-      width: '100%',
-      tableLayout: 'fixed',
-      borderCollapse: 'separate',
-      borderSpacing: '0',
-      margin: '18px 0 0',
-      border: '1px solid #222',
-      overflow: 'hidden',
-      fontSize: '11px',
-    })
-  })
-  doc.querySelectorAll('th').forEach(th => {
-    applyStyle(th, {
-      padding: '7px 8px',
-      textAlign: 'left',
-      verticalAlign: 'top',
-      borderBottom: '1px solid #e5e5e5',
-      background: '#d4d4d4',
-      color: '#111',
-      fontWeight: '700',
-    })
-  })
-  doc.querySelectorAll('td').forEach(td => {
-    applyStyle(td, {
-      padding: '7px 8px',
-      textAlign: 'left',
-      verticalAlign: 'top',
-      borderBottom: '1px solid #e5e5e5',
-    })
-  })
-  doc.querySelectorAll('tr > :nth-child(1)').forEach(cell => applyStyle(cell, { width: '28px', textAlign: 'center' }))
-  doc.querySelectorAll('tr > :nth-child(2)').forEach(cell => applyStyle(cell, { width: 'auto', overflowWrap: 'anywhere' }))
-  doc.querySelectorAll('tr > :nth-child(3)').forEach(cell => applyStyle(cell, { width: '42px', textAlign: 'right', whiteSpace: 'nowrap' }))
-  doc.querySelectorAll('tr > :nth-child(4)').forEach(cell => applyStyle(cell, { width: '74px', textAlign: 'right', whiteSpace: 'nowrap' }))
-  doc.querySelectorAll('tr > :nth-child(5)').forEach(cell => applyStyle(cell, { width: '50px', textAlign: 'right', whiteSpace: 'nowrap' }))
-  doc.querySelectorAll('tr > :nth-child(6)').forEach(cell => applyStyle(cell, { width: '86px', textAlign: 'right', whiteSpace: 'nowrap' }))
-
-  const belowTable = doc.querySelector('.below-table')
-  applyStyle(belowTable, {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '28px',
-    marginTop: '6px',
-  })
-  applyStyle(belowTable?.children?.[0], {
-    flex: '1 1 auto',
-    minWidth: '0',
-  })
-  applyStyle(doc.querySelector('.totals'), {
-    flex: '0 0 250px',
-    width: '250px',
-    marginLeft: 'auto',
-    borderTop: '1px solid #aaa',
-    paddingTop: '8px',
-  })
-  doc.querySelectorAll('.totals div').forEach(row => {
-    applyStyle(row, {
-      display: 'flex',
-      justifyContent: 'space-between',
-      padding: '4px 0',
-    })
-  })
-  applyStyle(doc.querySelector('.total'), {
-    borderTop: '1px solid #111',
-    marginTop: '4px',
-    fontWeight: '700',
-    fontSize: '13px',
-  })
-
-  applyStyle(doc.querySelector('.text-column'), {
-    width: 'calc(100% - 278px)',
-  })
-  doc.querySelectorAll('.section, .section *').forEach(node => {
-    applyStyle(node, {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '11px',
-      lineHeight: '1.35',
-    })
+    minHeight: '0',
   })
 
   const signature = doc.querySelector('.document-signature')
   applyStyle(signature, {
-    display: 'flex',
-    gap: '48px',
-    alignItems: 'flex-start',
-    marginTop: '28px',
+    breakInside: 'auto',
+    pageBreakInside: 'auto',
   })
   doc.querySelectorAll('.signature-line').forEach(line => {
     applyStyle(line, {
-      flex: '0 0 270px',
       borderTop: '1px dotted #111',
       paddingTop: '10px',
       fontStyle: 'italic',
       minHeight: '64px',
       lineHeight: '1.45',
+      breakInside: 'auto',
+      pageBreakInside: 'auto',
     })
   })
 }
 
 export async function downloadHtmlPdf(html, filename) {
-  const { default: html2pdf } = await import('html2pdf.js')
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ])
   const renderWidth = 1024
   const iframe = document.createElement('iframe')
   iframe.style.position = 'fixed'
@@ -235,22 +142,36 @@ export async function downloadHtmlPdf(html, filename) {
     }))
 
     const sheet = doc.querySelector('.sheet') || doc.body
-    await html2pdf()
-      .set({
-        filename,
-        margin: 0,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          windowWidth: renderWidth,
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] },
-      })
-      .from(sheet)
-      .save()
+    const canvas = await html2canvas(sheet, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      windowWidth: renderWidth,
+    })
+
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+    const pageWidth = 210
+    const pageHeight = 297
+    const imageData = canvas.toDataURL('image/jpeg', 0.98)
+    const imageHeight = (canvas.height * pageWidth) / canvas.width
+    const fittedHeight = imageHeight > pageHeight && imageHeight <= pageHeight * 1.08 ? pageHeight : imageHeight
+
+    if (fittedHeight <= pageHeight) {
+      pdf.addImage(imageData, 'JPEG', 0, 0, pageWidth, fittedHeight)
+    } else {
+      let remainingHeight = fittedHeight
+      let position = 0
+      pdf.addImage(imageData, 'JPEG', 0, position, pageWidth, fittedHeight)
+      remainingHeight -= pageHeight
+      while (remainingHeight > 0) {
+        position -= pageHeight
+        pdf.addPage()
+        pdf.addImage(imageData, 'JPEG', 0, position, pageWidth, fittedHeight)
+        remainingHeight -= pageHeight
+      }
+    }
+
+    pdf.save(filename)
   } finally {
     iframe.remove()
   }
