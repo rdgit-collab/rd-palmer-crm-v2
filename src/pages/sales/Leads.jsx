@@ -6,6 +6,7 @@ import { getLegacyUserId, getUserName } from '../../lib/legacyUsers'
 import { notifyUser } from '../../lib/notifyUser'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
+import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import { hasAdminAccess, isSalesRole } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import {
@@ -640,9 +641,6 @@ function LeadForm({ lead, onSave, onCancel }) {
   const [stages, setStages] = useState([])
   const [users, setUsers] = useState([])
   const [customers, setCustomers] = useState([])
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customerSearchedTerm, setCustomerSearchedTerm] = useState('')
-  const [customerLoading, setCustomerLoading] = useState(false)
   const [contacts, setContacts] = useState([])
   const [industries, setIndustries] = useState([])
   const [accountTypes, setAccountTypes] = useState([])
@@ -709,7 +707,6 @@ function LeadForm({ lead, onSave, onCancel }) {
       if (!data) return
       setCustomers([data])
       setSelectedCustomerId(String(data.id))
-      setCustomerSearch(data.company_name || '')
     }
     loadSelectedCustomer()
   }, [lead?.company_id])
@@ -745,6 +742,7 @@ function LeadForm({ lead, onSave, onCancel }) {
   }, [isSalesRestricted, currentLegacyUserId, form.assigned_to])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const selectedCustomer = customers.find(c => String(c.id) === String(selectedCustomerId))
 
   const loadContacts = async (companyId) => {
     if (!companyId) { setContacts([]); return }
@@ -752,41 +750,37 @@ function LeadForm({ lead, onSave, onCancel }) {
     setContacts(data || [])
   }
 
-  const searchCustomers = async () => {
-    const term = customerSearch.trim()
-    setCustomerSearchedTerm(term)
-    setSelectedCustomerId('')
-    setSelectedContactId('')
-    setContacts([])
-    setError('')
-    if (term.length < 2) {
-      setCustomers([])
-      return
-    }
-    setCustomerLoading(true)
-    try {
-      const { data, error: searchError } = await supabase.rpc('search_customers', {
-        p_search: term,
-        p_limit: 30,
-        p_offset: 0,
-      })
-      if (searchError) throw searchError
-      const result = Array.isArray(data) ? data[0] : data
-      setCustomers(Array.isArray(result?.rows) ? result.rows : [])
-    } catch (searchError) {
-      setCustomers([])
-      setError(searchError.message || 'Unable to search customers.')
-    } finally {
-      setCustomerLoading(false)
-    }
-  }
-
-  const applyCustomer = async (companyId) => {
+  const applyCustomer = async (companyId, customerRecord = null) => {
     setSelectedCustomerId(companyId)
     setSelectedContactId('')
+    if (!companyId) {
+      setContacts([])
+      setForm(f => ({
+        ...f,
+        company_name: '',
+        industry: '',
+        account_type: '',
+        address1: '',
+        address2: '',
+        country: '',
+        state: '',
+        city: '',
+        zipcode: '',
+        office_number: '',
+        mobile_number: '',
+        email: '',
+        website: '',
+      }))
+      return
+    }
     await loadContacts(companyId)
-    const customer = customers.find(c => String(c.id) === String(companyId))
+    const customer = customerRecord || customers.find(c => String(c.id) === String(companyId))
     if (!customer) return
+    setCustomers(prev => {
+      const map = new Map(prev.map(row => [String(row.id), row]))
+      map.set(String(customer.id), { ...map.get(String(customer.id)), ...customer })
+      return Array.from(map.values())
+    })
     setForm(f => ({
       ...f,
       company_name: customer.company_name || '',
@@ -1057,32 +1051,17 @@ function LeadForm({ lead, onSave, onCancel }) {
         {form.type === '1' && (
           <div className="mb-4">
             <label className={labelCls}>Existing Company <span className="text-red-500">*</span></label>
-            <div className="flex gap-2 mb-2">
-              <input
-                className={inputCls}
-                value={customerSearch}
-                onChange={e => setCustomerSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchCustomers() } }}
-                placeholder="Type company name..."
-              />
-              <button type="button" onClick={searchCustomers} className="px-3 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
-                Search
-              </button>
-            </div>
-            <select className={inputCls} value={selectedCustomerId} onChange={e => applyCustomer(e.target.value)} required={!isEdit && form.type === '1'} disabled={customerLoading || customers.length === 0}>
-              <option value="">Please Select</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-            </select>
-            {customerLoading && <p className="mt-1 text-xs text-gray-400">Searching customers...</p>}
-            {!customerLoading && customerSearchedTerm.length > 0 && customerSearchedTerm.length < 2 && (
-              <p className="mt-1 text-xs text-gray-400">Type at least 2 characters before searching.</p>
-            )}
-            {!customerLoading && customerSearchedTerm.length >= 2 && customers.length === 0 && (
-              <p className="mt-1 text-xs text-gray-400">No matching customers found.</p>
-            )}
-            {!customerLoading && customerSearchedTerm.length >= 2 && customers.length > 0 && (
-              <p className="mt-1 text-xs text-gray-400">{customers.length} matching customer{customers.length !== 1 ? 's' : ''} found.</p>
-            )}
+            <CustomerSearchSelect
+              value={selectedCustomerId}
+              displayLabel={selectedCustomer?.company_name || form.company_name || ''}
+              onSelect={(customer) => {
+                setError('')
+                applyCustomer(customer ? String(customer.id) : '', customer)
+              }}
+              placeholder="Search company name..."
+              required={!isEdit && form.type === '1'}
+              className={inputCls}
+            />
           </div>
         )}
 
