@@ -91,9 +91,6 @@ const defaultActivityForm = () => ({
   time: '',
   description: '',
   lead_stage: '',
-  followup_date: '',
-  followup_time: '',
-  followup_type: '',
 })
 
 // ─── Lead Detail View ──────────────────────────────────────────────────────────
@@ -165,9 +162,7 @@ function LeadDetail({ leadId, onBack, onEdit }) {
 
   const setActivity = (k, v) => setActivityForm(f => ({ ...f, [k]: v }))
   const isTerminalActivity = isTerminalActivityStatus(activityForm.status)
-  const activityLockedClass = isTerminalActivity ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
   const selectedUpdateStage = activityForm.lead_stage || lead.status || ''
-  const followupType = activityForm.followup_type || activityForm.type || 'Follow Up'
   const isOwnActivity = (activity) => (
     String(activity.assigned_to || '') === String(getLegacyUserId(profile) || '') ||
     String(activity.user_id || '') === String(getLegacyUserId(profile) || '') ||
@@ -198,9 +193,6 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       time: activity.time || '',
       description: activity.description || '',
       lead_stage: lead.status || '',
-      followup_date: '',
-      followup_time: '',
-      followup_type: '',
     })
     setActivityEditId(activity.id)
     setActivityError('')
@@ -303,20 +295,21 @@ function LeadDetail({ leadId, onBack, onEdit }) {
 
   const saveActivity = async (e) => {
     e.preventDefault()
-    if (!isTerminalActivity && !activityForm.type) { setActivityError('Activity type is required'); return }
-    if (!isTerminalActivity && !activityForm.description.trim()) { setActivityError('Description is required'); return }
+    if (!activityForm.status) { setActivityError('Activity status is required'); return }
+    if (!activityForm.type) { setActivityError('Activity type is required'); return }
+    if (!activityForm.date) { setActivityError('Next contact date is required'); return }
+    if (!activityForm.description.trim()) { setActivityError('Progress notes are required'); return }
     setActivitySaving(true)
     setActivityError('')
     const selectedStageName = selectedUpdateStage ? stageNameFor(selectedUpdateStage) : ''
     const shouldMoveStage = selectedUpdateStage && String(selectedUpdateStage) !== String(lead.status || '')
-    if (shouldMoveStage && isClosedStageName(selectedStageName) && (!allActivitiesReadyToClose() || !isTerminalActivity)) {
-      const blockers = activities.filter(activity => {
-        if (activityEditId && isTerminalActivity && String(activity.id) === String(activityEditId)) return false
-        return !isTerminalActivityStatus(activity.status)
-      })
-      if (!isTerminalActivity) {
-        blockers.push({ id: 'current', type: activityForm.type || 'Current update', status: activityForm.status || 'No status', date: null })
-      }
+    if (!activityEditId && !completeStatusName) {
+      setActivityError('Complete activity status is missing in settings.')
+      setActivitySaving(false)
+      return
+    }
+    if (shouldMoveStage && isClosedStageName(selectedStageName) && !isTerminalActivity) {
+      const blockers = [{ id: 'current', type: activityForm.type || 'Current update', status: activityForm.status || 'No status', date: activityForm.date || null }]
       setLeadCloseBlockers(blockers)
       setBlockedCloseStatus({ id: selectedUpdateStage, name: selectedStageName })
       setActivityError('Before closing this lead, all activities under this lead must be Complete or Cancelled.')
@@ -327,12 +320,12 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       lead_id: lead.id,
       company_id: null,
       assigned_to: lead.assigned_to || null,
-      type: activityForm.type || (isTerminalActivity ? 'Status Update' : ''),
-      priority: isTerminalActivity ? null : (activityForm.priority || null),
+      type: activityForm.type,
+      priority: activityForm.priority || null,
       status: activityForm.status || null,
-      date: activityEditId ? (activityForm.date || null) : null,
-      time: activityEditId ? (activityForm.time || null) : null,
-      description: activityForm.description || (isTerminalActivity ? `Marked activity as ${activityForm.status}.` : ''),
+      date: activityForm.date || null,
+      time: activityForm.time || null,
+      description: activityForm.description,
       updated_at: new Date().toISOString(),
     }
     const result = activityEditId
@@ -340,6 +333,18 @@ function LeadDetail({ leadId, onBack, onEdit }) {
       : await supabase.from('activity').insert([{ ...payload, user_id: getLegacyUserId(profile), created_at: new Date().toISOString() }])
     const { error } = result
     if (error) { setActivitySaving(false); setActivityError(error.message); return }
+    if (!activityEditId) {
+      const openActivityIds = activities
+        .filter(activity => !isTerminalActivityStatus(activity.status))
+        .map(activity => activity.id)
+      if (openActivityIds.length) {
+        const { error: closeError } = await supabase
+          .from('activity')
+          .update({ status: completeStatusName, updated_at: new Date().toISOString() })
+          .in('id', openActivityIds)
+        if (closeError) { setActivitySaving(false); setActivityError(closeError.message); return }
+      }
+    }
     logActivity({
       module: 'activities',
       action: activityEditId ? 'update' : 'create',
@@ -352,43 +357,6 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     if (shouldMoveStage) {
       const moved = await updateLeadStatus(selectedUpdateStage)
       if (!moved) { setActivitySaving(false); return }
-    }
-    if (!activityEditId && activityForm.followup_date) {
-      const followupPayload = {
-        user_id: getLegacyUserId(profile),
-        lead_id: lead.id,
-        company_id: null,
-        assigned_to: lead.assigned_to || null,
-        type: followupType,
-        priority: activityForm.priority || null,
-        status: null,
-        date: activityForm.followup_date,
-        time: activityForm.followup_time || null,
-        description: 'Scheduled follow-up',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-      const { error: followupError } = await supabase.from('activity').insert([followupPayload])
-      if (followupError) { setActivitySaving(false); setActivityError(followupError.message); return }
-      const assignee = followupPayload.assigned_to ? String(followupPayload.assigned_to) : ''
-      if (assignee && assignee !== String(getLegacyUserId(profile) || '')) {
-        await notifyUser(supabase, {
-          userId: parseInt(assignee),
-          actorUserId: getLegacyUserId(profile),
-          title: 'Activity assigned to you',
-          reference: followupPayload.type,
-          companyName: lead.company_name || '',
-          body: `You have been assigned a follow-up${lead.company_name ? ' for ' + lead.company_name : ''}.`,
-          details: [
-            ['Company', lead.company_name || ''],
-            ['Activity Type', followupPayload.type],
-            ['Date', followupPayload.date || ''],
-            ['Time', followupPayload.time || ''],
-            ['Assigned By', getUserName(users, getLegacyUserId(profile))],
-          ],
-          link: '/activities',
-        })
-      }
     }
     setActivitySaving(false)
     resetActivityForm()
@@ -566,34 +534,33 @@ function LeadDetail({ leadId, onBack, onEdit }) {
           </div>
           {activityError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">{activityError}</div>}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select value={activityForm.status} onChange={e => setActivity('status', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Next Activity Status</label>
+            <select value={activityForm.status} onChange={e => setActivity('status', e.target.value)} required className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
               <option value="">Please Select</option>
               {activityStatuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
-            {isTerminalActivity && <p className="mt-1 text-xs text-gray-400">This status closes the activity, so the remaining fields are locked.</p>}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
-              <select value={activityForm.type} onChange={e => setActivity('type', e.target.value)} required={!isTerminalActivity} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`}>
+              <select value={activityForm.type} onChange={e => setActivity('type', e.target.value)} required className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
                 <option value="">Please Select</option>
                 {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Next Contact Date</label>
-              <input type="date" value={activityForm.date} onChange={e => setActivity('date', e.target.value)} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`} />
+              <input type="date" value={activityForm.date} onChange={e => setActivity('date', e.target.value)} required className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-              <input type="time" value={activityForm.time} onChange={e => setActivity('time', e.target.value)} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`} />
+              <input type="time" value={activityForm.time} onChange={e => setActivity('time', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
             </div>
           </div>
           <div className="mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select value={activityForm.priority} onChange={e => setActivity('priority', e.target.value)} disabled={isTerminalActivity} className={`w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`}>
+              <select value={activityForm.priority} onChange={e => setActivity('priority', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
                 <option value="">Please Select</option>
                 {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
               </select>
@@ -604,11 +571,10 @@ function LeadDetail({ leadId, onBack, onEdit }) {
             <textarea
               value={activityForm.description}
               onChange={e => setActivity('description', e.target.value)}
-              required={!isTerminalActivity}
-              disabled={isTerminalActivity}
+              required
               rows={6}
               placeholder="Type detailed progress notes..."
-              className={`w-full min-h-[140px] max-h-[420px] resize-y border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-100 disabled:text-gray-400 ${activityLockedClass}`}
+              className="w-full min-h-[140px] max-h-[420px] resize-y border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </div>
           <div className="border-t border-gray-100 pt-4 mb-4">
@@ -618,26 +584,6 @@ function LeadDetail({ leadId, onBack, onEdit }) {
               {stages.map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
             </select>
           </div>
-          {!activityEditId && <div className="border-t border-gray-100 pt-4 mb-4">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Schedule next follow-up</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input type="date" value={activityForm.followup_date} onChange={e => setActivity('followup_date', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                <input type="time" value={activityForm.followup_time} onChange={e => setActivity('followup_time', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                <select value={activityForm.followup_type} onChange={e => setActivity('followup_type', e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500">
-                  <option value="">Use activity type</option>
-                  {activityTypes.map(t => <option key={t.id} value={t.type}>{t.type}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>}
           <div className="flex justify-end gap-3">
             <button type="button" onClick={resetActivityForm} className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={activitySaving} className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 disabled:opacity-50">
