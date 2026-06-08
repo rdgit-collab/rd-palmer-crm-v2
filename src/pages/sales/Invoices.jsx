@@ -12,7 +12,7 @@ import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
-  X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline, Copy
+  X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline, Copy, RefreshCw
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -1085,6 +1085,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const [customer, setCustomer] = useState(null)
   const [salesContactNumber, setSalesContactNumber] = useState('')
   const [loading, setLoading] = useState(true)
+  const [pdfDownloading, setPdfDownloading] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -1128,10 +1129,14 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const printableHtml = () => invoiceHtml(invoice, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => openPrintable(printableHtml())
   const downloadPdf = async () => {
+    if (pdfDownloading) return
+    setPdfDownloading(true)
     try {
       await downloadHtmlPdf(printableHtml(), pdfFileName(invoice.invoice_number || 'proforma-invoice'))
     } catch (error) {
       alert(error.message || 'Unable to download PDF.')
+    } finally {
+      setPdfDownloading(false)
     }
   }
 
@@ -1150,9 +1155,10 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
             <FileText size={14} /> Preview PDF
           </button>
-          <button onClick={downloadPdf}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
-            <Download size={14} /> Download PDF
+          <button onClick={downloadPdf} disabled={pdfDownloading}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60">
+            {pdfDownloading ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+            {pdfDownloading ? 'Preparing PDF...' : 'Download PDF'}
           </button>
           <button onClick={onClone}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
