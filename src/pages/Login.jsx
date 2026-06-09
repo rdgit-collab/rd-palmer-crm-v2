@@ -26,7 +26,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <img src={loginLogo} alt="RD-Palmer" className="mx-auto mb-4 h-16 w-auto object-contain" />
-          <h1 className="text-2xl font-bold text-[#111111]">CRM</h1>
+          <h1 className="text-2xl font-bold text-[#111111]">CRM SYSTEM</h1>
           <p className="text-gray-400 text-sm mt-1">Sign in to continue</p>
         </div>
         <div className="border border-[#E0E0E0] rounded-xl p-6">
