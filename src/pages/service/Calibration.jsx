@@ -9,6 +9,7 @@ import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
+import radiodetectionLogo from '../../assets/radiodetection-logo.svg'
 import { Plus, Search, Eye, Edit2, Trash2, X, Printer } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -519,10 +520,9 @@ export default function Calibration() {
           @page { size: A4; margin: 0; }
           body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
           .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
-          .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 24px; }
-          .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
-          .company { text-align: right; line-height: 1.35; font-size: 11px; }
-          .company strong { font-size: 12px; }
+          .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-top: 8px; margin-bottom: 24px; }
+          .brand-logo { display: block; height: 36px; width: auto; object-fit: contain; margin: 0; }
+          .radiodetection-logo { display: block; height: 36px; width: auto; max-width: 330px; object-fit: contain; margin: 0; }
           .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin: 8px 0 16px; text-transform: uppercase; }
           .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin-bottom: 18px; }
           .meta-row { display: grid; grid-template-columns: 105px 1fr; gap: 8px; line-height: 1.45; }
@@ -547,12 +547,7 @@ export default function Calibration() {
         <div class="sheet">
           <div class="top">
             <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
-            <div class="company">
-              <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (200301008311)<br>
-              63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
-              Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
-              Website: www.rd-palmer.com
-            </div>
+            <img class="radiodetection-logo" src="${radiodetectionLogo}" alt="Radiodetection">
           </div>
           <div class="doc-title">Calibration Report</div>
           <div class="meta">

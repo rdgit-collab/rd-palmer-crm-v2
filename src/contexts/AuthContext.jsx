@@ -3,6 +3,22 @@ import { supabase } from '../lib/supabase'
 import { effectivePermissionRoleId, hasAdminAccess } from '../lib/roles'
 
 const AuthContext = createContext({})
+const SESSION_STARTED_KEY = 'rdp_crm_session_started_at'
+const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000
+
+function getSessionStartedAt() {
+  const value = Number(localStorage.getItem(SESSION_STARTED_KEY) || 0)
+  return Number.isFinite(value) ? value : 0
+}
+
+function setSessionStartedAt(value = Date.now()) {
+  localStorage.setItem(SESSION_STARTED_KEY, String(value))
+  return value
+}
+
+function clearSessionStartedAt() {
+  localStorage.removeItem(SESSION_STARTED_KEY)
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -12,10 +28,48 @@ export function AuthProvider({ children }) {
   const [authError, setAuthError] = useState('')
   const userIdRef = useRef(null)
   const profileRef = useRef(null)
+  const logoutTimerRef = useRef(null)
+
+  const clearLogoutTimer = () => {
+    if (logoutTimerRef.current) {
+      window.clearTimeout(logoutTimerRef.current)
+      logoutTimerRef.current = null
+    }
+  }
+
+  const scheduleAutoLogout = (startedAt) => {
+    clearLogoutTimer()
+    const remaining = SESSION_TIMEOUT_MS - (Date.now() - startedAt)
+    if (remaining <= 0) {
+      supabase.auth.signOut()
+      return
+    }
+    logoutTimerRef.current = window.setTimeout(() => {
+      supabase.auth.signOut()
+    }, remaining)
+  }
+
+  const ensureActiveSessionWindow = () => {
+    const startedAt = getSessionStartedAt() || setSessionStartedAt()
+    if (Date.now() - startedAt >= SESSION_TIMEOUT_MS) {
+      clearSessionStartedAt()
+      clearLogoutTimer()
+      supabase.auth.signOut()
+      return false
+    }
+    scheduleAutoLogout(startedAt)
+    return true
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const nextUser = session?.user ?? null
+      if (nextUser && !ensureActiveSessionWindow()) {
+        userIdRef.current = null
+        setUser(null)
+        setLoading(false)
+        return
+      }
       userIdRef.current = nextUser?.id ?? null
       setUser(nextUser)
       if (session?.user) fetchProfile(session.user.id)
@@ -26,6 +80,15 @@ export function AuthProvider({ children }) {
       const nextUserId = nextUser?.id ?? null
       const currentUserId = userIdRef.current
       const hasLoadedProfile = Boolean(profileRef.current)
+
+      if (!nextUser) {
+        clearSessionStartedAt()
+        clearLogoutTimer()
+      } else if (event === 'SIGNED_IN') {
+        scheduleAutoLogout(getSessionStartedAt() || setSessionStartedAt())
+      } else if (!ensureActiveSessionWindow()) {
+        return
+      }
 
       if (event === 'TOKEN_REFRESHED') {
         userIdRef.current = nextUserId
@@ -49,7 +112,10 @@ export function AuthProvider({ children }) {
         setLoading(false)
       }
     })
-    return () => subscription.unsubscribe()
+    return () => {
+      clearLogoutTimer()
+      subscription.unsubscribe()
+    }
   }, [])
 
   async function fetchProfile(userId) {
@@ -111,8 +177,16 @@ export function AuthProvider({ children }) {
     return permissions[module] === true
   }
 
-  const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password })
-  const signOut = () => supabase.auth.signOut()
+  const signIn = async (email, password) => {
+    const result = await supabase.auth.signInWithPassword({ email, password })
+    if (!result.error) scheduleAutoLogout(setSessionStartedAt())
+    return result
+  }
+  const signOut = () => {
+    clearSessionStartedAt()
+    clearLogoutTimer()
+    return supabase.auth.signOut()
+  }
 
   return (
     <AuthContext.Provider value={{ user, profile, permissions, loading, authError, signIn, signOut, hasPermission }}>

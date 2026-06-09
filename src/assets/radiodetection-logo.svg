@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 135" role="img" aria-label="Radiodetection">
+  <title>Radiodetection</title>
+  <g fill="#008bd2">
+    <text x="0" y="92" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="72" font-weight="900" letter-spacing="9">RADIODETECTION</text>
+    <text x="827" y="36" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">&reg;</text>
+    <g transform="translate(850 30)" stroke="#008bd2" stroke-width="9" stroke-linecap="square" fill="none">
+      <path d="M0 72 L72 0" />
+      <path d="M24 72 L96 0" />
+      <path d="M48 72 L120 0" />
+      <path d="M72 72 L144 0" />
+      <path d="M96 72 L168 0" />
+      <path d="M0 48 L48 0" />
+      <path d="M120 72 L168 24" />
+      <path d="M144 72 L168 48" />
+    </g>
+  </g>
+</svg>

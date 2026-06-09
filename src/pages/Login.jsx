@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import loginLogo from '../assets/login-company-logo.png'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -24,9 +25,7 @@ export default function Login() {
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-[#CC0000] rounded-xl mb-4">
-            <span className="text-white text-xl font-bold">RD</span>
-          </div>
+          <img src={loginLogo} alt="RD-Palmer" className="mx-auto mb-4 h-16 w-auto object-contain" />
           <h1 className="text-2xl font-bold text-[#111111]">RD Palmer CRM</h1>
           <p className="text-gray-400 text-sm mt-1">Sign in to continue</p>
         </div>
@@ -51,7 +50,7 @@ export default function Login() {
             </button>
           </form>
         </div>
-        <p className="text-center text-gray-300 text-xs mt-6">RD Palmer Sdn Bhd © 2026</p>
+        <p className="text-center text-gray-300 text-xs mt-6">RD-Palmer Technology (M) Sdn Bhd © 2026</p>
       </div>
     </div>
   )
