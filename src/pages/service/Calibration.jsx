@@ -60,6 +60,10 @@ function termPreview(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim()
 }
 
+function stripHtml(value = '') {
+  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
 function TermsSelect({ value, options, onChange }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
@@ -134,6 +138,8 @@ export default function Calibration() {
   const [allUsers, setAllUsers]     = useState([])
   const [serialOptions, setSerialOptions] = useState([])
   const [serialLoading, setSerialLoading] = useState(false)
+  const [ticketSerialOptions, setTicketSerialOptions] = useState([])
+  const [ticketSerialLoading, setTicketSerialLoading] = useState(false)
   const [checklistOptions, setChecklistOptions] = useState([])
   const [termOptions, setTermOptions] = useState([])
   const [checklistRows, setChecklistRows] = useState([])
@@ -256,6 +262,69 @@ export default function Calibration() {
     }
   }
 
+  const loadTicketSerialOptions = async (ticketId, selectedSerial = '', autoFillSingle = false) => {
+    if (!ticketId) {
+      setTicketSerialOptions([])
+      return []
+    }
+    setTicketSerialLoading(true)
+    try {
+      const { data, error: err } = await supabase
+        .from('ticket_product')
+        .select('id, sku, item_description, serial_number')
+        .eq('ticket_id', ticketId)
+        .order('id')
+      if (err) throw err
+
+      const options = (data || [])
+        .filter(item => String(item.serial_number || '').trim())
+        .map(item => ({
+          id: item.id,
+          serial_number: String(item.serial_number || '').trim(),
+          sku: item.sku || '',
+          item_description: stripHtml(item.item_description || ''),
+        }))
+
+      const cleanSelected = String(selectedSerial || '').trim()
+      const hasSelected = cleanSelected && options.some(item => item.serial_number === cleanSelected)
+      const nextOptions = hasSelected || !cleanSelected
+        ? options
+        : [
+            ...options,
+            {
+              id: `current-${cleanSelected}`,
+              serial_number: cleanSelected,
+              sku: '',
+              item_description: 'Current saved serial',
+            },
+          ]
+
+      setTicketSerialOptions(nextOptions)
+      if (autoFillSingle) {
+        setForm(f => ({
+          ...f,
+          serial_number: nextOptions.length === 1 ? nextOptions[0].serial_number : '',
+        }))
+      }
+      return nextOptions
+    } catch {
+      const cleanSelected = String(selectedSerial || '').trim()
+      const fallback = cleanSelected
+        ? [{ id: `current-${cleanSelected}`, serial_number: cleanSelected, sku: '', item_description: 'Current saved serial' }]
+        : []
+      setTicketSerialOptions(fallback)
+      return fallback
+    } finally {
+      setTicketSerialLoading(false)
+    }
+  }
+
+  const handleTicketChange = async (ticketId) => {
+    setForm(f => ({ ...f, ticket_id: ticketId, serial_number: '' }))
+    setSerialOptions([])
+    await loadTicketSerialOptions(ticketId, '', true)
+  }
+
   const loadChecklistForCalibration = async (id) => {
     if (!id) return presetChecklistRows()
     const { data, error: err } = await supabase
@@ -277,6 +346,7 @@ export default function Calibration() {
     setEditId(null)
     setError('')
     setView('form')
+    setTicketSerialOptions([])
     loadSerialOptions()
     try {
       const certificateNumber = await generateCertificateNumber()
@@ -299,7 +369,8 @@ export default function Calibration() {
     setEditId(r.id)
     setError('')
     setView('form')
-    loadSerialOptions(r.serial_number || '')
+    loadTicketSerialOptions(r.ticket_id, r.serial_number || '')
+    if (!r.ticket_id) loadSerialOptions(r.serial_number || '')
   }
 
   const openDetail = async (r) => {
@@ -606,24 +677,41 @@ export default function Calibration() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Ticket</label>
-            <select value={form.ticket_id} onChange={e => setForm(f => ({...f, ticket_id: e.target.value}))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+            <select value={form.ticket_id} onChange={e => handleTicketChange(e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
               <option value="">Please Select</option>
               {tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} - {t.company_name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
-            <input type="text" list="calibration-serial-options" value={form.serial_number}
-              onFocus={e => { e.target.select(); loadSerialOptions(form.serial_number) }}
-              onChange={e => { setForm(f => ({...f, serial_number: e.target.value})); loadSerialOptions(e.target.value) }}
-              placeholder="Search serial number" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-            <datalist id="calibration-serial-options">
-              {serialOptions.map(item => <option key={item.id} value={item.serial_number}>{[item.sku, item.customername].filter(Boolean).join(' - ')}</option>)}
-            </datalist>
-            {serialLoading && (
+            {ticketSerialOptions.length > 0 ? (
+              <select
+                value={form.serial_number}
+                onChange={e => setForm(f => ({ ...f, serial_number: e.target.value }))}
+                className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+              >
+                <option value="">Please Select</option>
+                {ticketSerialOptions.map(item => (
+                  <option key={item.id} value={item.serial_number}>
+                    {[item.serial_number, item.sku, item.item_description].filter(Boolean).join(' - ')}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <input type="text" list="calibration-serial-options" value={form.serial_number}
+                  onFocus={e => { e.target.select(); loadSerialOptions(form.serial_number) }}
+                  onChange={e => { setForm(f => ({...f, serial_number: e.target.value})); loadSerialOptions(e.target.value) }}
+                  placeholder="Search serial number" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                <datalist id="calibration-serial-options">
+                  {serialOptions.map(item => <option key={item.id} value={item.serial_number}>{[item.sku, item.customername].filter(Boolean).join(' - ')}</option>)}
+                </datalist>
+              </>
+            )}
+            {(ticketSerialLoading || serialLoading) && (
               <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
                 <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-red-600 animate-spin" />
-                Searching serial numbers...
+                {ticketSerialLoading ? 'Loading ticket serial numbers...' : 'Searching serial numbers...'}
               </div>
             )}
           </div>
