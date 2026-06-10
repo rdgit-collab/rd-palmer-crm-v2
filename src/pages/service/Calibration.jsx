@@ -560,30 +560,25 @@ export default function Calibration() {
           @page { size: A4; margin: 0; }
           body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 9px; }
           .sheet { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 17mm 15mm 30mm; box-sizing: border-box; }
-          .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin: 0 0 20mm; }
-          .brand-logo { display: block; width: 190px; height: auto; object-fit: contain; margin: 0; }
-          .radiodetection-logo { display: block; width: 390px; height: auto; object-fit: contain; margin: 4px 0 0 auto; }
+          .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin: 0 0 18mm; }
+          .brand-logo { display: block; width: 170px; height: auto; object-fit: contain; margin: 0; }
+          .radiodetection-logo { display: block; width: 310px; height: auto; object-fit: contain; margin: 6px 0 0 auto; }
           .meta { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; margin-bottom: 8px; }
           .customer-block, .certificate-block { line-height: 1.25; }
           .customer-block .label, .certificate-block .label { font-weight: 400; }
           .certificate-block { text-align: right; }
           .summary-title { text-align: center; font-weight: 700; margin: 8px 0 6px; }
-          table { width: 100%; border-collapse: collapse; border: 1px solid #222; table-layout: fixed; }
+          table { width: calc(100% - 16px); margin: 0 8px; border-collapse: collapse; border: 1px solid #222; table-layout: fixed; }
           th, td { border: 1px solid #222; padding: 7px 7px; vertical-align: middle; line-height: 1.2; }
-          th { background: #fff; font-weight: 400; text-align: center; }
-          th.description, td.description { width: 62%; text-align: left; }
-          th.conducted, td.conducted { width: 20%; text-align: center; }
-          th.result, td.result { width: 18%; text-align: center; }
+          th { background: #fff; font-weight: 700; text-align: center; }
+          th.description, td.description { width: 60%; text-align: left; }
+          th.conducted, td.conducted { width: 21%; text-align: center; }
+          th.result, td.result { width: 19%; text-align: center; }
           .note { margin: 9px 7px 0; line-height: 1.35; }
           .terms { margin: 18px 0 0; line-height: 1.22; white-space: pre-wrap; overflow-wrap: anywhere; }
-          .footer { position: absolute; left: 15mm; right: 15mm; bottom: 8mm; display: grid; grid-template-columns: 1fr 62px; align-items: end; gap: 16px; font-size: 8px; line-height: 1.25; }
+          .footer { position: absolute; left: 15mm; right: 15mm; bottom: 8mm; font-size: 8px; line-height: 1.25; }
           .service-title { font-weight: 700; text-decoration: underline; margin-bottom: 7px; }
           .company-red { color: #c43f3f; font-weight: 700; }
-          .qr-wrap { justify-self: end; text-align: center; color: #c43f3f; font-weight: 700; font-size: 7px; }
-          .qr-box { width: 38px; height: 38px; margin: 2px auto 0; border: 1px solid #111; background:
-            linear-gradient(90deg, #111 50%, transparent 50%) 0 0 / 8px 8px,
-            linear-gradient(#111 50%, transparent 50%) 0 0 / 8px 8px,
-            #fff; opacity: .8; }
           @media print {
             body { background: #fff; }
             .sheet { width: auto; min-height: 297mm; margin: 0; padding: 17mm 15mm 30mm; }
@@ -620,17 +615,11 @@ export default function Calibration() {
           </div>
           <div class="terms">${escapeHtml(terms)}</div>
           <div class="footer">
-            <div>
-              <div class="service-title">Authorised Service Centre</div>
-              <div class="company-red">RD-PALMER TECHNOLOGY (M) SDN BHD</div>
-              <div>Co. Reg. 200301008331 / 610731-W</div>
-              <div>No. 63, Jalan Seri Utara 1, Sri Utara Kipark, 68100 Kuala Lumpur.</div>
-              <div>Tel: +603 6250 2071 &nbsp; Email: info@rd-palmer.com</div>
-            </div>
-            <div class="qr-wrap">
-              <div>SCAN ME !</div>
-              <div class="qr-box" aria-label="QR code placeholder"></div>
-            </div>
+            <div class="service-title">Authorised Service Centre</div>
+            <div class="company-red">RD-PALMER TECHNOLOGY (M) SDN BHD</div>
+            <div>Co. Reg. 200301008331 / 610731-W</div>
+            <div>No. 63, Jalan Seri Utara 1, Sri Utara Kipark, 68100 Kuala Lumpur.</div>
+            <div>Tel: +603 6250 2071 Email: info@rd-palmer.com</div>
           </div>
         </div>
       </body>
