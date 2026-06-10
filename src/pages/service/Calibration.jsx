@@ -9,7 +9,7 @@ import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
-import radiodetectionLogo from '../../assets/radiodetection-logo.svg'
+import radiodetectionLogo from '../../assets/radiodetection-logo.png'
 import { Plus, Search, Eye, Edit2, Trash2, X, Printer } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -19,6 +19,23 @@ const SEARCH_FIELDS = [
   { value: 'serial_number', label: 'Serial No.', placeholder: 'Search serial number...' },
   { value: 'ticket', label: 'Ticket', placeholder: 'Search ticket number...' },
 ]
+
+const DEFAULT_CALIBRATION_TERMS = `General
+The Radiodetection locator and transmitter are robust, durable and weatherproof. However you can extend your equipment's life by the following these care and maintenance guidelines.
+
+Storage
+Store the equipment in a clean and dry environment. Ensure all terminals and connection sockets are clean, free of debris and corrosion and are undamaged. Do not use this equipment when damaged or faulty.
+
+Batteries and power supply
+Use good quality Alkaline or NiMH batteries only. When using an AC adapter, use only Radiodetection approved adapters. Only use Radiodetection approved Li-Ion battery packs.
+
+Cleaning
+WARNING! Do not attempt to clean this equipment when it is powered or connected to any power source, including batteries, adapters and live cables.
+
+Ensure the equipment is clean and dry whenever possible. Clean with a soft, moistened cloth. If using this equipment in foul water systems or other areas where biological hazards may be present, use an appropriate disinfectant. Do not use abrasive materials or chemicals as they may damage the casing, including the reflective labels. Do no use high pressure hose.
+
+Service and Maintenance
+All safety equipment, it is recommended (and may be required by law) that they are serviced at least once a year, either at Radiodetection or a Radiodetection approved repair center.`
 
 function statusColor(s) {
   if (!s) return 'bg-gray-100 text-gray-600'
@@ -63,6 +80,17 @@ function termPreview(value = '') {
 
 function stripHtml(value = '') {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function customerAddressLine(customer) {
+  if (!customer) return '-'
+  const lines = [
+    customer.address1,
+    customer.address2,
+    [customer.city, customer.state].filter(Boolean).join(', '),
+    [customer.zipcode, customer.country].filter(Boolean).join(' '),
+  ]
+  return lines.map(line => String(line || '').trim()).filter(Boolean).join(', ') || '-'
 }
 
 function TermsSelect({ value, options, onChange }) {
@@ -135,6 +163,7 @@ export default function Calibration() {
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
   const [tickets, setTickets]       = useState([])
+  const [customers, setCustomers]   = useState([])
   const [users, setUsers]           = useState([])
   const [allUsers, setAllUsers]     = useState([])
   const [serialOptions, setSerialOptions] = useState([])
@@ -163,14 +192,16 @@ export default function Calibration() {
 
   useEffect(() => {
     const run = async () => {
-      const [tickR, activeUsers, legacyUsers, checklistR, termsR] = await Promise.all([
-        fetchAllRows('ticket', 'id, ticket_id, company_name', 'id', { ascending: false }),
+      const [tickR, customerR, activeUsers, legacyUsers, checklistR, termsR] = await Promise.all([
+        fetchAllRows('ticket', 'id, ticket_id, company_id, company_name', 'id', { ascending: false }),
+        fetchAllRows('customer', 'id, company_name, address1, address2, city, state, zipcode, country', 'company_name', { ascending: true }).catch(() => []),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
         supabase.from('checklist').select('id, name').order('name').limit(500),
         supabase.from('termcondition').select('id, name').order('id').limit(200),
       ])
       setTickets(tickR || [])
+      setCustomers(customerR || [])
       setUsers(activeUsers || [])
       setAllUsers(legacyUsers || [])
       if (!checklistR.error) setChecklistOptions(checklistR.data || [])
@@ -503,14 +534,23 @@ export default function Calibration() {
   }
 
   const calibrationReportHtml = () => {
-    const checklistRowsHtml = detailChecklist.map((item, index) => `
+    const ticket = tickets.find(t => String(t.id) === String(detail.ticket_id))
+    const customer = customers.find(c => String(c.id) === String(ticket?.company_id))
+    const customerName = customer?.company_name || ticket?.company_name || '-'
+    const customerAddress = customerAddressLine(customer)
+    const conductedBy = getUserName(detail.conduct_by)
+    const selectedTerms = getTermName(detail.termid)
+    const terms = selectedTerms && selectedTerms !== '-' ? selectedTerms : DEFAULT_CALIBRATION_TERMS
+    const checklistRowsHtml = detailChecklist.map(item => `
       <tr>
-        <td>${index + 1}</td>
-        <td>${escapeHtml(item.name || '-')}</td>
-        <td>${escapeHtml(checklistResult(item.passfail))}</td>
+        <td class="description">${escapeHtml(item.name || '-')}</td>
+        <td class="conducted">${escapeHtml(conductedBy)}</td>
+        <td class="result">${escapeHtml(checklistResult(item.passfail))}</td>
       </tr>
     `).join('')
-    const terms = getTermName(detail.termid)
+    const noteLine = detail.serial_number
+      ? `Note: ${detail.serial_number} Serial Number : ${detail.snumber || '-'} eCal - ${detail.status || '-'}`
+      : `Note: ${detail.snumber || '-'} eCal - ${detail.status || '-'}`
 
     return `<!doctype html>
     <html>
@@ -518,28 +558,35 @@ export default function Calibration() {
         <title>${escapeHtml(detail.certificate_number || 'Calibration Report')}</title>
         <style>
           @page { size: A4; margin: 0; }
-          body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; }
-          .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
-          .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-top: 8px; margin-bottom: 24px; }
-          .brand-logo { display: block; height: 36px; width: auto; object-fit: contain; margin: 0; }
-          .radiodetection-logo { display: block; height: 36px; width: auto; max-width: 330px; object-fit: contain; margin: 0; }
-          .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin: 8px 0 16px; text-transform: uppercase; }
-          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; margin-bottom: 18px; }
-          .meta-row { display: grid; grid-template-columns: 105px 1fr; gap: 8px; line-height: 1.45; }
-          .meta-row span:first-child { color: #555; font-weight: 700; }
-          .value { font-weight: 600; overflow-wrap: anywhere; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #222; }
-          th, td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #e5e5e5; }
-          th { background: #d4d4d4; color: #111; font-weight: 700; }
-          td:first-child, th:first-child { width: 36px; text-align: center; }
-          td:last-child, th:last-child { width: 90px; }
-          tr:last-child td { border-bottom: 0; }
-          .section { margin-top: 18px; line-height: 1.45; break-inside: avoid; page-break-inside: avoid; }
-          .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin: 0 0 6px; }
-          .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+          body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 9px; }
+          .sheet { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 17mm 15mm 30mm; box-sizing: border-box; }
+          .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin: 0 0 20mm; }
+          .brand-logo { display: block; width: 190px; height: auto; object-fit: contain; margin: 0; }
+          .radiodetection-logo { display: block; width: 390px; height: auto; object-fit: contain; margin: 4px 0 0 auto; }
+          .meta { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; margin-bottom: 8px; }
+          .customer-block, .certificate-block { line-height: 1.25; }
+          .customer-block .label, .certificate-block .label { font-weight: 400; }
+          .certificate-block { text-align: right; }
+          .summary-title { text-align: center; font-weight: 700; margin: 8px 0 6px; }
+          table { width: 100%; border-collapse: collapse; border: 1px solid #222; table-layout: fixed; }
+          th, td { border: 1px solid #222; padding: 7px 7px; vertical-align: middle; line-height: 1.2; }
+          th { background: #fff; font-weight: 400; text-align: center; }
+          th.description, td.description { width: 62%; text-align: left; }
+          th.conducted, td.conducted { width: 20%; text-align: center; }
+          th.result, td.result { width: 18%; text-align: center; }
+          .note { margin: 9px 7px 0; line-height: 1.35; }
+          .terms { margin: 18px 0 0; line-height: 1.22; white-space: pre-wrap; overflow-wrap: anywhere; }
+          .footer { position: absolute; left: 15mm; right: 15mm; bottom: 8mm; display: grid; grid-template-columns: 1fr 62px; align-items: end; gap: 16px; font-size: 8px; line-height: 1.25; }
+          .service-title { font-weight: 700; text-decoration: underline; margin-bottom: 7px; }
+          .company-red { color: #c43f3f; font-weight: 700; }
+          .qr-wrap { justify-self: end; text-align: center; color: #c43f3f; font-weight: 700; font-size: 7px; }
+          .qr-box { width: 38px; height: 38px; margin: 2px auto 0; border: 1px solid #111; background:
+            linear-gradient(90deg, #111 50%, transparent 50%) 0 0 / 8px 8px,
+            linear-gradient(#111 50%, transparent 50%) 0 0 / 8px 8px,
+            #fff; opacity: .8; }
           @media print {
             body { background: #fff; }
-            .sheet { width: auto; min-height: 0; margin: 0; padding: 15mm; }
+            .sheet { width: auto; min-height: 297mm; margin: 0; padding: 17mm 15mm 30mm; }
           }
         </style>
       </head>
@@ -549,25 +596,42 @@ export default function Calibration() {
             <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
             <img class="radiodetection-logo" src="${radiodetectionLogo}" alt="Radiodetection">
           </div>
-          <div class="doc-title">Calibration Report</div>
           <div class="meta">
-            <div class="meta-row"><span>Certificate No.:</span><span class="value">${escapeHtml(detail.certificate_number || '-')}</span></div>
-            <div class="meta-row"><span>Date:</span><span class="value">${formatDate(detail.created_at, '-')}</span></div>
-            <div class="meta-row"><span>Ticket:</span><span class="value">${escapeHtml(getTicketLabel(detail.ticket_id))}</span></div>
-            <div class="meta-row"><span>Status:</span><span class="value">${escapeHtml(detail.status || '-')}</span></div>
-            <div class="meta-row"><span>Serial Number:</span><span class="value">${escapeHtml(detail.serial_number || '-')}</span></div>
-            <div class="meta-row"><span>Std. Number:</span><span class="value">${escapeHtml(detail.snumber || '-')}</span></div>
-            <div class="meta-row"><span>Conducted By:</span><span class="value">${escapeHtml(getUserName(detail.conduct_by))}</span></div>
+            <div class="customer-block">
+              <div><span class="label">Customer:</span> ${escapeHtml(customerName)}</div>
+              <div><span class="label">Address:</span> ${escapeHtml(customerAddress)}</div>
+            </div>
+            <div class="certificate-block">
+              <div><span class="label">Certificate No:</span> ${escapeHtml(detail.certificate_number || '-')}</div>
+              <div><span class="label">Date:</span> ${formatDate(detail.created_at, '-')}</div>
+            </div>
           </div>
-          <div class="section">
-            <h2>Checklist</h2>
-            <table>
-              <thead><tr><th>#</th><th>Checklist</th><th>Result</th></tr></thead>
-              <tbody>${checklistRowsHtml || '<tr><td colspan="3" style="text-align:center;color:#777;">No checklist rows.</td></tr>'}</tbody>
-            </table>
+          <div class="summary-title">Summary Verification</div>
+          <table>
+            <thead>
+              <tr><th class="description">Description</th><th class="conducted">Conducted<br>by</th><th class="result">Result</th></tr>
+            </thead>
+            <tbody>${checklistRowsHtml || '<tr><td colspan="3" style="text-align:center;color:#777;">No checklist rows.</td></tr>'}</tbody>
+          </table>
+          <div class="note">
+            <div>${escapeHtml(noteLine)}</div>
+            <div>Service by non-approved service centers or operators may void the manufacturer's warranty.</div>
+            ${detail.remark ? `<div>${escapeHtml(detail.remark)}</div>` : ''}
           </div>
-          ${terms && terms !== '-' ? `<div class="section"><h2>Terms & Conditions</h2><div class="pre">${escapeHtml(terms)}</div></div>` : ''}
-          ${detail.remark ? `<div class="section"><h2>Remark</h2><div class="pre">${escapeHtml(detail.remark)}</div></div>` : ''}
+          <div class="terms">${escapeHtml(terms)}</div>
+          <div class="footer">
+            <div>
+              <div class="service-title">Authorised Service Centre</div>
+              <div class="company-red">RD-PALMER TECHNOLOGY (M) SDN BHD</div>
+              <div>Co. Reg. 200301008331 / 610731-W</div>
+              <div>No. 63, Jalan Seri Utara 1, Sri Utara Kipark, 68100 Kuala Lumpur.</div>
+              <div>Tel: +603 6250 2071 &nbsp; Email: info@rd-palmer.com</div>
+            </div>
+            <div class="qr-wrap">
+              <div>SCAN ME !</div>
+              <div class="qr-box" aria-label="QR code placeholder"></div>
+            </div>
+          </div>
         </div>
       </body>
     </html>`
@@ -578,7 +642,17 @@ export default function Calibration() {
     if (!win) return
     win.document.write(calibrationReportHtml())
     win.document.close()
-    win.onload = () => { win.focus(); win.print() }
+    win.onload = async () => {
+      const images = Array.from(win.document.images)
+      await Promise.all(images.map(img => (
+        img.complete ? Promise.resolve() : new Promise(resolve => {
+          img.onload = resolve
+          img.onerror = resolve
+        })
+      )))
+      win.focus()
+      win.print()
+    }
   }
 
   if (view === 'list') return (
