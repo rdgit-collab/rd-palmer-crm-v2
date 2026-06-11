@@ -4,7 +4,7 @@ import { hasAdminAccess, isSalesRole, isSuperAdminRole, roleLabel } from '../../
 import {
   LayoutDashboard, Building2, UserCircle, TrendingUp, FileText, Receipt,
   Activity, Ticket, Wrench, MapPin, RotateCcw, Gauge, Hash, Package,
-  Settings, Users, X, User, LogOut,
+  CalendarDays, Settings, Users, X, User, LogOut,
 } from 'lucide-react'
 
 const salesItems = [
@@ -17,6 +17,7 @@ const salesItems = [
   { name: 'Invoices',     href: '/invoices',         icon: Receipt,     module: 'invoices' },
   { name: 'Tickets',      href: '/tickets',          icon: Ticket,      module: 'tickets' },
   { name: 'Tasks',        href: '/tasks',            icon: Wrench,      module: 'tasks' },
+  { name: 'Booking',      href: '/booking',          icon: CalendarDays,module: 'booking' },
 ]
 
 const serviceItems = [
@@ -27,6 +28,7 @@ const serviceItems = [
   { name: 'RMA',            href: '/rma',                icon: RotateCcw,    module: 'rma' },
   { name: 'Calibration',    href: '/calibration',        icon: Gauge,        module: 'calibration' },
   { name: 'Serial Numbers', href: '/serial-numbers',     icon: Hash,         module: 'serial-numbers' },
+  { name: 'Booking',        href: '/booking',            icon: CalendarDays, module: 'booking' },
 ]
 
 const adminItems = [
@@ -47,6 +49,8 @@ const adminItems = [
   { name: 'RMA',            href: '/rma',            icon: RotateCcw},
   { name: 'Calibration',    href: '/calibration',    icon: Gauge    },
   { name: 'Serial Numbers', href: '/serial-numbers', icon: Hash     },
+  { divider: 'OPERATIONS' },
+  { name: 'Booking',        href: '/booking',        icon: CalendarDays },
   { divider: 'ADMIN' },
   { name: 'Users',     href: '/admin/users', icon: Users   },
   { name: 'Catalogue', href: '/catalogue',   icon: Package },

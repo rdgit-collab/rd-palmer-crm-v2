@@ -492,6 +492,22 @@ function RichTemplateEditor({ value, onChange, placeholder }) {
   )
 }
 
+function TemplateTextBlock({ label, value, onChange, placeholder }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-800 text-sm">{label}</h3>
+        <p className="text-xs text-gray-400 mt-0.5">Pre-filled when staff create a new document — they can still edit before saving.</p>
+      </div>
+      <RichTemplateEditor
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+}
+
 function TemplatesPanel() {
   const [vals, setVals] = useState({
     quotation_notes: '',
@@ -529,28 +545,14 @@ function TemplatesPanel() {
 
   if (!loaded) return <div className="text-sm text-gray-400 py-6 text-center">Loading templates...</div>
 
-  const TextBlock = ({ label, fieldKey, placeholder }) => (
-    <div className="bg-white border border-gray-200 rounded overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-semibold text-gray-800 text-sm">{label}</h3>
-        <p className="text-xs text-gray-400 mt-0.5">Pre-filled when staff create a new document — they can still edit before saving.</p>
-      </div>
-      <RichTemplateEditor
-        value={vals[fieldKey]}
-        onChange={value => setVals(prev => ({ ...prev, [fieldKey]: value }))}
-        placeholder={placeholder}
-      />
-    </div>
-  )
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <TextBlock label="Quotation — Notes" fieldKey="quotation_notes" placeholder="e.g. Thank you for your interest. This quotation is valid for 30 days." />
-        <TextBlock label="Quotation — Terms & Conditions" fieldKey="quotation_terms" placeholder="e.g. 1. Prices are subject to change without notice..." />
-        <TextBlock label="Invoice — Notes" fieldKey="invoice_notes" placeholder="e.g. Thank you for your business. Please retain this invoice for your records." />
-        <TextBlock label="Invoice — Terms & Conditions" fieldKey="invoice_terms" placeholder="e.g. Payment is due within 30 days of invoice date..." />
-        <TextBlock label="Task — Terms & Conditions" fieldKey="task_terms" placeholder="e.g. Service work is recorded based on findings at site..." />
+        <TemplateTextBlock label="Quotation — Notes" value={vals.quotation_notes} onChange={value => setVals(prev => ({ ...prev, quotation_notes: value }))} placeholder="e.g. Thank you for your interest. This quotation is valid for 30 days." />
+        <TemplateTextBlock label="Quotation — Terms & Conditions" value={vals.quotation_terms} onChange={value => setVals(prev => ({ ...prev, quotation_terms: value }))} placeholder="e.g. 1. Prices are subject to change without notice..." />
+        <TemplateTextBlock label="Invoice — Notes" value={vals.invoice_notes} onChange={value => setVals(prev => ({ ...prev, invoice_notes: value }))} placeholder="e.g. Thank you for your business. Please retain this invoice for your records." />
+        <TemplateTextBlock label="Invoice — Terms & Conditions" value={vals.invoice_terms} onChange={value => setVals(prev => ({ ...prev, invoice_terms: value }))} placeholder="e.g. Payment is due within 30 days of invoice date..." />
+        <TemplateTextBlock label="Task — Terms & Conditions" value={vals.task_terms} onChange={value => setVals(prev => ({ ...prev, task_terms: value }))} placeholder="e.g. Service work is recorded based on findings at site..." />
       </div>
       <div className="flex items-center gap-3">
         <button onClick={handleSave} disabled={saving}
@@ -574,6 +576,7 @@ const SALES_MODULES = [
   { module: 'invoices',   label: 'Invoices' },
   { module: 'tickets',    label: 'Tickets' },
   { module: 'tasks',      label: 'Tasks' },
+  { module: 'booking',    label: 'Booking' },
 ]
 const SERVICE_MODULES = [
   { module: 'tickets',       label: 'Tickets' },
@@ -582,7 +585,304 @@ const SERVICE_MODULES = [
   { module: 'rma',           label: 'RMA' },
   { module: 'calibration',   label: 'Calibration' },
   { module: 'serial-numbers',label: 'Serial Numbers' },
+  { module: 'booking',       label: 'Booking' },
 ]
+
+const BOOKING_ITEM_STATUS_OPTIONS = [
+  { value: 'available', label: 'Available' },
+  { value: 'booked', label: 'Booked' },
+  { value: 'loaned', label: 'Loaned' },
+  { value: 'under_repair', label: 'Under Repair' },
+  { value: 'missing', label: 'Missing' },
+  { value: 'check_required', label: 'Check Required' },
+]
+
+function normaliseBookingPayload(fields, form, { editing = false } = {}) {
+  const payload = {}
+  fields.forEach(field => {
+    if (editing && field.createOnly) return
+    const raw = form[field.key]
+    if (field.type === 'checkbox') {
+      payload[field.key] = Boolean(raw)
+    } else if (field.type === 'number') {
+      payload[field.key] = raw === '' || raw == null ? null : Number(raw)
+    } else {
+      payload[field.key] = raw === '' || raw == null ? null : String(raw).trim()
+    }
+  })
+  return payload
+}
+
+function emptyBookingForm(fields) {
+  return Object.fromEntries(fields.map(field => [
+    field.key,
+    field.defaultValue ?? (field.type === 'checkbox' ? false : ''),
+  ]))
+}
+
+function BookingFieldInput({ field, value, onChange, disabled = false }) {
+  if (field.type === 'checkbox') {
+    return (
+      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <input type="checkbox" checked={Boolean(value)} disabled={disabled} onChange={e => onChange(e.target.checked)} />
+        {field.label}
+      </label>
+    )
+  }
+  if (field.type === 'select') {
+    return (
+      <select value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value)}
+        className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-400">
+        <option value="">Select {field.label}</option>
+        {(field.options || []).map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    )
+  }
+  if (field.multiline) {
+    return (
+      <textarea value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value)} rows={2}
+        placeholder={field.placeholder || field.label}
+        className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 resize-y disabled:bg-gray-50 disabled:text-gray-400" />
+    )
+  }
+  return (
+    <input type={field.type === 'number' ? 'number' : 'text'} value={value ?? ''} disabled={disabled}
+      onChange={e => onChange(e.target.value)} placeholder={field.placeholder || field.label}
+      className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-400" />
+  )
+}
+
+function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
+  const [adding, setAdding] = useState(false)
+  const [editId, setEditId] = useState(null)
+  const [newForm, setNewForm] = useState(() => emptyBookingForm(fields))
+  const [editForm, setEditForm] = useState({})
+
+  const setField = (setter, key, value) => setter(prev => ({ ...prev, [key]: value }))
+
+  const startEdit = (row) => {
+    setEditId(row.id)
+    setEditForm(Object.fromEntries(fields.map(field => [field.key, row[field.key] ?? field.defaultValue ?? ''])))
+  }
+
+  const saveNew = async () => {
+    const requiredMissing = fields.some(field => field.required && !String(newForm[field.key] || '').trim())
+    if (requiredMissing) return
+    await onAdd(normaliseBookingPayload(fields, newForm))
+    setNewForm(emptyBookingForm(fields))
+    setAdding(false)
+  }
+
+  const saveEdit = async () => {
+    const requiredMissing = fields.some(field => !field.createOnly && field.required && !String(editForm[field.key] || '').trim())
+    if (requiredMissing) return
+    await onUpdate(editId, normaliseBookingPayload(fields, editForm, { editing: true }))
+    setEditId(null)
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-800 text-sm">{title}</h3>
+        <button onClick={() => setAdding(true)} className="flex items-center gap-1 text-xs bg-red-600 text-white px-2.5 py-1.5 hover:bg-red-700">
+          <Plus size={12} /> Add
+        </button>
+      </div>
+      <div className="divide-y divide-gray-100 max-h-[480px] overflow-y-auto">
+        {adding && (
+          <div className="p-4 bg-red-50 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {fields.map(field => (
+                <label key={field.key} className={field.wide ? 'md:col-span-2' : ''}>
+                  {field.type !== 'checkbox' && <span className="block text-xs font-medium text-gray-500 mb-1">{field.label}{field.required ? ' *' : ''}</span>}
+                  <BookingFieldInput field={field} value={newForm[field.key]} onChange={value => setField(setNewForm, field.key, value)} />
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={saveNew} className="inline-flex items-center gap-1 text-xs bg-green-600 text-white px-3 py-1.5 hover:bg-green-700"><Check size={13} /> Save</button>
+              <button onClick={() => { setAdding(false); setNewForm(emptyBookingForm(fields)) }} className="inline-flex items-center gap-1 text-xs border border-gray-200 px-3 py-1.5 hover:bg-white"><X size={13} /> Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {rows.length === 0 && !adding ? <div className="px-4 py-6 text-sm text-gray-400 text-center">No entries yet.</div> : null}
+
+        {rows.map(row => (
+          <div key={row.id} className="p-4 hover:bg-gray-50">
+            {editId === row.id ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {fields.map(field => (
+                    <label key={field.key} className={field.wide ? 'md:col-span-2' : ''}>
+                      {field.type !== 'checkbox' && <span className="block text-xs font-medium text-gray-500 mb-1">{field.label}{field.required ? ' *' : ''}</span>}
+                      <BookingFieldInput field={field} value={editForm[field.key]} disabled={field.createOnly} onChange={value => setField(setEditForm, field.key, value)} />
+                    </label>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={saveEdit} className="inline-flex items-center gap-1 text-xs bg-green-600 text-white px-3 py-1.5 hover:bg-green-700"><Check size={13} /> Save</button>
+                  <button onClick={() => setEditId(null)} className="inline-flex items-center gap-1 text-xs border border-gray-200 px-3 py-1.5 hover:bg-white"><X size={13} /> Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">{row.name}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {fields
+                      .filter(field => field.key !== 'name' && row[field.key] !== null && row[field.key] !== undefined && row[field.key] !== '')
+                      .slice(0, 4)
+                      .map(field => `${field.label}: ${field.type === 'checkbox' ? (row[field.key] ? 'Yes' : 'No') : row[field.key]}`)
+                      .join(' · ')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => startEdit(row)} className="text-gray-400 hover:text-gray-600"><Edit2 size={14} /></button>
+                  <button onClick={() => onDelete(row.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BookingSettingsPanel() {
+  const [venues, setVenues] = useState([])
+  const [categories, setCategories] = useState([])
+  const [groups, setGroups] = useState([])
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    const [venueResult, categoryResult, groupResult, itemResult] = await Promise.all([
+      supabase.from('booking_venues').select('*').order('sort_order'),
+      supabase.from('booking_equipment_categories').select('*').order('sort_order'),
+      supabase.from('booking_equipment_groups').select('*').order('sort_order'),
+      supabase.from('booking_equipment_items').select('*').order('sort_order'),
+    ])
+    const firstError = [venueResult, categoryResult, groupResult, itemResult].find(result => result.error)?.error
+    if (firstError) {
+      setError(firstError.message)
+      setLoading(false)
+      return
+    }
+    setVenues(venueResult.data || [])
+    setCategories(categoryResult.data || [])
+    setGroups(groupResult.data || [])
+    setItems(itemResult.data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const mutate = async (tableName, action, payload, id) => {
+    setError('')
+    const query = action === 'insert'
+      ? supabase.from(tableName).insert([payload])
+      : action === 'update'
+        ? supabase.from(tableName).update(payload).eq('id', id)
+        : supabase.from(tableName).delete().eq('id', id)
+    const { error: mutationError } = await query
+    if (mutationError) {
+      setError(mutationError.message)
+      return
+    }
+    logActivity({
+      module: 'settings',
+      action,
+      recordTable: tableName,
+      recordId: id || payload.id,
+      recordLabel: payload.name,
+      summary: `${action === 'insert' ? 'Created' : action === 'update' ? 'Updated' : 'Deleted'} booking dropdown data`,
+    })
+    await load()
+  }
+
+  const deleteRow = (tableName, id) => {
+    if (!window.confirm('Delete this dropdown item? Existing linked records may prevent deletion.')) return
+    mutate(tableName, 'delete', {}, id)
+  }
+
+  const categoryOptions = categories.map(category => ({ value: category.id, label: category.name }))
+  const groupOptions = groups.map(group => ({ value: group.id, label: group.name }))
+
+  const venueFields = [
+    { key: 'name', label: 'Venue Name', required: true },
+    { key: 'location', label: 'Location' },
+    { key: 'capacity', label: 'Capacity', type: 'number' },
+    { key: 'sort_order', label: 'Sort Order', type: 'number', defaultValue: 0 },
+    { key: 'notes', label: 'Notes', multiline: true, wide: true },
+    { key: 'is_active', label: 'Active', type: 'checkbox', defaultValue: true },
+  ]
+  const categoryFields = [
+    { key: 'id', label: 'Category Code', required: true, createOnly: true, placeholder: 'Example: EML' },
+    { key: 'name', label: 'Category Name', required: true },
+    { key: 'sort_order', label: 'Sort Order', type: 'number', defaultValue: 0 },
+    { key: 'is_active', label: 'Active', type: 'checkbox', defaultValue: true },
+  ]
+  const groupFields = [
+    { key: 'id', label: 'Group Code', required: true, createOnly: true, placeholder: 'Example: EML-001' },
+    { key: 'category_id', label: 'Category', type: 'select', options: categoryOptions, required: true },
+    { key: 'name', label: 'Group Name', required: true },
+    { key: 'location', label: 'Location' },
+    { key: 'booking_rule', label: 'Booking Rule', multiline: true, wide: true },
+    { key: 'notes', label: 'Notes', multiline: true, wide: true },
+    { key: 'sort_order', label: 'Sort Order', type: 'number', defaultValue: 0 },
+    { key: 'is_active', label: 'Active', type: 'checkbox', defaultValue: true },
+  ]
+  const itemFields = [
+    { key: 'id', label: 'Item Code', required: true, createOnly: true, placeholder: 'Example: EML-001-01' },
+    { key: 'group_id', label: 'Group', type: 'select', options: groupOptions, required: true },
+    { key: 'name', label: 'Item Name', required: true },
+    { key: 'serial_no', label: 'Serial No.' },
+    { key: 'quantity', label: 'Quantity', type: 'number', defaultValue: 1 },
+    { key: 'location', label: 'Location' },
+    { key: 'status', label: 'Status', type: 'select', options: BOOKING_ITEM_STATUS_OPTIONS, defaultValue: 'available' },
+    { key: 'sort_order', label: 'Sort Order', type: 'number', defaultValue: 0 },
+    { key: 'notes', label: 'Notes', multiline: true, wide: true },
+    { key: 'required_for_complete_set', label: 'Required For Complete Set', type: 'checkbox', defaultValue: false },
+    { key: 'is_bookable', label: 'Bookable', type: 'checkbox', defaultValue: true },
+  ]
+
+  if (loading) return <div className="text-sm text-gray-400 py-6 text-center">Loading booking dropdowns...</div>
+
+  return (
+    <div className="space-y-5">
+      {error && <div className="border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <BookingCrudPanel title="Booking Venues" rows={venues} fields={venueFields}
+          onAdd={payload => mutate('booking_venues', 'insert', payload)}
+          onUpdate={(id, payload) => mutate('booking_venues', 'update', payload, id)}
+          onDelete={id => deleteRow('booking_venues', id)}
+        />
+        <BookingCrudPanel title="Equipment Categories" rows={categories} fields={categoryFields}
+          onAdd={payload => mutate('booking_equipment_categories', 'insert', payload)}
+          onUpdate={(id, payload) => mutate('booking_equipment_categories', 'update', payload, id)}
+          onDelete={id => deleteRow('booking_equipment_categories', id)}
+        />
+        <BookingCrudPanel title="Equipment Groups" rows={groups} fields={groupFields}
+          onAdd={payload => mutate('booking_equipment_groups', 'insert', payload)}
+          onUpdate={(id, payload) => mutate('booking_equipment_groups', 'update', payload, id)}
+          onDelete={id => deleteRow('booking_equipment_groups', id)}
+        />
+        <BookingCrudPanel title="Equipment Items" rows={items} fields={itemFields}
+          onAdd={payload => mutate('booking_equipment_items', 'insert', payload)}
+          onUpdate={(id, payload) => mutate('booking_equipment_items', 'update', payload, id)}
+          onDelete={id => deleteRow('booking_equipment_items', id)}
+        />
+      </div>
+    </div>
+  )
+}
 
 function RolePermissionsPanel() {
   const [perms, setPerms] = useState({})
@@ -685,6 +985,7 @@ const TABS = [
   { id: 'service',    label: 'Service' },
   { id: 'finance',    label: 'Finance' },
   { id: 'catalogue',  label: 'Catalogue' },
+  { id: 'booking',    label: 'Booking' },
   { id: 'locations',  label: 'Locations' },
   { id: 'templates',  label: 'Doc Templates' },
   { id: 'roles',      label: 'Role Permissions' },
@@ -765,6 +1066,8 @@ export default function Settings() {
           <LookupPanel title="Manufacturers" tableName="product_manufacturer" valueField="name" noUserId />
         </div>
       )}
+
+      {tab === 'booking' && <BookingSettingsPanel />}
 
       {tab === 'locations' && <LocationsPanel />}
 

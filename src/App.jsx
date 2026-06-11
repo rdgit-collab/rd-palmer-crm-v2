@@ -27,6 +27,7 @@ const OnsiteTickets = lazy(() => import('./pages/service/OnsiteTickets'))
 const RMA = lazy(() => import('./pages/service/RMA'))
 const Calibration = lazy(() => import('./pages/service/Calibration'))
 const SerialNumbers = lazy(() => import('./pages/service/SerialNumbers'))
+const Booking = lazy(() => import('./pages/Booking'))
 const Users = lazy(() => import('./pages/admin/Users'))
 const Catalogue = lazy(() => import('./pages/admin/Catalogue'))
 const Settings = lazy(() => import('./pages/admin/Settings'))
@@ -101,6 +102,7 @@ function AppRoutes() {
             <Route path="rma"           element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="rma">         <RMA />         </PermissionRoute></ProtectedRoute>} />
             <Route path="calibration"   element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="calibration"> <Calibration /> </PermissionRoute></ProtectedRoute>} />
             <Route path="serial-numbers"element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute></ProtectedRoute>} />
+            <Route path="booking"      element={<ProtectedRoute roles={sharedWorkRoles}><PermissionRoute module="booking">    <Booking />    </PermissionRoute></ProtectedRoute>} />
             <Route path="catalogue"     element={<ProtectedRoute roles={adminRoles}><Catalogue /></ProtectedRoute>} />
             <Route path="admin/users"   element={<ProtectedRoute roles={adminRoles}><Users /></ProtectedRoute>} />
             <Route path="settings"      element={<ProtectedRoute roles={adminRoles}><Settings /></ProtectedRoute>} />
