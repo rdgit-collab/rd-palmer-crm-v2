@@ -45,10 +45,6 @@ function localInputValue(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-function monthKey(date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`
-}
-
 function monthLabel(date) {
   return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 }
@@ -136,12 +132,14 @@ export default function Booking() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [equipmentSearch, setEquipmentSearch] = useState('')
   const [showClosedBookings, setShowClosedBookings] = useState(false)
+  const [unavailableItemIds, setUnavailableItemIds] = useState([])
+  const [checkingAvailability, setCheckingAvailability] = useState(false)
 
   const usersById = useMemo(() => Object.fromEntries(users.map(user => [String(user.id), user])), [users])
   const venuesById = useMemo(() => Object.fromEntries(venues.map(venue => [String(venue.id), venue])), [venues])
   const itemsById = useMemo(() => Object.fromEntries(equipmentItems.map(item => [item.id, item])), [equipmentItems])
-  const groupsById = useMemo(() => Object.fromEntries(groups.map(group => [group.id, group])), [groups])
   const categoriesById = useMemo(() => Object.fromEntries(categories.map(category => [category.id, category])), [categories])
+  const unavailableItemSet = useMemo(() => new Set(unavailableItemIds), [unavailableItemIds])
 
   const itemsByBooking = useMemo(() => {
     const map = {}
@@ -164,15 +162,6 @@ export default function Booking() {
     [itemsById, selectedItems],
   )
 
-  const categoryCounts = useMemo(() => {
-    const map = {}
-    groups.forEach(group => {
-      const count = equipmentItems.filter(item => item.group_id === group.id && item.is_bookable && item.status === 'available').length
-      map[group.category_id] = (map[group.category_id] || 0) + count
-    })
-    return map
-  }, [equipmentItems, groups])
-
   const filteredGroups = useMemo(() => {
     const term = equipmentSearch.trim().toLowerCase()
     return groups
@@ -188,6 +177,11 @@ export default function Booking() {
       })
       .filter(group => group.items.length > 0 || (!term && group.allItems.length > 0))
   }, [categoryFilter, equipmentItems, equipmentSearch, groups])
+
+  const isItemUnavailable = useCallback(
+    item => item.status !== 'available' || unavailableItemSet.has(item.id),
+    [unavailableItemSet],
+  )
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -244,6 +238,70 @@ export default function Booking() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  useEffect(() => {
+    let cancelled = false
+
+    const checkAvailability = async () => {
+      const hasValidRange = form.start_at && form.end_at && new Date(form.end_at) > new Date(form.start_at)
+      if (!showForm || form.booking_type !== 'equipment' || !hasValidRange) {
+        setUnavailableItemIds([])
+        setCheckingAvailability(false)
+        return
+      }
+
+      setCheckingAvailability(true)
+      const startIso = new Date(form.start_at).toISOString()
+      const endIso = new Date(form.end_at).toISOString()
+
+      const { data: conflictingBookings, error: bookingError } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('booking_type', 'equipment')
+        .in('status', ['pending', 'approved'])
+        .lt('start_at', endIso)
+        .gt('end_at', startIso)
+
+      if (cancelled) return
+      if (bookingError) {
+        setUnavailableItemIds([])
+        setCheckingAvailability(false)
+        setError(bookingError.message)
+        return
+      }
+
+      const bookingIds = (conflictingBookings || []).map(booking => booking.id)
+      if (!bookingIds.length) {
+        setUnavailableItemIds([])
+        setCheckingAvailability(false)
+        return
+      }
+
+      const { data: rows, error: itemError } = await supabase
+        .from('booking_items')
+        .select('equipment_item_id')
+        .in('booking_id', bookingIds)
+
+      if (cancelled) return
+      if (itemError) {
+        setUnavailableItemIds([])
+        setCheckingAvailability(false)
+        setError(itemError.message)
+        return
+      }
+
+      setUnavailableItemIds([...new Set((rows || []).map(row => row.equipment_item_id).filter(Boolean))])
+      setCheckingAvailability(false)
+    }
+
+    checkAvailability()
+    return () => { cancelled = true }
+  }, [form.booking_type, form.end_at, form.start_at, showForm])
+
+  useEffect(() => {
+    if (!unavailableItemIds.length) return
+    setSelectedItems(prev => prev.filter(itemId => !unavailableItemIds.includes(itemId)))
+  }, [unavailableItemIds])
+
   const openForm = (type = activeTab) => {
     const start = new Date()
     start.setMinutes(0, 0, 0)
@@ -258,17 +316,22 @@ export default function Booking() {
       end_at: localInputValue(end),
     })
     setSelectedItems([])
+    setCategoryFilter('')
+    setEquipmentSearch('')
+    setUnavailableItemIds([])
     setError('')
     setShowForm(true)
   }
 
   const toggleItem = (itemId) => {
+    const item = itemsById[itemId]
+    if (!item || isItemUnavailable(item)) return
     setSelectedItems(prev => prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId])
   }
 
   const selectCompleteSet = (group) => {
     const requiredIds = equipmentItems
-      .filter(item => item.group_id === group.id && item.required_for_complete_set && item.status === 'available')
+      .filter(item => item.group_id === group.id && item.required_for_complete_set && !isItemUnavailable(item))
       .map(item => item.id)
     setSelectedItems(prev => [...new Set([...prev, ...requiredIds])])
   }
@@ -276,7 +339,7 @@ export default function Booking() {
   const missingWarnings = useMemo(() => {
     const warnings = []
     groups.forEach(group => {
-      const required = equipmentItems.filter(item => item.group_id === group.id && item.required_for_complete_set && item.status === 'available')
+      const required = equipmentItems.filter(item => item.group_id === group.id && item.required_for_complete_set && !isItemUnavailable(item))
       const selected = required.filter(item => selectedItems.includes(item.id))
       if (selected.length > 0 && selected.length < required.length) {
         warnings.push({
@@ -286,7 +349,7 @@ export default function Booking() {
       }
     })
     return warnings
-  }, [equipmentItems, groups, selectedItems])
+  }, [equipmentItems, groups, isItemUnavailable, selectedItems])
 
   const saveBooking = async (event) => {
     event.preventDefault()
@@ -594,46 +657,19 @@ export default function Booking() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="rounded border border-red-100 bg-red-50/60 p-4">
-                    <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-                      <div className="relative flex-1">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input value={equipmentSearch} onChange={e => setEquipmentSearch(e.target.value)} placeholder="Search equipment, serial number, or location" className="w-full border border-red-100 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-                      </div>
-                      <div className="rounded bg-white border border-red-100 px-3 py-2 text-sm text-gray-700">
-                        <span className="font-semibold text-red-700">{selectedItems.length}</span> selected
-                      </div>
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-3">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input value={equipmentSearch} onChange={e => setEquipmentSearch(e.target.value)} placeholder="Search equipment, serial number, or location" className="w-full border border-gray-200 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-green-500" />
                     </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setCategoryFilter('')}
-                        className={`px-3 py-1.5 text-xs font-medium border rounded-full ${!categoryFilter ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-red-100 text-gray-600 hover:border-red-300'}`}>
-                        All
-                      </button>
-                      {categories.map(category => (
-                        <button type="button" key={category.id} onClick={() => setCategoryFilter(category.id)}
-                          className={`px-3 py-1.5 text-xs font-medium border rounded-full ${categoryFilter === category.id ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-red-100 text-gray-600 hover:border-red-300'}`}>
-                          {category.name}
-                          <span className={`ml-1 ${categoryFilter === category.id ? 'text-red-100' : 'text-gray-400'}`}>{categoryCounts[category.id] || 0}</span>
-                        </button>
-                      ))}
-                    </div>
+                    <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="w-full border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-green-500">
+                      <option value="">All Categories</option>
+                      {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    </select>
                   </div>
 
-                  {selectedEquipmentItems.length > 0 && (
-                    <div className="rounded border border-green-100 bg-green-50 px-4 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700">Selected Equipment</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {selectedEquipmentItems.map(item => (
-                          <button type="button" key={item.id} onClick={() => toggleItem(item.id)}
-                            className="inline-flex items-center gap-1 rounded-full bg-white border border-green-100 px-3 py-1 text-xs text-gray-700 hover:border-green-300">
-                            {item.name}
-                            {item.serial_no && <span className="text-gray-400">({item.serial_no})</span>}
-                            <X size={12} className="text-green-700" />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                  {checkingAvailability && (
+                    <div className="text-xs text-gray-500">Checking selected date availability...</div>
                   )}
 
                   {missingWarnings.map(warning => (
@@ -642,56 +678,84 @@ export default function Booking() {
                     </div>
                   ))}
 
-                  <div className="max-h-[470px] overflow-y-auto space-y-3 pr-1">
-                    {filteredGroups.length === 0 && (
-                      <div className="border border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-400">
-                        No equipment matched the current search.
-                      </div>
-                    )}
-                    {filteredGroups.map(group => (
-                      <div key={group.id} className="border border-gray-200 bg-white shadow-sm">
-                        <div className="flex flex-wrap items-start justify-between gap-3 border-l-4 border-red-600 bg-gray-50 px-4 py-3">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-semibold text-gray-900">{group.name}</p>
-                              <span className="rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">{categoriesById[group.category_id]?.name || group.category_id}</span>
-                              {group.location && <span className="rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">{group.location}</span>}
-                            </div>
-                            {group.booking_rule && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 mt-2 px-2 py-1">{group.booking_rule}</p>}
-                          </div>
-                          <button type="button" onClick={() => selectCompleteSet(group)} className="px-3 py-1.5 text-xs bg-white border border-red-200 text-red-700 hover:bg-red-50">
-                            Book Complete Set
-                          </button>
+                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
+                    <div className="max-h-[470px] overflow-y-auto space-y-3 pr-1">
+                      {filteredGroups.length === 0 && (
+                        <div className="border border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-400">
+                          No equipment matched the current search.
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
-                          {group.items.map(item => {
-                            const disabled = item.status !== 'available'
-                            const selected = selectedItems.includes(item.id)
-                            return (
-                              <label key={item.id} className={`relative border p-3 transition ${disabled ? 'bg-gray-50 cursor-not-allowed opacity-70' : 'cursor-pointer hover:border-red-300 hover:bg-red-50/40'} ${selected ? 'border-red-500 bg-red-50 ring-1 ring-red-200' : 'border-gray-200'}`}>
-                                <div className="flex items-start gap-3 pr-6">
-                                  <input type="checkbox" disabled={disabled} checked={selected} onChange={() => toggleItem(item.id)} className="mt-1 accent-red-600" />
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-gray-900 leading-snug">{item.name}</p>
-                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                      <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">S/N: {item.serial_no || 'N/A'}</span>
-                                      {item.location && <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{item.location}</span>}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 mt-2">
-                                      {item.required_for_complete_set && <span className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100">Set Item</span>}
-                                      <span className={`text-[11px] px-2 py-0.5 border ${itemStatusStyles[item.status] || itemStatusStyles.available}`}>
-                                        {statusLabel(item.status)}
-                                      </span>
+                      )}
+                      {filteredGroups.map(group => (
+                        <div key={group.id} className="border border-gray-200 bg-white shadow-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-3 border-l-4 border-green-600 bg-gray-50 px-4 py-3">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-semibold text-gray-900">{group.name}</p>
+                                <span className="rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">{categoriesById[group.category_id]?.name || group.category_id}</span>
+                                {group.location && <span className="rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">{group.location}</span>}
+                              </div>
+                              {group.booking_rule && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 mt-2 px-2 py-1">{group.booking_rule}</p>}
+                            </div>
+                            <button type="button" onClick={() => selectCompleteSet(group)} className="px-3 py-1.5 text-xs bg-white border border-green-200 text-green-700 hover:bg-green-50">
+                              Book Complete Set
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+                            {group.items.map(item => {
+                              const bookedForDate = unavailableItemSet.has(item.id)
+                              const disabled = isItemUnavailable(item)
+                              const selected = selectedItems.includes(item.id)
+                              const cardClass = disabled
+                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : selected
+                                  ? 'border-green-500 bg-green-50 ring-1 ring-green-200 cursor-pointer'
+                                  : 'border-gray-200 bg-white hover:border-green-300 hover:bg-green-50/50 cursor-pointer'
+                              return (
+                                <label key={item.id} className={`relative border p-3 transition ${cardClass}`}>
+                                  <div className="flex items-start gap-3 pr-6">
+                                    <input type="checkbox" disabled={disabled} checked={selected} onChange={() => toggleItem(item.id)} className="mt-1 accent-green-600 disabled:accent-gray-300" />
+                                    <div className="min-w-0">
+                                      <p className={`text-sm font-semibold leading-snug ${disabled ? 'text-gray-400' : 'text-gray-900'}`}>{item.name}</p>
+                                      <div className="mt-2 flex flex-wrap gap-1.5">
+                                        <span className={`rounded px-2 py-0.5 text-[11px] ${disabled ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>S/N: {item.serial_no || 'N/A'}</span>
+                                        {item.location && <span className={`rounded px-2 py-0.5 text-[11px] ${disabled ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>{item.location}</span>}
+                                      </div>
+                                      <div className="flex flex-wrap gap-2 mt-2">
+                                        {item.required_for_complete_set && <span className={`text-[11px] px-2 py-0.5 border ${disabled ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>Set Item</span>}
+                                        <span className={`text-[11px] px-2 py-0.5 border ${disabled ? 'bg-gray-100 text-gray-500 border-gray-200' : itemStatusStyles[item.status] || itemStatusStyles.available}`}>
+                                          {bookedForDate ? 'Booked selected date' : statusLabel(item.status)}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                                {selected && <Check size={16} className="absolute right-3 top-3 text-red-600" />}
-                              </label>
-                            )
-                          })}
+                                  {selected && <Check size={16} className="absolute right-3 top-3 text-green-600" />}
+                                </label>
+                              )
+                            })}
+                          </div>
                         </div>
+                      ))}
+                    </div>
+
+                    <aside className="border border-green-100 bg-green-50 p-4 h-fit lg:sticky lg:top-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-green-800">Selected Items</p>
+                        <span className="rounded-full bg-white border border-green-200 px-2 py-0.5 text-xs font-semibold text-green-700">{selectedItems.length}</span>
                       </div>
-                    ))}
+                      {selectedEquipmentItems.length === 0 ? (
+                        <p className="mt-3 text-xs text-gray-500">No item selected yet.</p>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {selectedEquipmentItems.map(item => (
+                            <button type="button" key={item.id} onClick={() => toggleItem(item.id)}
+                              className="w-full text-left rounded border border-green-100 bg-white px-3 py-2 text-xs text-green-700 hover:border-green-300">
+                              <span className="block font-semibold">{item.name}</span>
+                              <span className="block text-green-600">{item.serial_no || 'No serial number'}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </aside>
                   </div>
                 </div>
               )}
