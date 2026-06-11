@@ -574,6 +574,7 @@ const SALES_MODULES = [
   { module: 'invoices',   label: 'Invoices' },
   { module: 'tickets',    label: 'Tickets' },
   { module: 'tasks',      label: 'Tasks' },
+  { module: 'booking',    label: 'Booking' },
 ]
 const SERVICE_MODULES = [
   { module: 'tickets',       label: 'Tickets' },
@@ -582,6 +583,7 @@ const SERVICE_MODULES = [
   { module: 'rma',           label: 'RMA' },
   { module: 'calibration',   label: 'Calibration' },
   { module: 'serial-numbers',label: 'Serial Numbers' },
+  { module: 'booking',       label: 'Booking' },
 ]
 
 function RolePermissionsPanel() {
