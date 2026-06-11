@@ -492,6 +492,22 @@ function RichTemplateEditor({ value, onChange, placeholder }) {
   )
 }
 
+function TemplateTextBlock({ label, value, onChange, placeholder }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-800 text-sm">{label}</h3>
+        <p className="text-xs text-gray-400 mt-0.5">Pre-filled when staff create a new document — they can still edit before saving.</p>
+      </div>
+      <RichTemplateEditor
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+      />
+    </div>
+  )
+}
+
 function TemplatesPanel() {
   const [vals, setVals] = useState({
     quotation_notes: '',
@@ -529,28 +545,14 @@ function TemplatesPanel() {
 
   if (!loaded) return <div className="text-sm text-gray-400 py-6 text-center">Loading templates...</div>
 
-  const TextBlock = ({ label, fieldKey, placeholder }) => (
-    <div className="bg-white border border-gray-200 rounded overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-semibold text-gray-800 text-sm">{label}</h3>
-        <p className="text-xs text-gray-400 mt-0.5">Pre-filled when staff create a new document — they can still edit before saving.</p>
-      </div>
-      <RichTemplateEditor
-        value={vals[fieldKey]}
-        onChange={value => setVals(prev => ({ ...prev, [fieldKey]: value }))}
-        placeholder={placeholder}
-      />
-    </div>
-  )
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <TextBlock label="Quotation — Notes" fieldKey="quotation_notes" placeholder="e.g. Thank you for your interest. This quotation is valid for 30 days." />
-        <TextBlock label="Quotation — Terms & Conditions" fieldKey="quotation_terms" placeholder="e.g. 1. Prices are subject to change without notice..." />
-        <TextBlock label="Invoice — Notes" fieldKey="invoice_notes" placeholder="e.g. Thank you for your business. Please retain this invoice for your records." />
-        <TextBlock label="Invoice — Terms & Conditions" fieldKey="invoice_terms" placeholder="e.g. Payment is due within 30 days of invoice date..." />
-        <TextBlock label="Task — Terms & Conditions" fieldKey="task_terms" placeholder="e.g. Service work is recorded based on findings at site..." />
+        <TemplateTextBlock label="Quotation — Notes" value={vals.quotation_notes} onChange={value => setVals(prev => ({ ...prev, quotation_notes: value }))} placeholder="e.g. Thank you for your interest. This quotation is valid for 30 days." />
+        <TemplateTextBlock label="Quotation — Terms & Conditions" value={vals.quotation_terms} onChange={value => setVals(prev => ({ ...prev, quotation_terms: value }))} placeholder="e.g. 1. Prices are subject to change without notice..." />
+        <TemplateTextBlock label="Invoice — Notes" value={vals.invoice_notes} onChange={value => setVals(prev => ({ ...prev, invoice_notes: value }))} placeholder="e.g. Thank you for your business. Please retain this invoice for your records." />
+        <TemplateTextBlock label="Invoice — Terms & Conditions" value={vals.invoice_terms} onChange={value => setVals(prev => ({ ...prev, invoice_terms: value }))} placeholder="e.g. Payment is due within 30 days of invoice date..." />
+        <TemplateTextBlock label="Task — Terms & Conditions" value={vals.task_terms} onChange={value => setVals(prev => ({ ...prev, task_terms: value }))} placeholder="e.g. Service work is recorded based on findings at site..." />
       </div>
       <div className="flex items-center gap-3">
         <button onClick={handleSave} disabled={saving}
@@ -618,6 +620,40 @@ function emptyBookingForm(fields) {
   ]))
 }
 
+function BookingFieldInput({ field, value, onChange, disabled = false }) {
+  if (field.type === 'checkbox') {
+    return (
+      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <input type="checkbox" checked={Boolean(value)} disabled={disabled} onChange={e => onChange(e.target.checked)} />
+        {field.label}
+      </label>
+    )
+  }
+  if (field.type === 'select') {
+    return (
+      <select value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value)}
+        className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-400">
+        <option value="">Select {field.label}</option>
+        {(field.options || []).map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    )
+  }
+  if (field.multiline) {
+    return (
+      <textarea value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value)} rows={2}
+        placeholder={field.placeholder || field.label}
+        className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 resize-y disabled:bg-gray-50 disabled:text-gray-400" />
+    )
+  }
+  return (
+    <input type={field.type === 'number' ? 'number' : 'text'} value={value ?? ''} disabled={disabled}
+      onChange={e => onChange(e.target.value)} placeholder={field.placeholder || field.label}
+      className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-400" />
+  )
+}
+
 function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
   const [adding, setAdding] = useState(false)
   const [editId, setEditId] = useState(null)
@@ -646,40 +682,6 @@ function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
     setEditId(null)
   }
 
-  const FieldInput = ({ field, value, onChange, disabled = false }) => {
-    if (field.type === 'checkbox') {
-      return (
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input type="checkbox" checked={Boolean(value)} disabled={disabled} onChange={e => onChange(e.target.checked)} />
-          {field.label}
-        </label>
-      )
-    }
-    if (field.type === 'select') {
-      return (
-        <select value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value)}
-          className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-400">
-          <option value="">Select {field.label}</option>
-          {(field.options || []).map(option => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-      )
-    }
-    if (field.multiline) {
-      return (
-        <textarea value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value)} rows={2}
-          placeholder={field.placeholder || field.label}
-          className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 resize-y disabled:bg-gray-50 disabled:text-gray-400" />
-      )
-    }
-    return (
-      <input type={field.type === 'number' ? 'number' : 'text'} value={value ?? ''} disabled={disabled}
-        onChange={e => onChange(e.target.value)} placeholder={field.placeholder || field.label}
-        className="w-full border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:border-red-400 disabled:bg-gray-50 disabled:text-gray-400" />
-    )
-  }
-
   return (
     <div className="bg-white border border-gray-200 rounded overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
@@ -695,7 +697,7 @@ function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
               {fields.map(field => (
                 <label key={field.key} className={field.wide ? 'md:col-span-2' : ''}>
                   {field.type !== 'checkbox' && <span className="block text-xs font-medium text-gray-500 mb-1">{field.label}{field.required ? ' *' : ''}</span>}
-                  <FieldInput field={field} value={newForm[field.key]} onChange={value => setField(setNewForm, field.key, value)} />
+                  <BookingFieldInput field={field} value={newForm[field.key]} onChange={value => setField(setNewForm, field.key, value)} />
                 </label>
               ))}
             </div>
@@ -716,7 +718,7 @@ function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
                   {fields.map(field => (
                     <label key={field.key} className={field.wide ? 'md:col-span-2' : ''}>
                       {field.type !== 'checkbox' && <span className="block text-xs font-medium text-gray-500 mb-1">{field.label}{field.required ? ' *' : ''}</span>}
-                      <FieldInput field={field} value={editForm[field.key]} disabled={field.createOnly} onChange={value => setField(setEditForm, field.key, value)} />
+                      <BookingFieldInput field={field} value={editForm[field.key]} disabled={field.createOnly} onChange={value => setField(setEditForm, field.key, value)} />
                     </label>
                   ))}
                 </div>
