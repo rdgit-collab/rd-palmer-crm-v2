@@ -454,6 +454,7 @@ export default function Tickets() {
   const [view, setView]             = useState('list')
   const [tab, setTab]               = useState('open')
   const [tickets, setTickets]       = useState([])
+  const [ticketContacts, setTicketContacts] = useState({})
   const [total, setTotal]           = useState(0)
   const [page, setPage]             = useState(1)
   const [search, setSearch]         = useState('')
@@ -547,7 +548,25 @@ export default function Tickets() {
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
     const { data, count, error: err } = await q
-    if (!err) { setTickets(data || []); setTotal(count || 0) }
+    if (!err) {
+      const rows = data || []
+      setTickets(rows)
+      setTotal(count || 0)
+
+      const contactIds = [...new Set(rows
+        .map(row => Number(row.contact_person))
+        .filter(id => Number.isFinite(id) && id > 0)
+      )]
+      if (contactIds.length) {
+        const { data: contactRows } = await supabase
+          .from('contact')
+          .select('id, first_name, last_name')
+          .in('id', contactIds)
+        setTicketContacts(Object.fromEntries((contactRows || []).map(contact => [String(contact.id), contact])))
+      } else {
+        setTicketContacts({})
+      }
+    }
     setLoading(false)
   }, [search, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
 
@@ -653,6 +672,14 @@ export default function Tickets() {
 
   const getContactName = (contact) =>
     contact ? [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim() || '—' : '—'
+
+  const getTicketContactName = (ticket) => {
+    const raw = ticket?.contact_person
+    if (!raw) return '—'
+    const contact = ticketContacts[String(raw)]
+    if (contact) return getContactName(contact)
+    return Number.isFinite(Number(raw)) ? '—' : String(raw)
+  }
 
   const stripHtml = (value = '') => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 
@@ -1225,6 +1252,7 @@ export default function Tickets() {
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Ticket ID</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Date</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Company</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Contact Person</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Priority</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Due Date</th>
@@ -1234,9 +1262,9 @@ export default function Tickets() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400">Loading...</td></tr>
+                <tr><td colSpan={9} className="text-center py-12 text-gray-400">Loading...</td></tr>
               ) : tickets.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No {tab} tickets found.</td></tr>
+                <tr><td colSpan={9} className="text-center py-12 text-gray-400">No {tab} tickets found.</td></tr>
               ) : tickets.map(t => {
                 const today = new Date().toISOString().split('T')[0]
                 const isOverdue = t.due_date && t.due_date < today
@@ -1245,6 +1273,7 @@ export default function Tickets() {
                     <td className="px-4 py-3 font-semibold text-red-600">TID{t.ticket_id}</td>
                     <td className="px-4 py-3 text-gray-600">{formatDate(t.date)}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{t.company_name || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{getTicketContactName(t)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${priorityColor(t.priority)}`}>
                         {t.priority || '—'}
