@@ -110,6 +110,10 @@ function statusLabel(value) {
   return String(value || 'pending').replace(/_/g, ' ')
 }
 
+function isClosedBooking(booking) {
+  return ['cancelled', 'completed'].includes(booking?.status)
+}
+
 export default function Booking() {
   const { profile } = useAuth()
   const isAdmin = hasAdminAccess(profile?.role_id)
@@ -131,6 +135,7 @@ export default function Booking() {
   const [selectedItems, setSelectedItems] = useState([])
   const [categoryFilter, setCategoryFilter] = useState('')
   const [equipmentSearch, setEquipmentSearch] = useState('')
+  const [showClosedBookings, setShowClosedBookings] = useState(false)
 
   const usersById = useMemo(() => Object.fromEntries(users.map(user => [String(user.id), user])), [users])
   const venuesById = useMemo(() => Object.fromEntries(venues.map(venue => [String(venue.id), venue])), [venues])
@@ -150,9 +155,23 @@ export default function Booking() {
   }, [bookingItems, itemsById])
 
   const visibleBookings = useMemo(
-    () => bookings.filter(booking => booking.booking_type === activeTab),
-    [bookings, activeTab],
+    () => bookings.filter(booking => booking.booking_type === activeTab && (showClosedBookings || !isClosedBooking(booking))),
+    [bookings, activeTab, showClosedBookings],
   )
+
+  const selectedEquipmentItems = useMemo(
+    () => selectedItems.map(itemId => itemsById[itemId]).filter(Boolean),
+    [itemsById, selectedItems],
+  )
+
+  const categoryCounts = useMemo(() => {
+    const map = {}
+    groups.forEach(group => {
+      const count = equipmentItems.filter(item => item.group_id === group.id && item.is_bookable && item.status === 'available').length
+      map[group.category_id] = (map[group.category_id] || 0) + count
+    })
+    return map
+  }, [equipmentItems, groups])
 
   const filteredGroups = useMemo(() => {
     const term = equipmentSearch.trim().toLowerCase()
@@ -440,8 +459,16 @@ export default function Booking() {
 
         <div className="bg-white border border-gray-200">
           <div className="px-4 py-3 border-b border-gray-200">
-            <h2 className="font-semibold text-gray-900">{activeTab === 'venue' ? 'Venue' : 'Equipment'} Booking List</h2>
-            <p className="text-xs text-gray-400">{monthLabel(month)}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-gray-900">{activeTab === 'venue' ? 'Venue' : 'Equipment'} Booking List</h2>
+                <p className="text-xs text-gray-400">{monthLabel(month)}</p>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-gray-500 select-none">
+                <input type="checkbox" checked={showClosedBookings} onChange={e => setShowClosedBookings(e.target.checked)} />
+                Show closed
+              </label>
+            </div>
           </div>
           <div className="divide-y divide-gray-100 max-h-[690px] overflow-y-auto">
             {loading ? (
@@ -504,7 +531,7 @@ export default function Booking() {
 
       {showForm && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4">
-          <form onSubmit={saveBooking} className="bg-white w-full max-w-5xl my-8 border border-gray-200 shadow-xl">
+          <form onSubmit={saveBooking} className="bg-white w-full max-w-6xl my-8 border border-gray-200 shadow-xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">New Booking</h2>
@@ -567,16 +594,47 @@ export default function Booking() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex flex-wrap gap-3">
-                    <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-                      <option value="">All Categories</option>
-                      {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
-                    </select>
-                    <div className="relative flex-1 min-w-64">
-                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input value={equipmentSearch} onChange={e => setEquipmentSearch(e.target.value)} placeholder="Search equipment, serial number, location..." className="w-full border border-gray-200 pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  <div className="rounded border border-red-100 bg-red-50/60 p-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                      <div className="relative flex-1">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input value={equipmentSearch} onChange={e => setEquipmentSearch(e.target.value)} placeholder="Search equipment, serial number, or location" className="w-full border border-red-100 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                      </div>
+                      <div className="rounded bg-white border border-red-100 px-3 py-2 text-sm text-gray-700">
+                        <span className="font-semibold text-red-700">{selectedItems.length}</span> selected
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setCategoryFilter('')}
+                        className={`px-3 py-1.5 text-xs font-medium border rounded-full ${!categoryFilter ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-red-100 text-gray-600 hover:border-red-300'}`}>
+                        All
+                      </button>
+                      {categories.map(category => (
+                        <button type="button" key={category.id} onClick={() => setCategoryFilter(category.id)}
+                          className={`px-3 py-1.5 text-xs font-medium border rounded-full ${categoryFilter === category.id ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-red-100 text-gray-600 hover:border-red-300'}`}>
+                          {category.name}
+                          <span className={`ml-1 ${categoryFilter === category.id ? 'text-red-100' : 'text-gray-400'}`}>{categoryCounts[category.id] || 0}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
+
+                  {selectedEquipmentItems.length > 0 && (
+                    <div className="rounded border border-green-100 bg-green-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700">Selected Equipment</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedEquipmentItems.map(item => (
+                          <button type="button" key={item.id} onClick={() => toggleItem(item.id)}
+                            className="inline-flex items-center gap-1 rounded-full bg-white border border-green-100 px-3 py-1 text-xs text-gray-700 hover:border-green-300">
+                            {item.name}
+                            {item.serial_no && <span className="text-gray-400">({item.serial_no})</span>}
+                            <X size={12} className="text-green-700" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {missingWarnings.map(warning => (
                     <div key={warning.group.id} className="border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -584,37 +642,50 @@ export default function Booking() {
                     </div>
                   ))}
 
-                  <div className="max-h-[470px] overflow-y-auto border border-gray-200 divide-y divide-gray-100">
+                  <div className="max-h-[470px] overflow-y-auto space-y-3 pr-1">
+                    {filteredGroups.length === 0 && (
+                      <div className="border border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-400">
+                        No equipment matched the current search.
+                      </div>
+                    )}
                     {filteredGroups.map(group => (
-                      <div key={group.id} className="p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                      <div key={group.id} className="border border-gray-200 bg-white shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-3 border-l-4 border-red-600 bg-gray-50 px-4 py-3">
                           <div>
-                            <p className="font-semibold text-gray-900">{group.name}</p>
-                            <p className="text-xs text-gray-500">{categoriesById[group.category_id]?.name || group.category_id}{group.location ? ` · ${group.location}` : ''}</p>
-                            {group.booking_rule && <p className="text-xs text-gray-500 mt-1">{group.booking_rule}</p>}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-semibold text-gray-900">{group.name}</p>
+                              <span className="rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">{categoriesById[group.category_id]?.name || group.category_id}</span>
+                              {group.location && <span className="rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">{group.location}</span>}
+                            </div>
+                            {group.booking_rule && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 mt-2 px-2 py-1">{group.booking_rule}</p>}
                           </div>
-                          <button type="button" onClick={() => selectCompleteSet(group)} className="px-3 py-1.5 text-xs border border-red-200 text-red-700 hover:bg-red-50">
+                          <button type="button" onClick={() => selectCompleteSet(group)} className="px-3 py-1.5 text-xs bg-white border border-red-200 text-red-700 hover:bg-red-50">
                             Book Complete Set
                           </button>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
                           {group.items.map(item => {
                             const disabled = item.status !== 'available'
+                            const selected = selectedItems.includes(item.id)
                             return (
-                              <label key={item.id} className={`border p-3 ${disabled ? 'bg-gray-50 cursor-not-allowed opacity-70' : 'cursor-pointer hover:bg-gray-50'} ${selectedItems.includes(item.id) ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}>
-                                <div className="flex items-start gap-3">
-                                  <input type="checkbox" disabled={disabled} checked={selectedItems.includes(item.id)} onChange={() => toggleItem(item.id)} className="mt-1" />
+                              <label key={item.id} className={`relative border p-3 transition ${disabled ? 'bg-gray-50 cursor-not-allowed opacity-70' : 'cursor-pointer hover:border-red-300 hover:bg-red-50/40'} ${selected ? 'border-red-500 bg-red-50 ring-1 ring-red-200' : 'border-gray-200'}`}>
+                                <div className="flex items-start gap-3 pr-6">
+                                  <input type="checkbox" disabled={disabled} checked={selected} onChange={() => toggleItem(item.id)} className="mt-1 accent-red-600" />
                                   <div className="min-w-0">
-                                    <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                                    <p className="text-xs text-gray-500">S/N: {item.serial_no || 'N/A'} · {item.location || '—'}</p>
+                                    <p className="text-sm font-semibold text-gray-900 leading-snug">{item.name}</p>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">S/N: {item.serial_no || 'N/A'}</span>
+                                      {item.location && <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{item.location}</span>}
+                                    </div>
                                     <div className="flex flex-wrap gap-2 mt-2">
-                                      {item.required_for_complete_set && <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-600">Set Item</span>}
+                                      {item.required_for_complete_set && <span className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-100">Set Item</span>}
                                       <span className={`text-[11px] px-2 py-0.5 border ${itemStatusStyles[item.status] || itemStatusStyles.available}`}>
                                         {statusLabel(item.status)}
                                       </span>
                                     </div>
                                   </div>
                                 </div>
+                                {selected && <Check size={16} className="absolute right-3 top-3 text-red-600" />}
                               </label>
                             )
                           })}
