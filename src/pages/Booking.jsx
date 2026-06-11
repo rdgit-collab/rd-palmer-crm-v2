@@ -740,18 +740,29 @@ export default function Booking() {
                     <aside className="border border-green-100 bg-green-50 p-4 h-fit lg:sticky lg:top-4">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-green-800">Selected Items</p>
-                        <span className="rounded-full bg-white border border-green-200 px-2 py-0.5 text-xs font-semibold text-green-700">{selectedItems.length}</span>
+                        <div className="flex items-center gap-2">
+                          {selectedEquipmentItems.length > 0 && (
+                            <button type="button" onClick={() => setSelectedItems([])} className="text-xs font-medium text-gray-500 hover:text-red-600">
+                              Clear All
+                            </button>
+                          )}
+                          <span className="rounded-full bg-white border border-green-200 px-2 py-0.5 text-xs font-semibold text-green-700">{selectedItems.length}</span>
+                        </div>
                       </div>
                       {selectedEquipmentItems.length === 0 ? (
                         <p className="mt-3 text-xs text-gray-500">No item selected yet.</p>
                       ) : (
                         <div className="mt-3 space-y-2">
                           {selectedEquipmentItems.map(item => (
-                            <button type="button" key={item.id} onClick={() => toggleItem(item.id)}
-                              className="w-full text-left rounded border border-green-100 bg-white px-3 py-2 text-xs text-green-700 hover:border-green-300">
-                              <span className="block font-semibold">{item.name}</span>
-                              <span className="block text-green-600">{item.serial_no || 'No serial number'}</span>
-                            </button>
+                            <div key={item.id} className="flex items-start gap-2 rounded border border-green-100 bg-white px-3 py-2">
+                              <button type="button" onClick={() => toggleItem(item.id)} className="min-w-0 flex-1 text-left text-xs text-green-700">
+                                <span className="block truncate font-semibold">{item.name}</span>
+                                <span className="block truncate text-green-600">{item.serial_no || 'No serial number'}</span>
+                              </button>
+                              <button type="button" onClick={() => toggleItem(item.id)} className="mt-0.5 shrink-0 rounded border border-green-100 p-1 text-green-700 hover:border-red-200 hover:bg-red-50 hover:text-red-600" aria-label={`Deselect ${item.name}`}>
+                                <X size={12} />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}
