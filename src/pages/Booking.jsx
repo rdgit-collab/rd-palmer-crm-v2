@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getLegacyUserId } from '../lib/legacyUsers'
 import { hasAdminAccess } from '../lib/roles'
 import { logActivity } from '../lib/activityLog'
+import { notifyUser } from '../lib/notifyUser'
 
 const statusStyles = {
   pending: 'bg-amber-100 text-amber-700',
@@ -27,6 +28,8 @@ const itemStatusStyles = {
 const selectableItemStatuses = new Set(['available'])
 
 const purposeOptions = ['Demo', 'Rental', 'Internal Use', 'Meeting', 'Training', 'Customer Visit', 'Other']
+const VEHICLE_APPROVER_SETTING_KEY = 'booking_vehicle_approver_user_ids'
+const VEHICLE_NOTIFICATION_EMAIL_SETTING_KEY = 'booking_vehicle_notification_emails'
 
 const emptyForm = {
   booking_type: 'venue',
@@ -121,6 +124,25 @@ function isClosedBooking(booking) {
   return ['cancelled', 'completed'].includes(booking?.status)
 }
 
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]))
+}
+
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || '[]')
+    return Array.isArray(parsed) ? parsed.map(item => String(item).trim()).filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
 export default function Booking() {
   const { profile } = useAuth()
   const isAdmin = hasAdminAccess(profile?.role_id)
@@ -135,6 +157,8 @@ export default function Booking() {
   const [groups, setGroups] = useState([])
   const [equipmentItems, setEquipmentItems] = useState([])
   const [users, setUsers] = useState([])
+  const [vehicleApproverIds, setVehicleApproverIds] = useState([])
+  const [vehicleNotificationEmails, setVehicleNotificationEmails] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -156,6 +180,8 @@ export default function Booking() {
   const itemsById = useMemo(() => Object.fromEntries(equipmentItems.map(item => [item.id, item])), [equipmentItems])
   const categoriesById = useMemo(() => Object.fromEntries(categories.map(category => [category.id, category])), [categories])
   const unavailableItemSet = useMemo(() => new Set(unavailableItemIds), [unavailableItemIds])
+  const vehicleApproverSet = useMemo(() => new Set(vehicleApproverIds.map(String)), [vehicleApproverIds])
+  const canApproveVehicleBookings = isAdmin || vehicleApproverSet.has(String(profile?.id))
 
   const itemsByBooking = useMemo(() => {
     const map = {}
@@ -245,6 +271,7 @@ export default function Booking() {
       itemResult,
       bookingResult,
       userResult,
+      settingResult,
     ] = await Promise.all([
       supabase.from('booking_venues').select('*').eq('is_active', true).order('sort_order'),
       supabase.from('booking_vehicles').select('*').eq('is_active', true).order('sort_order'),
@@ -258,9 +285,13 @@ export default function Booking() {
         .gt('end_at', start.toISOString())
         .order('start_at', { ascending: true }),
       supabase.from('users').select('id, old_user_id, first_name, last_name, email').order('first_name'),
+      supabase
+        .from('app_setting')
+        .select('key, value')
+        .in('key', [VEHICLE_APPROVER_SETTING_KEY, VEHICLE_NOTIFICATION_EMAIL_SETTING_KEY]),
     ])
 
-    const firstError = [venueResult, vehicleResult, categoryResult, groupResult, itemResult, bookingResult, userResult].find(result => result.error)?.error
+    const firstError = [venueResult, vehicleResult, categoryResult, groupResult, itemResult, bookingResult, userResult, settingResult].find(result => result.error)?.error
     if (firstError) {
       setError(firstError.message)
       setLoading(false)
@@ -272,6 +303,9 @@ export default function Booking() {
     setCategories(categoryResult.data || [])
     setGroups(groupResult.data || [])
     setEquipmentItems(itemResult.data || [])
+    const settings = Object.fromEntries((settingResult.data || []).map(row => [row.key, row.value]))
+    setVehicleApproverIds(parseJsonArray(settings[VEHICLE_APPROVER_SETTING_KEY]))
+    setVehicleNotificationEmails(parseJsonArray(settings[VEHICLE_NOTIFICATION_EMAIL_SETTING_KEY]))
     const currentBookings = await completeExpiredBookings(bookingResult.data || [])
     setBookings(currentBookings)
     setUsers(userResult.data || [])
@@ -481,6 +515,16 @@ export default function Booking() {
       setSaving(false)
       return
     }
+    if (!form.customer_name.trim()) {
+      setError('Please fill in customer / visitor.')
+      setSaving(false)
+      return
+    }
+    if (!form.notes.trim()) {
+      setError('Please fill in notes.')
+      setSaving(false)
+      return
+    }
     if (!form.start_at || !form.end_at || new Date(form.end_at) <= new Date(form.start_at)) {
       setError('Please choose a valid start and end date/time.')
       setSaving(false)
@@ -494,11 +538,11 @@ export default function Booking() {
       requested_by_user_id: editingBooking?.requested_by_user_id || profile.id,
       requested_by_old_user_id: editingBooking?.requested_by_old_user_id || getLegacyUserId(profile),
       purpose: form.purpose || 'Other',
-      customer_name: form.customer_name || null,
+      customer_name: form.customer_name.trim(),
       start_at: new Date(form.start_at).toISOString(),
       end_at: new Date(form.end_at).toISOString(),
-      status: 'approved',
-      notes: form.notes || null,
+      status: editingBooking?.status || (form.booking_type === 'vehicle' ? 'pending' : 'approved'),
+      notes: form.notes.trim(),
     }
 
     const bookingMutation = editingBooking
@@ -549,6 +593,52 @@ export default function Booking() {
       metadata: { booking_type: form.booking_type, selected_items: selectedItems },
     })
 
+    if (!editingBooking && form.booking_type === 'vehicle') {
+      const selectedVehicle = vehiclesById[String(booking.vehicle_id)]
+      const approverUsers = users.filter(user => vehicleApproverSet.has(String(user.id)))
+      const currentLegacyUserId = getLegacyUserId(profile)
+      const details = [
+        ['Vehicle', vehicleLabel(selectedVehicle) || '—'],
+        ['Customer / Visitor', booking.customer_name],
+        ['Purpose', booking.purpose],
+        ['Start', formatDateTime(booking.start_at)],
+        ['End', formatDateTime(booking.end_at)],
+        ['Requested By', displayName(profile)],
+        ['Notes', booking.notes],
+      ]
+
+      await Promise.all(approverUsers.map(user => notifyUser(supabase, {
+        userId: user.old_user_id,
+        actorUserId: currentLegacyUserId,
+        title: 'Vehicle booking needs approval',
+        reference: vehicleLabel(selectedVehicle) || 'Vehicle booking',
+        companyName: booking.customer_name,
+        body: `${displayName(profile)} requested a vehicle booking for ${booking.customer_name}.`,
+        details,
+        link: '/booking',
+      })))
+
+      const approverEmails = new Set(approverUsers.map(user => String(user.email || '').toLowerCase()).filter(Boolean))
+      const extraEmails = vehicleNotificationEmails.filter(email => !approverEmails.has(String(email).toLowerCase()))
+      await Promise.all(extraEmails.map(email => supabase.functions.invoke('send-notification-email', {
+        body: {
+          to_email: email,
+          subject: 'Vehicle booking needs approval',
+          body_html: `
+            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
+              <h2 style="font-size:18px;margin:0 0 12px;">Vehicle booking needs approval</h2>
+              <p>${escapeHtml(displayName(profile))} requested a vehicle booking for ${escapeHtml(booking.customer_name)}.</p>
+              <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tbody>
+                  ${details.map(([label, value]) => `<tr><td style="padding:6px;border:1px solid #eee;color:#777;width:34%;">${escapeHtml(label)}</td><td style="padding:6px;border:1px solid #eee;">${escapeHtml(value || '—')}</td></tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          `,
+        },
+      })))
+    }
+
     setShowForm(false)
     setEditingBooking(null)
     setSaving(false)
@@ -557,7 +647,9 @@ export default function Booking() {
 
   const updateStatus = async (booking, status) => {
     setError('')
-    const { error: statusError } = await supabase.from('bookings').update({ status }).eq('id', booking.id)
+    const { error: statusError } = booking.booking_type === 'vehicle' && status === 'approved'
+      ? await supabase.rpc('approve_vehicle_booking', { p_booking_id: booking.id })
+      : await supabase.from('bookings').update({ status }).eq('id', booking.id)
     if (statusError) {
       setError(statusError.message)
       return
@@ -709,6 +801,7 @@ export default function Booking() {
               const owner = usersById[String(booking.requested_by_user_id)]
               const isOwner = String(booking.requested_by_user_id) === String(profile?.id)
               const canManage = (isAdmin || isOwner) && !isClosedBooking(booking)
+              const canApprove = booking.booking_type === 'vehicle' && booking.status === 'pending' && canApproveVehicleBookings
               return (
                 <div key={booking.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -733,6 +826,11 @@ export default function Booking() {
                     {booking.notes && <p><span className="font-medium">Notes:</span> {booking.notes}</p>}
                   </div>
                   <div className="flex flex-wrap gap-2 mt-3">
+                    {canApprove && (
+                      <button onClick={() => updateStatus(booking, 'approved')} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white hover:bg-green-700">
+                        <Check size={13} /> Approve
+                      </button>
+                    )}
                     {canManage && (
                       <button onClick={() => editBooking(booking)} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-white border border-gray-200 text-gray-700 hover:bg-gray-50">
                         <Edit size={13} /> Edit
@@ -796,11 +894,11 @@ export default function Booking() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="space-y-1">
                   <span className="text-sm font-medium text-gray-700">Customer / Visitor</span>
-                  <input value={form.customer_name} onChange={e => setForm(f => ({ ...f, customer_name: e.target.value }))} placeholder="Optional" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  <input value={form.customer_name} onChange={e => setForm(f => ({ ...f, customer_name: e.target.value }))} required placeholder="Customer, visitor, or internal requester" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
                 </label>
                 <label className="space-y-1">
                   <span className="text-sm font-medium text-gray-700">Notes</span>
-                  <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
+                  <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} required placeholder="Reason or work details" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
                 </label>
               </div>
 
@@ -819,7 +917,8 @@ export default function Booking() {
                 </div>
               ) : form.booking_type === 'vehicle' ? (
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">Select Vehicle</p>
+                  <p className="text-sm font-medium text-gray-700 mb-1">Select Vehicle</p>
+                  {!editingBooking && <p className="mb-2 text-xs text-amber-700">Vehicle bookings will be submitted for approval before becoming active.</p>}
                   {checkingAvailability && <div className="mb-2 text-xs text-gray-500">Checking selected date availability...</div>}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {vehicles.map(vehicle => {
@@ -967,7 +1066,7 @@ export default function Booking() {
             <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-200">
               <button type="button" onClick={() => { setShowForm(false); setEditingBooking(null) }} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={saving} className="px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60">
-                {saving ? 'Saving...' : editingBooking ? 'Update Booking' : 'Save Booking'}
+                {saving ? 'Saving...' : editingBooking ? 'Update Booking' : form.booking_type === 'vehicle' ? 'Submit for Approval' : 'Save Booking'}
               </button>
             </div>
           </form>

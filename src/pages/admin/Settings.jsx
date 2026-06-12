@@ -595,6 +595,28 @@ const BOOKING_ITEM_STATUS_OPTIONS = [
   { value: 'missing', label: 'Missing' },
   { value: 'check_required', label: 'Check Required' },
 ]
+const VEHICLE_APPROVER_SETTING_KEY = 'booking_vehicle_approver_user_ids'
+const VEHICLE_NOTIFICATION_EMAIL_SETTING_KEY = 'booking_vehicle_notification_emails'
+
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || '[]')
+    return Array.isArray(parsed) ? parsed.map(item => String(item).trim()).filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
+function displayUserName(user) {
+  return [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.email || 'Unnamed user'
+}
+
+function normalizeEmailList(value) {
+  return String(value || '')
+    .split(/[\n,;]/)
+    .map(email => email.trim())
+    .filter(Boolean)
+}
 
 function normaliseBookingPayload(fields, form, { editing = false } = {}) {
   const payload = {}
@@ -757,20 +779,30 @@ function BookingSettingsPanel() {
   const [categories, setCategories] = useState([])
   const [groups, setGroups] = useState([])
   const [items, setItems] = useState([])
+  const [users, setUsers] = useState([])
+  const [vehicleApproverIds, setVehicleApproverIds] = useState([])
+  const [vehicleNotificationEmails, setVehicleNotificationEmails] = useState('')
+  const [savingApproval, setSavingApproval] = useState(false)
+  const [approvalSaved, setApprovalSaved] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const load = async () => {
     setLoading(true)
     setError('')
-    const [venueResult, vehicleResult, categoryResult, groupResult, itemResult] = await Promise.all([
+    const [venueResult, vehicleResult, categoryResult, groupResult, itemResult, userResult, settingResult] = await Promise.all([
       supabase.from('booking_venues').select('*').order('sort_order'),
       supabase.from('booking_vehicles').select('*').order('sort_order'),
       supabase.from('booking_equipment_categories').select('*').order('sort_order'),
       supabase.from('booking_equipment_groups').select('*').order('sort_order'),
       supabase.from('booking_equipment_items').select('*').order('sort_order'),
+      supabase.from('users').select('id, first_name, last_name, email, role_id, status').order('first_name'),
+      supabase
+        .from('app_setting')
+        .select('key, value')
+        .in('key', [VEHICLE_APPROVER_SETTING_KEY, VEHICLE_NOTIFICATION_EMAIL_SETTING_KEY]),
     ])
-    const firstError = [venueResult, vehicleResult, categoryResult, groupResult, itemResult].find(result => result.error)?.error
+    const firstError = [venueResult, vehicleResult, categoryResult, groupResult, itemResult, userResult, settingResult].find(result => result.error)?.error
     if (firstError) {
       setError(firstError.message)
       setLoading(false)
@@ -781,6 +813,10 @@ function BookingSettingsPanel() {
     setCategories(categoryResult.data || [])
     setGroups(groupResult.data || [])
     setItems(itemResult.data || [])
+    setUsers(userResult.data || [])
+    const settings = Object.fromEntries((settingResult.data || []).map(row => [row.key, row.value]))
+    setVehicleApproverIds(parseJsonArray(settings[VEHICLE_APPROVER_SETTING_KEY]))
+    setVehicleNotificationEmails(parseJsonArray(settings[VEHICLE_NOTIFICATION_EMAIL_SETTING_KEY]).join('\n'))
     setLoading(false)
   }
 
@@ -814,6 +850,48 @@ function BookingSettingsPanel() {
     mutate(tableName, 'delete', {}, id)
   }
 
+  const saveVehicleApprovalSettings = async () => {
+    setSavingApproval(true)
+    setError('')
+    const emails = normalizeEmailList(vehicleNotificationEmails)
+    const invalidEmail = emails.find(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    if (invalidEmail) {
+      setError(`Invalid email: ${invalidEmail}`)
+      setSavingApproval(false)
+      return
+    }
+
+    const now = new Date().toISOString()
+    const { error: settingError } = await supabase.from('app_setting').upsert([
+      { key: VEHICLE_APPROVER_SETTING_KEY, value: JSON.stringify(vehicleApproverIds), updated_at: now },
+      { key: VEHICLE_NOTIFICATION_EMAIL_SETTING_KEY, value: JSON.stringify(emails), updated_at: now },
+    ], { onConflict: 'key' })
+
+    if (settingError) {
+      setError(settingError.message)
+      setSavingApproval(false)
+      return
+    }
+
+    logActivity({
+      module: 'settings',
+      action: 'update',
+      recordTable: 'app_setting',
+      recordId: VEHICLE_APPROVER_SETTING_KEY,
+      recordLabel: 'Vehicle booking approval',
+      summary: 'Updated vehicle booking approval settings',
+      metadata: { approver_count: vehicleApproverIds.length, extra_email_count: emails.length },
+    })
+
+    setSavingApproval(false)
+    setApprovalSaved(true)
+    setTimeout(() => setApprovalSaved(false), 2500)
+  }
+
+  const toggleVehicleApprover = (userId) => {
+    setVehicleApproverIds(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId])
+  }
+
   const compareBySortAndName = (a, b) =>
     (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0) ||
     String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { numeric: true, sensitivity: 'base' }) ||
@@ -825,6 +903,12 @@ function BookingSettingsPanel() {
     String(a?.car_model || '').localeCompare(String(b?.car_model || ''), undefined, { numeric: true, sensitivity: 'base' }) ||
     String(a?.plate_number || '').localeCompare(String(b?.plate_number || ''), undefined, { numeric: true, sensitivity: 'base' })
   )
+  const activeUsers = [...users]
+    .filter(user => String(user.status || '').toLowerCase() !== 'inactive')
+    .sort((a, b) =>
+      Number(a.role_id || 999) - Number(b.role_id || 999) ||
+      displayUserName(a).localeCompare(displayUserName(b), undefined, { sensitivity: 'base' })
+    )
   const categoriesById = Object.fromEntries(categories.map(category => [String(category.id), category]))
 
   const sortedGroups = [...groups].sort((a, b) => {
@@ -894,6 +978,46 @@ function BookingSettingsPanel() {
   return (
     <div className="space-y-5">
       {error && <div className="border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <h3 className="font-semibold text-gray-800 text-sm">Vehicle Booking Approval</h3>
+          <p className="mt-1 text-xs text-gray-500">Vehicle bookings stay pending until one of these approvers approves them. Extra emails receive notification only.</p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5 p-4">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Approvers</p>
+            <div className="max-h-56 overflow-y-auto border border-gray-100 divide-y divide-gray-100">
+              {activeUsers.map(user => (
+                <label key={user.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-gray-50">
+                  <span>
+                    <span className="font-medium text-gray-800">{displayUserName(user)}</span>
+                    {user.email && <span className="ml-2 text-xs text-gray-400">{user.email}</span>}
+                  </span>
+                  <input type="checkbox" checked={vehicleApproverIds.includes(String(user.id))} onChange={() => toggleVehicleApprover(String(user.id))} className="accent-red-600" />
+                </label>
+              ))}
+              {!activeUsers.length && <div className="px-3 py-6 text-center text-sm text-gray-400">No active users found.</div>}
+            </div>
+          </div>
+          <label>
+            <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500">Extra Email Recipients</span>
+            <textarea
+              value={vehicleNotificationEmails}
+              onChange={e => setVehicleNotificationEmails(e.target.value)}
+              rows={8}
+              placeholder="one@email.com&#10;two@email.com"
+              className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400 resize-y"
+            />
+            <span className="mt-1 block text-xs text-gray-400">Use this for people who need an email but do not need approval access.</span>
+          </label>
+        </div>
+        <div className="flex items-center gap-3 px-4 py-3 border-t border-gray-100">
+          <button onClick={saveVehicleApprovalSettings} disabled={savingApproval} className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+            <Save size={14} /> {savingApproval ? 'Saving...' : 'Save Approval Settings'}
+          </button>
+          {approvalSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+        </div>
+      </div>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <BookingCrudPanel title="Booking Venues" rows={venues} fields={venueFields}
           onAdd={payload => mutate('booking_venues', 'insert', payload)}
