@@ -134,7 +134,8 @@ export default function Booking() {
   const [selectedItems, setSelectedItems] = useState([])
   const [categoryFilter, setCategoryFilter] = useState('')
   const [equipmentSearch, setEquipmentSearch] = useState('')
-  const [showClosedBookings, setShowClosedBookings] = useState(false)
+  const [selectedCalendarBookingId, setSelectedCalendarBookingId] = useState(null)
+  const [showAllBookings, setShowAllBookings] = useState(false)
   const [unavailableItemIds, setUnavailableItemIds] = useState([])
   const [checkingAvailability, setCheckingAvailability] = useState(false)
 
@@ -156,9 +157,20 @@ export default function Booking() {
   }, [bookingItems, itemsById])
 
   const visibleBookings = useMemo(
-    () => bookings.filter(booking => booking.booking_type === activeTab && (showClosedBookings || !isClosedBooking(booking))),
-    [bookings, activeTab, showClosedBookings],
+    () => bookings.filter(booking => booking.booking_type === activeTab && !isClosedBooking(booking)),
+    [bookings, activeTab],
   )
+
+  const listBookings = useMemo(() => {
+    if (showAllBookings) return visibleBookings
+    if (!selectedCalendarBookingId) return []
+    return visibleBookings.filter(booking => String(booking.id) === String(selectedCalendarBookingId))
+  }, [selectedCalendarBookingId, showAllBookings, visibleBookings])
+
+  useEffect(() => {
+    setSelectedCalendarBookingId(null)
+    setShowAllBookings(false)
+  }, [activeTab, month])
 
   const selectedEquipmentItems = useMemo(
     () => selectedItems.map(itemId => itemsById[itemId]).filter(Boolean),
@@ -580,10 +592,22 @@ export default function Booking() {
                     </div>
                     <div className="space-y-1">
                       {dayBookings.slice(0, 3).map(booking => (
-                        <div key={booking.id} className="rounded bg-red-50 px-2 py-1 text-[11px] leading-tight text-red-700">
+                        <button
+                          key={booking.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCalendarBookingId(booking.id)
+                            setShowAllBookings(false)
+                          }}
+                          className={`block w-full rounded px-2 py-1 text-left text-[11px] leading-tight transition ${
+                            String(selectedCalendarBookingId) === String(booking.id) && !showAllBookings
+                              ? 'bg-red-600 text-white'
+                              : 'bg-red-50 text-red-700 hover:bg-red-100'
+                          }`}
+                        >
                           <div className="font-semibold truncate">{bookingTitle(booking, { venuesById, itemsByBooking })}</div>
                           <div className="truncate">{formatTime(booking.start_at)} {booking.purpose}</div>
-                        </div>
+                        </button>
                       ))}
                       {dayBookings.length > 3 && <div className="text-[11px] text-gray-400">+{dayBookings.length - 3} more</div>}
                     </div>
@@ -599,12 +623,20 @@ export default function Booking() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-semibold text-gray-900">{activeTab === 'venue' ? 'Venue' : 'Equipment'} Booking List</h2>
-                <p className="text-xs text-gray-400">{monthLabel(month)}</p>
+                <p className="text-xs text-gray-400">
+                  {showAllBookings ? monthLabel(month) : selectedCalendarBookingId ? 'Selected calendar booking' : 'Select a booking from the calendar'}
+                </p>
               </div>
-              <label className="flex items-center gap-2 text-xs text-gray-500 select-none">
-                <input type="checkbox" checked={showClosedBookings} onChange={e => setShowClosedBookings(e.target.checked)} />
-                Show closed
-              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCalendarBookingId(null)
+                  setShowAllBookings(true)
+                }}
+                className="px-3 py-1.5 text-xs border border-gray-200 text-gray-700 hover:bg-gray-50"
+              >
+                Show All
+              </button>
             </div>
           </div>
           <div className="divide-y divide-gray-100 max-h-[690px] overflow-y-auto">
@@ -612,7 +644,11 @@ export default function Booking() {
               <div className="py-10 text-center text-sm text-gray-400">Loading...</div>
             ) : visibleBookings.length === 0 ? (
               <div className="py-10 text-center text-sm text-gray-400">No bookings this month.</div>
-            ) : visibleBookings.map(booking => {
+            ) : listBookings.length === 0 ? (
+              <div className="py-10 px-4 text-center text-sm text-gray-400">
+                Click a booking bubble in the calendar to view its details, or use Show All.
+              </div>
+            ) : listBookings.map(booking => {
               const owner = usersById[String(booking.requested_by_user_id)]
               const isOwner = String(booking.requested_by_user_id) === String(profile?.id)
               const canManage = (isAdmin || isOwner) && !isClosedBooking(booking)
