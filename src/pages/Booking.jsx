@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  CalendarDays, Check, ChevronLeft, ChevronRight, Clock, MapPin,
-  Package, Plus, RotateCcw, Search, X,
+  CalendarDays, Check, ChevronLeft, ChevronRight, Edit, MapPin,
+  Package, Plus, Search, X,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -104,6 +104,7 @@ function bookingTitle(booking, { venuesById, itemsByBooking }) {
 }
 
 function statusLabel(value) {
+  if (value === 'approved') return 'active'
   return String(value || 'pending').replace(/_/g, ' ')
 }
 
@@ -115,7 +116,7 @@ export default function Booking() {
   const { profile } = useAuth()
   const isAdmin = hasAdminAccess(profile?.role_id)
 
-  const [activeTab, setActiveTab] = useState('venue')
+  const [activeTab, setActiveTab] = useState('equipment')
   const [month, setMonth] = useState(() => new Date())
   const [bookings, setBookings] = useState([])
   const [bookingItems, setBookingItems] = useState([])
@@ -129,6 +130,7 @@ export default function Booking() {
   const [error, setError] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyForm)
+  const [editingBooking, setEditingBooking] = useState(null)
   const [selectedItems, setSelectedItems] = useState([])
   const [categoryFilter, setCategoryFilter] = useState('')
   const [equipmentSearch, setEquipmentSearch] = useState('')
@@ -184,6 +186,29 @@ export default function Booking() {
     [unavailableItemSet],
   )
 
+  const completeExpiredBookings = useCallback(async (rows = []) => {
+    const nowIso = new Date().toISOString()
+    const expiredIds = rows
+      .filter(booking => ['pending', 'approved'].includes(booking.status) && booking.end_at && booking.end_at < nowIso)
+      .map(booking => booking.id)
+
+    if (!expiredIds.length) return rows
+
+    const { data, error: completeError } = await supabase
+      .from('bookings')
+      .update({ status: 'completed' })
+      .in('id', expiredIds)
+      .select('*')
+
+    if (completeError) {
+      setError(completeError.message)
+      return rows
+    }
+
+    const completedById = Object.fromEntries((data || []).map(booking => [String(booking.id), booking]))
+    return rows.map(booking => completedById[String(booking.id)] || booking)
+  }, [])
+
   const loadData = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -220,10 +245,11 @@ export default function Booking() {
     setCategories(categoryResult.data || [])
     setGroups(groupResult.data || [])
     setEquipmentItems(itemResult.data || [])
-    setBookings(bookingResult.data || [])
+    const currentBookings = await completeExpiredBookings(bookingResult.data || [])
+    setBookings(currentBookings)
     setUsers(userResult.data || [])
 
-    const ids = (bookingResult.data || []).map(booking => booking.id)
+    const ids = currentBookings.map(booking => booking.id)
     if (ids.length) {
       const { data, error: itemError } = await supabase
         .from('booking_items')
@@ -235,7 +261,7 @@ export default function Booking() {
       setBookingItems([])
     }
     setLoading(false)
-  }, [month])
+  }, [completeExpiredBookings, month])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -254,13 +280,17 @@ export default function Booking() {
       const startIso = new Date(form.start_at).toISOString()
       const endIso = new Date(form.end_at).toISOString()
 
-      const { data: conflictingBookings, error: bookingError } = await supabase
+      let conflictQuery = supabase
         .from('bookings')
         .select('id')
         .eq('booking_type', 'equipment')
         .in('status', ['pending', 'approved'])
         .lt('start_at', endIso)
         .gt('end_at', startIso)
+
+      if (editingBooking?.id) conflictQuery = conflictQuery.neq('id', editingBooking.id)
+
+      const { data: conflictingBookings, error: bookingError } = await conflictQuery
 
       if (cancelled) return
       if (bookingError) {
@@ -296,7 +326,7 @@ export default function Booking() {
 
     checkAvailability()
     return () => { cancelled = true }
-  }, [form.booking_type, form.end_at, form.start_at, showForm])
+  }, [editingBooking?.id, form.booking_type, form.end_at, form.start_at, showForm])
 
   useEffect(() => {
     if (!unavailableItemIds.length) return
@@ -317,6 +347,29 @@ export default function Booking() {
       end_at: localInputValue(end),
     })
     setSelectedItems([])
+    setCategoryFilter('')
+    setEquipmentSearch('')
+    setUnavailableItemIds([])
+    setEditingBooking(null)
+    setError('')
+    setShowForm(true)
+  }
+
+  const editBooking = (booking) => {
+    const canEdit = isAdmin || String(booking.requested_by_user_id) === String(profile?.id)
+    if (!canEdit || isClosedBooking(booking)) return
+
+    setEditingBooking(booking)
+    setForm({
+      booking_type: booking.booking_type,
+      venue_id: booking.venue_id ? String(booking.venue_id) : '',
+      purpose: booking.purpose || (booking.booking_type === 'venue' ? 'Meeting' : 'Demo'),
+      customer_name: booking.customer_name || '',
+      start_at: localInputValue(new Date(booking.start_at)),
+      end_at: localInputValue(new Date(booking.end_at)),
+      notes: booking.notes || '',
+    })
+    setSelectedItems((itemsByBooking[String(booking.id)] || []).map(item => item.id))
     setCategoryFilter('')
     setEquipmentSearch('')
     setUnavailableItemIds([])
@@ -376,17 +429,21 @@ export default function Booking() {
     const payload = {
       booking_type: form.booking_type,
       venue_id: form.booking_type === 'venue' ? Number(form.venue_id) : null,
-      requested_by_user_id: profile.id,
-      requested_by_old_user_id: getLegacyUserId(profile),
+      requested_by_user_id: editingBooking?.requested_by_user_id || profile.id,
+      requested_by_old_user_id: editingBooking?.requested_by_old_user_id || getLegacyUserId(profile),
       purpose: form.purpose || 'Other',
       customer_name: form.customer_name || null,
       start_at: new Date(form.start_at).toISOString(),
       end_at: new Date(form.end_at).toISOString(),
-      status: 'pending',
+      status: 'approved',
       notes: form.notes || null,
     }
 
-    const { data: booking, error: bookingError } = await supabase.from('bookings').insert([payload]).select().single()
+    const bookingMutation = editingBooking
+      ? supabase.from('bookings').update(payload).eq('id', editingBooking.id).select().single()
+      : supabase.from('bookings').insert([payload]).select().single()
+
+    const { data: booking, error: bookingError } = await bookingMutation
     if (bookingError) {
       setError(bookingError.message)
       setSaving(false)
@@ -394,12 +451,27 @@ export default function Booking() {
     }
 
     if (form.booking_type === 'equipment') {
+      if (editingBooking) {
+        const { error: deleteItemError } = await supabase.from('booking_items').delete().eq('booking_id', booking.id)
+        if (deleteItemError) {
+          setError(deleteItemError.message)
+          setSaving(false)
+          return
+        }
+      }
       const { error: itemError } = await supabase.from('booking_items').insert(
         selectedItems.map(itemId => ({ booking_id: booking.id, equipment_item_id: itemId, quantity: 1 })),
       )
       if (itemError) {
-        await supabase.from('bookings').delete().eq('id', booking.id)
+        if (!editingBooking) await supabase.from('bookings').delete().eq('id', booking.id)
         setError(itemError.message)
+        setSaving(false)
+        return
+      }
+    } else if (editingBooking) {
+      const { error: deleteItemError } = await supabase.from('booking_items').delete().eq('booking_id', booking.id)
+      if (deleteItemError) {
+        setError(deleteItemError.message)
         setSaving(false)
         return
       }
@@ -407,15 +479,16 @@ export default function Booking() {
 
     logActivity({
       module: 'booking',
-      action: 'create',
+      action: editingBooking ? 'update' : 'create',
       recordTable: 'bookings',
       recordId: booking.id,
       recordLabel: bookingTitle(booking, { venuesById, itemsByBooking }),
-      summary: `Created ${form.booking_type} booking`,
+      summary: `${editingBooking ? 'Updated' : 'Created'} ${form.booking_type} booking`,
       metadata: { booking_type: form.booking_type, selected_items: selectedItems },
     })
 
     setShowForm(false)
+    setEditingBooking(null)
     setSaving(false)
     await loadData()
   }
@@ -541,7 +614,8 @@ export default function Booking() {
               <div className="py-10 text-center text-sm text-gray-400">No bookings this month.</div>
             ) : visibleBookings.map(booking => {
               const owner = usersById[String(booking.requested_by_user_id)]
-              const canCancel = isAdmin || String(booking.requested_by_user_id) === String(profile?.id)
+              const isOwner = String(booking.requested_by_user_id) === String(profile?.id)
+              const canManage = (isAdmin || isOwner) && !isClosedBooking(booking)
               return (
                 <div key={booking.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -563,24 +637,14 @@ export default function Booking() {
                     {booking.notes && <p><span className="font-medium">Notes:</span> {booking.notes}</p>}
                   </div>
                   <div className="flex flex-wrap gap-2 mt-3">
-                    {isAdmin && booking.status === 'pending' && (
-                      <button onClick={() => updateStatus(booking, 'approved')} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white hover:bg-green-700">
-                        <Check size={13} /> Approve
+                    {canManage && (
+                      <button onClick={() => editBooking(booking)} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-white border border-gray-200 text-gray-700 hover:bg-gray-50">
+                        <Edit size={13} /> Edit
                       </button>
                     )}
-                    {isAdmin && ['pending', 'approved'].includes(booking.status) && (
-                      <button onClick={() => updateStatus(booking, 'completed')} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 text-white hover:bg-blue-700">
-                        <Clock size={13} /> Complete
-                      </button>
-                    )}
-                    {canCancel && ['pending', 'approved'].includes(booking.status) && (
+                    {canManage && (
                       <button onClick={() => updateStatus(booking, 'cancelled')} className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 text-gray-600 hover:bg-gray-50">
                         <X size={13} /> Cancel
-                      </button>
-                    )}
-                    {isAdmin && ['cancelled', 'completed'].includes(booking.status) && (
-                      <button onClick={() => updateStatus(booking, 'pending')} className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-amber-200 text-amber-700 hover:bg-amber-50">
-                        <RotateCcw size={13} /> Reopen
                       </button>
                     )}
                   </div>
@@ -598,10 +662,10 @@ export default function Booking() {
           <form onSubmit={saveBooking} className="bg-white w-full max-w-6xl my-8 border border-gray-200 shadow-xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">New Booking</h2>
+                <h2 className="text-lg font-semibold text-gray-900">{editingBooking ? 'Edit Booking' : 'New Booking'}</h2>
                 <p className="text-xs text-gray-500">Booked by {displayName(profile)}</p>
               </div>
-              <button type="button" onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+              <button type="button" onClick={() => { setShowForm(false); setEditingBooking(null) }} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
             </div>
 
             <div className="p-5 space-y-5">
@@ -776,9 +840,9 @@ export default function Booking() {
             </div>
 
             <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-200">
-              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={() => { setShowForm(false); setEditingBooking(null) }} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={saving} className="px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-60">
-                {saving ? 'Saving...' : 'Save Booking'}
+                {saving ? 'Saving...' : editingBooking ? 'Update Booking' : 'Save Booking'}
               </button>
             </div>
           </form>
