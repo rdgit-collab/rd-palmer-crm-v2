@@ -25,6 +25,7 @@ const markedRate = (baseRate, markup) => {
 }
 const PAGE_SIZE = 30
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
+const CUSTOMER_FORM_COLUMNS = 'id, company_name, assigned, assignto, address1, address2, city, state, zipcode, country'
 const DEFAULT_QUOTATION_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_QUOTATION_TERMS = `Availability:
 Validity: 30 days from quotation date.
@@ -212,6 +213,10 @@ function addressLines(customer) {
     [customer.city, customer.state].filter(Boolean).join(', '),
     [customer.zipcode, customer.country].filter(Boolean).join(' '),
   ].filter(Boolean)
+}
+
+function documentFileName(number, companyName, fallback = 'document') {
+  return [number, companyName].map(value => String(value || '').trim()).filter(Boolean).join(' - ') || fallback
 }
 
 function quotationHtml(quotation, items, contactName, customer, contactMobile = '', salesContactNumber = '') {
@@ -658,7 +663,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       if (quotation?.companyid) {
         const { data: currentCustomer } = await supabase
           .from('customer')
-          .select('id, company_name, assigned, assignto')
+          .select(CUSTOMER_FORM_COLUMNS)
           .eq('id', quotation.companyid)
           .maybeSingle()
         if (currentCustomer) {
@@ -713,7 +718,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const setContact = (k, v) => setContactForm(f => ({ ...f, [k]: v }))
   const selectedCustomer = customers.find(c => String(c.id) === String(form.companyid))
-  const selectCustomer = (customer) => {
+  const selectCustomer = async (customer) => {
     setError('')
     if (!customer) {
       setCustomers([])
@@ -721,12 +726,19 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       setContacts([])
       return
     }
+    let customerRecord = customer
+    const { data: fullCustomer } = await supabase
+      .from('customer')
+      .select(CUSTOMER_FORM_COLUMNS)
+      .eq('id', customer.id)
+      .maybeSingle()
+    if (fullCustomer) customerRecord = fullCustomer
     setCustomers(prev => {
       const map = new Map(prev.map(row => [String(row.id), row]))
-      map.set(String(customer.id), { ...map.get(String(customer.id)), ...customer })
+      map.set(String(customerRecord.id), { ...map.get(String(customerRecord.id)), ...customerRecord })
       return Array.from(map.values())
     })
-    setF('companyid', String(customer.id))
+    setF('companyid', String(customerRecord.id))
   }
 
   const openContactForm = () => {
@@ -862,6 +874,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
   const hasCurrentSalesOption = !form.sales_person || salesUsers.some(user => userDisplayName(user) === form.sales_person)
   const hasCurrentContactOption = !form.contact_person || contacts.some(contact => String(contact.id) === String(form.contact_person))
+  const selectedCustomerAddress = addressLines(selectedCustomer).slice(1)
 
   return (
     <>
@@ -891,6 +904,16 @@ function QuotationForm({ quotation, onSave, onCancel }) {
                 required
                 className={inputCls}
               />
+              {selectedCustomer && (
+                <div className="mt-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <div className="font-semibold text-gray-700">{selectedCustomer.company_name}</div>
+                  {selectedCustomerAddress.length > 0 ? (
+                    <div className="mt-1 leading-relaxed">{selectedCustomerAddress.map((line, idx) => <div key={`${line}-${idx}`}>{line}</div>)}</div>
+                  ) : (
+                    <div className="mt-1 text-gray-400">No address recorded for this customer.</div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Currency */}
@@ -1268,7 +1291,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
     if (pdfDownloading) return
     setPdfDownloading(true)
     try {
-      await downloadHtmlPdf(printableHtml(), pdfFileName(quotation.number || 'quotation'))
+      await downloadHtmlPdf(printableHtml(), pdfFileName(documentFileName(quotation.number, customer?.company_name || quotation.name, 'quotation')))
     } catch (error) {
       alert(error.message || 'Unable to download PDF.')
     } finally {
