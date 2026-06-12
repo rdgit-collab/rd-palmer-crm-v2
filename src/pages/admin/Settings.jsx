@@ -591,7 +591,6 @@ const SERVICE_MODULES = [
 const BOOKING_ITEM_STATUS_OPTIONS = [
   { value: 'available', label: 'Available' },
   { value: 'booked', label: 'Booked' },
-  { value: 'loaned', label: 'Loaned' },
   { value: 'under_repair', label: 'Under Repair' },
   { value: 'missing', label: 'Missing' },
   { value: 'check_required', label: 'Check Required' },
