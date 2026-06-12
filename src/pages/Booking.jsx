@@ -25,6 +25,8 @@ const itemStatusStyles = {
   check_required: 'bg-orange-50 text-orange-700 border-orange-100',
 }
 
+const selectableItemStatuses = new Set(['available', 'loaned'])
+
 const purposeOptions = ['Demo', 'Rental', 'Internal Use', 'Meeting', 'Training', 'Customer Visit', 'Other']
 
 const emptyForm = {
@@ -179,7 +181,7 @@ export default function Booking() {
   }, [categoryFilter, equipmentItems, equipmentSearch, groups])
 
   const isItemUnavailable = useCallback(
-    item => item.status !== 'available' || unavailableItemSet.has(item.id),
+    item => !selectableItemStatuses.has(item.status) || unavailableItemSet.has(item.id),
     [unavailableItemSet],
   )
 
