@@ -811,8 +811,31 @@ function BookingSettingsPanel() {
     mutate(tableName, 'delete', {}, id)
   }
 
-  const categoryOptions = categories.map(category => ({ value: category.id, label: category.name }))
-  const groupOptions = groups.map(group => ({ value: group.id, label: group.name }))
+  const compareBySortAndName = (a, b) =>
+    (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0) ||
+    String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { numeric: true, sensitivity: 'base' }) ||
+    String(a?.id || '').localeCompare(String(b?.id || ''), undefined, { numeric: true, sensitivity: 'base' })
+
+  const sortedCategories = [...categories].sort(compareBySortAndName)
+  const categoriesById = Object.fromEntries(categories.map(category => [String(category.id), category]))
+
+  const sortedGroups = [...groups].sort((a, b) => {
+    const categoryCompare = compareBySortAndName(categoriesById[String(a.category_id)] || { id: a.category_id }, categoriesById[String(b.category_id)] || { id: b.category_id })
+    return categoryCompare || compareBySortAndName(a, b)
+  })
+  const groupsById = Object.fromEntries(groups.map(group => [String(group.id), group]))
+
+  const sortedItems = [...items].sort((a, b) => {
+    const groupA = groupsById[String(a.group_id)] || { id: a.group_id }
+    const groupB = groupsById[String(b.group_id)] || { id: b.group_id }
+    const rankA = sortedGroups.findIndex(group => String(group.id) === String(groupA.id))
+    const rankB = sortedGroups.findIndex(group => String(group.id) === String(groupB.id))
+    const groupCompare = (rankA < 0 ? Number.MAX_SAFE_INTEGER : rankA) - (rankB < 0 ? Number.MAX_SAFE_INTEGER : rankB)
+    return groupCompare || compareBySortAndName(a, b)
+  })
+
+  const categoryOptions = sortedCategories.map(category => ({ value: category.id, label: category.name }))
+  const groupOptions = sortedGroups.map(group => ({ value: group.id, label: group.name }))
 
   const venueFields = [
     { key: 'name', label: 'Venue Name', required: true },
@@ -863,17 +886,17 @@ function BookingSettingsPanel() {
           onUpdate={(id, payload) => mutate('booking_venues', 'update', payload, id)}
           onDelete={id => deleteRow('booking_venues', id)}
         />
-        <BookingCrudPanel title="Equipment Categories" rows={categories} fields={categoryFields}
+        <BookingCrudPanel title="Equipment Categories" rows={sortedCategories} fields={categoryFields}
           onAdd={payload => mutate('booking_equipment_categories', 'insert', payload)}
           onUpdate={(id, payload) => mutate('booking_equipment_categories', 'update', payload, id)}
           onDelete={id => deleteRow('booking_equipment_categories', id)}
         />
-        <BookingCrudPanel title="Equipment Groups" rows={groups} fields={groupFields}
+        <BookingCrudPanel title="Equipment Groups" rows={sortedGroups} fields={groupFields}
           onAdd={payload => mutate('booking_equipment_groups', 'insert', payload)}
           onUpdate={(id, payload) => mutate('booking_equipment_groups', 'update', payload, id)}
           onDelete={id => deleteRow('booking_equipment_groups', id)}
         />
-        <BookingCrudPanel title="Equipment Items" rows={items} fields={itemFields}
+        <BookingCrudPanel title="Equipment Items" rows={sortedItems} fields={itemFields}
           onAdd={payload => mutate('booking_equipment_items', 'insert', payload)}
           onUpdate={(id, payload) => mutate('booking_equipment_items', 'update', payload, id)}
           onDelete={id => deleteRow('booking_equipment_items', id)}
