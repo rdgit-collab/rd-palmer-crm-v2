@@ -19,7 +19,7 @@ const statusStyles = {
 const itemStatusStyles = {
   available: 'bg-green-50 text-green-700 border-green-100',
   booked: 'bg-amber-50 text-amber-700 border-amber-100',
-  loaned: 'bg-gray-50 text-gray-600 border-gray-100',
+  loaned: 'bg-amber-50 text-amber-700 border-amber-100',
   under_repair: 'bg-red-50 text-red-700 border-red-100',
   missing: 'bg-red-50 text-red-700 border-red-100',
   check_required: 'bg-orange-50 text-orange-700 border-orange-100',
