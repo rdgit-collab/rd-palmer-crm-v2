@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   CalendarDays, Check, ChevronLeft, ChevronRight, Edit, MapPin,
-  Package, Plus, Search, X,
+  Car, Package, Plus, Search, X,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -31,6 +31,7 @@ const purposeOptions = ['Demo', 'Rental', 'Internal Use', 'Meeting', 'Training',
 const emptyForm = {
   booking_type: 'venue',
   venue_id: '',
+  vehicle_id: '',
   purpose: 'Demo',
   customer_name: '',
   start_at: '',
@@ -94,9 +95,17 @@ function displayName(user) {
   return [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.email || '—'
 }
 
-function bookingTitle(booking, { venuesById, itemsByBooking }) {
+function vehicleLabel(vehicle) {
+  if (!vehicle) return ''
+  return [vehicle.car_model, vehicle.plate_number].filter(Boolean).join(' - ')
+}
+
+function bookingTitle(booking, { venuesById, vehiclesById, itemsByBooking }) {
   if (booking.booking_type === 'venue') {
     return venuesById[String(booking.venue_id)]?.name || 'Venue booking'
+  }
+  if (booking.booking_type === 'vehicle') {
+    return vehicleLabel(vehiclesById[String(booking.vehicle_id)]) || 'Vehicle booking'
   }
   const items = itemsByBooking[String(booking.id)] || []
   if (!items.length) return 'Equipment booking'
@@ -121,6 +130,7 @@ export default function Booking() {
   const [bookings, setBookings] = useState([])
   const [bookingItems, setBookingItems] = useState([])
   const [venues, setVenues] = useState([])
+  const [vehicles, setVehicles] = useState([])
   const [categories, setCategories] = useState([])
   const [groups, setGroups] = useState([])
   const [equipmentItems, setEquipmentItems] = useState([])
@@ -137,10 +147,12 @@ export default function Booking() {
   const [selectedCalendarBookingId, setSelectedCalendarBookingId] = useState(null)
   const [showAllBookings, setShowAllBookings] = useState(false)
   const [unavailableItemIds, setUnavailableItemIds] = useState([])
+  const [unavailableVehicleIds, setUnavailableVehicleIds] = useState([])
   const [checkingAvailability, setCheckingAvailability] = useState(false)
 
   const usersById = useMemo(() => Object.fromEntries(users.map(user => [String(user.id), user])), [users])
   const venuesById = useMemo(() => Object.fromEntries(venues.map(venue => [String(venue.id), venue])), [venues])
+  const vehiclesById = useMemo(() => Object.fromEntries(vehicles.map(vehicle => [String(vehicle.id), vehicle])), [vehicles])
   const itemsById = useMemo(() => Object.fromEntries(equipmentItems.map(item => [item.id, item])), [equipmentItems])
   const categoriesById = useMemo(() => Object.fromEntries(categories.map(category => [category.id, category])), [categories])
   const unavailableItemSet = useMemo(() => new Set(unavailableItemIds), [unavailableItemIds])
@@ -227,6 +239,7 @@ export default function Booking() {
     const { start, end } = monthRange(month)
     const [
       venueResult,
+      vehicleResult,
       categoryResult,
       groupResult,
       itemResult,
@@ -234,6 +247,7 @@ export default function Booking() {
       userResult,
     ] = await Promise.all([
       supabase.from('booking_venues').select('*').eq('is_active', true).order('sort_order'),
+      supabase.from('booking_vehicles').select('*').eq('is_active', true).order('sort_order'),
       supabase.from('booking_equipment_categories').select('*').eq('is_active', true).order('sort_order'),
       supabase.from('booking_equipment_groups').select('*').eq('is_active', true).order('sort_order'),
       supabase.from('booking_equipment_items').select('*').eq('is_bookable', true).order('sort_order'),
@@ -246,7 +260,7 @@ export default function Booking() {
       supabase.from('users').select('id, old_user_id, first_name, last_name, email').order('first_name'),
     ])
 
-    const firstError = [venueResult, categoryResult, groupResult, itemResult, bookingResult, userResult].find(result => result.error)?.error
+    const firstError = [venueResult, vehicleResult, categoryResult, groupResult, itemResult, bookingResult, userResult].find(result => result.error)?.error
     if (firstError) {
       setError(firstError.message)
       setLoading(false)
@@ -254,6 +268,7 @@ export default function Booking() {
     }
 
     setVenues(venueResult.data || [])
+    setVehicles(vehicleResult.data || [])
     setCategories(categoryResult.data || [])
     setGroups(groupResult.data || [])
     setEquipmentItems(itemResult.data || [])
@@ -282,8 +297,9 @@ export default function Booking() {
 
     const checkAvailability = async () => {
       const hasValidRange = form.start_at && form.end_at && new Date(form.end_at) > new Date(form.start_at)
-      if (!showForm || form.booking_type !== 'equipment' || !hasValidRange) {
+      if (!showForm || !['equipment', 'vehicle'].includes(form.booking_type) || !hasValidRange) {
         setUnavailableItemIds([])
+        setUnavailableVehicleIds([])
         setCheckingAvailability(false)
         return
       }
@@ -294,8 +310,8 @@ export default function Booking() {
 
       let conflictQuery = supabase
         .from('bookings')
-        .select('id')
-        .eq('booking_type', 'equipment')
+        .select('id, vehicle_id')
+        .eq('booking_type', form.booking_type)
         .in('status', ['pending', 'approved'])
         .lt('start_at', endIso)
         .gt('end_at', startIso)
@@ -307,14 +323,25 @@ export default function Booking() {
       if (cancelled) return
       if (bookingError) {
         setUnavailableItemIds([])
+        setUnavailableVehicleIds([])
         setCheckingAvailability(false)
         setError(bookingError.message)
+        return
+      }
+
+      if (form.booking_type === 'vehicle') {
+        setUnavailableItemIds([])
+        setUnavailableVehicleIds([
+          ...new Set((conflictingBookings || []).map(booking => booking.vehicle_id).filter(Boolean).map(String)),
+        ])
+        setCheckingAvailability(false)
         return
       }
 
       const bookingIds = (conflictingBookings || []).map(booking => booking.id)
       if (!bookingIds.length) {
         setUnavailableItemIds([])
+        setUnavailableVehicleIds([])
         setCheckingAvailability(false)
         return
       }
@@ -327,12 +354,14 @@ export default function Booking() {
       if (cancelled) return
       if (itemError) {
         setUnavailableItemIds([])
+        setUnavailableVehicleIds([])
         setCheckingAvailability(false)
         setError(itemError.message)
         return
       }
 
       setUnavailableItemIds([...new Set((rows || []).map(row => row.equipment_item_id).filter(Boolean))])
+      setUnavailableVehicleIds([])
       setCheckingAvailability(false)
     }
 
@@ -345,6 +374,13 @@ export default function Booking() {
     setSelectedItems(prev => prev.filter(itemId => !unavailableItemIds.includes(itemId)))
   }, [unavailableItemIds])
 
+  useEffect(() => {
+    if (!unavailableVehicleIds.length || !form.vehicle_id) return
+    if (unavailableVehicleIds.includes(String(form.vehicle_id))) {
+      setForm(prev => ({ ...prev, vehicle_id: '' }))
+    }
+  }, [form.vehicle_id, unavailableVehicleIds])
+
   const openForm = (type = activeTab) => {
     const start = new Date()
     start.setMinutes(0, 0, 0)
@@ -354,7 +390,7 @@ export default function Booking() {
     setForm({
       ...emptyForm,
       booking_type: type,
-      purpose: type === 'venue' ? 'Meeting' : 'Demo',
+      purpose: type === 'venue' ? 'Meeting' : type === 'vehicle' ? 'Internal Use' : 'Demo',
       start_at: localInputValue(start),
       end_at: localInputValue(end),
     })
@@ -362,6 +398,7 @@ export default function Booking() {
     setCategoryFilter('')
     setEquipmentSearch('')
     setUnavailableItemIds([])
+    setUnavailableVehicleIds([])
     setEditingBooking(null)
     setError('')
     setShowForm(true)
@@ -375,6 +412,7 @@ export default function Booking() {
     setForm({
       booking_type: booking.booking_type,
       venue_id: booking.venue_id ? String(booking.venue_id) : '',
+      vehicle_id: booking.vehicle_id ? String(booking.vehicle_id) : '',
       purpose: booking.purpose || (booking.booking_type === 'venue' ? 'Meeting' : 'Demo'),
       customer_name: booking.customer_name || '',
       start_at: localInputValue(new Date(booking.start_at)),
@@ -385,6 +423,7 @@ export default function Booking() {
     setCategoryFilter('')
     setEquipmentSearch('')
     setUnavailableItemIds([])
+    setUnavailableVehicleIds([])
     setError('')
     setShowForm(true)
   }
@@ -427,6 +466,16 @@ export default function Booking() {
       setSaving(false)
       return
     }
+    if (form.booking_type === 'vehicle' && !form.vehicle_id) {
+      setError('Please select a vehicle.')
+      setSaving(false)
+      return
+    }
+    if (form.booking_type === 'vehicle' && unavailableVehicleIds.includes(String(form.vehicle_id))) {
+      setError('This vehicle is already booked for the selected date/time.')
+      setSaving(false)
+      return
+    }
     if (form.booking_type === 'equipment' && selectedItems.length === 0) {
       setError('Please select at least one equipment item.')
       setSaving(false)
@@ -441,6 +490,7 @@ export default function Booking() {
     const payload = {
       booking_type: form.booking_type,
       venue_id: form.booking_type === 'venue' ? Number(form.venue_id) : null,
+      vehicle_id: form.booking_type === 'vehicle' ? Number(form.vehicle_id) : null,
       requested_by_user_id: editingBooking?.requested_by_user_id || profile.id,
       requested_by_old_user_id: editingBooking?.requested_by_old_user_id || getLegacyUserId(profile),
       purpose: form.purpose || 'Other',
@@ -494,7 +544,7 @@ export default function Booking() {
       action: editingBooking ? 'update' : 'create',
       recordTable: 'bookings',
       recordId: booking.id,
-      recordLabel: bookingTitle(booking, { venuesById, itemsByBooking }),
+      recordLabel: bookingTitle(booking, { venuesById, vehiclesById, itemsByBooking }),
       summary: `${editingBooking ? 'Updated' : 'Created'} ${form.booking_type} booking`,
       metadata: { booking_type: form.booking_type, selected_items: selectedItems },
     })
@@ -517,7 +567,7 @@ export default function Booking() {
       action: 'status_change',
       recordTable: 'bookings',
       recordId: booking.id,
-      recordLabel: bookingTitle(booking, { venuesById, itemsByBooking }),
+      recordLabel: bookingTitle(booking, { venuesById, vehiclesById, itemsByBooking }),
       summary: `Changed booking status to ${status}`,
       metadata: { status },
     })
@@ -543,6 +593,7 @@ export default function Booking() {
         {[
           ['venue', 'Venue Booking', MapPin],
           ['equipment', 'Equipment Booking', Package],
+          ['vehicle', 'Vehicle Booking', Car],
         ].map(([id, label, Icon]) => (
           <button key={id} onClick={() => setActiveTab(id)} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             activeTab === id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -587,7 +638,13 @@ export default function Booking() {
                 const inMonth = day.getMonth() === month.getMonth()
                 return (
                   <div key={day.toISOString()} className={`min-h-28 border-r border-b border-gray-100 p-2 ${inMonth ? 'bg-white' : 'bg-gray-50'}`}>
-                    <div className={`text-xs font-semibold mb-2 ${sameDay(day, today) ? 'text-red-600' : inMonth ? 'text-gray-700' : 'text-gray-300'}`}>
+                    <div className={`mb-2 flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                      sameDay(day, today)
+                        ? 'bg-red-600 text-white'
+                        : inMonth
+                          ? 'text-gray-700'
+                          : 'text-gray-300'
+                    }`}>
                       {day.getDate()}
                     </div>
                     <div className="space-y-1">
@@ -605,7 +662,7 @@ export default function Booking() {
                               : 'bg-red-50 text-red-700 hover:bg-red-100'
                           }`}
                         >
-                          <div className="font-semibold truncate">{bookingTitle(booking, { venuesById, itemsByBooking })}</div>
+                          <div className="font-semibold truncate">{bookingTitle(booking, { venuesById, vehiclesById, itemsByBooking })}</div>
                           <div className="truncate">{formatTime(booking.start_at)} {booking.purpose}</div>
                         </button>
                       ))}
@@ -622,7 +679,7 @@ export default function Booking() {
           <div className="px-4 py-3 border-b border-gray-200">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="font-semibold text-gray-900">{activeTab === 'venue' ? 'Venue' : 'Equipment'} Booking List</h2>
+                <h2 className="font-semibold text-gray-900">{activeTab === 'venue' ? 'Venue' : activeTab === 'vehicle' ? 'Vehicle' : 'Equipment'} Booking List</h2>
                 <p className="text-xs text-gray-400">
                   {showAllBookings ? monthLabel(month) : selectedCalendarBookingId ? 'Selected calendar booking' : 'Select a booking from the calendar'}
                 </p>
@@ -656,7 +713,7 @@ export default function Booking() {
                 <div key={booking.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-gray-900">{bookingTitle(booking, { venuesById, itemsByBooking })}</p>
+                      <p className="font-semibold text-gray-900">{bookingTitle(booking, { venuesById, vehiclesById, itemsByBooking })}</p>
                       <p className="text-xs text-gray-500 mt-1">{formatDateTime(booking.start_at)} - {formatDateTime(booking.end_at)}</p>
                     </div>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusStyles[booking.status] || statusStyles.pending}`}>
@@ -666,6 +723,9 @@ export default function Booking() {
                   <div className="mt-3 text-xs text-gray-500 space-y-1">
                     <p><span className="font-medium">Purpose:</span> {booking.purpose}</p>
                     {booking.customer_name && <p><span className="font-medium">Customer:</span> {booking.customer_name}</p>}
+                    {booking.booking_type === 'vehicle' && (
+                      <p><span className="font-medium">Vehicle:</span> {vehicleLabel(vehiclesById[String(booking.vehicle_id)]) || '—'}</p>
+                    )}
                     <p><span className="font-medium">Booked By:</span> {displayName(owner)}</p>
                     {itemsByBooking[String(booking.id)]?.length > 0 && (
                       <p><span className="font-medium">Items:</span> {itemsByBooking[String(booking.id)].map(item => item.serial_no ? `${item.name} (${item.serial_no})` : item.name).join(', ')}</p>
@@ -709,11 +769,12 @@ export default function Booking() {
                 <label className="space-y-1">
                   <span className="text-sm font-medium text-gray-700">Booking Type</span>
                   <select value={form.booking_type} onChange={e => {
-                    setForm(f => ({ ...f, booking_type: e.target.value, venue_id: '', purpose: e.target.value === 'venue' ? 'Meeting' : 'Demo' }))
+                    setForm(f => ({ ...f, booking_type: e.target.value, venue_id: '', vehicle_id: '', purpose: e.target.value === 'venue' ? 'Meeting' : e.target.value === 'vehicle' ? 'Internal Use' : 'Demo' }))
                     setSelectedItems([])
                   }} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
                     <option value="venue">Venue</option>
                     <option value="equipment">Equipment</option>
+                    <option value="vehicle">Vehicle</option>
                   </select>
                 </label>
                 <label className="space-y-1">
@@ -755,6 +816,34 @@ export default function Booking() {
                       </label>
                     ))}
                   </div>
+                </div>
+              ) : form.booking_type === 'vehicle' ? (
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">Select Vehicle</p>
+                  {checkingAvailability && <div className="mb-2 text-xs text-gray-500">Checking selected date availability...</div>}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {vehicles.map(vehicle => {
+                      const unavailable = unavailableVehicleIds.includes(String(vehicle.id))
+                      const selected = String(form.vehicle_id) === String(vehicle.id)
+                      return (
+                        <label key={vehicle.id} className={`border p-3 ${unavailable ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400' : selected ? 'cursor-pointer border-red-500 bg-red-50' : 'cursor-pointer border-gray-200 hover:bg-gray-50'}`}>
+                          <input
+                            type="radio"
+                            name="vehicle"
+                            className="sr-only"
+                            value={vehicle.id}
+                            disabled={unavailable}
+                            checked={selected}
+                            onChange={e => setForm(f => ({ ...f, vehicle_id: e.target.value }))}
+                          />
+                          <span className={`block font-semibold ${unavailable ? 'text-gray-400' : 'text-gray-900'}`}>{vehicle.car_model}</span>
+                          <span className="text-xs">{vehicle.plate_number}</span>
+                          {unavailable && <span className="mt-2 block text-[11px] text-gray-400">Booked selected date</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  {!vehicles.length && <div className="border border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-400">No active vehicles configured in Settings.</div>}
                 </div>
               ) : (
                 <div className="space-y-4">

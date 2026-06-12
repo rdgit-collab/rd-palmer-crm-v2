@@ -729,7 +729,7 @@ function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
             ) : (
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">{row.name}</p>
+                  <p className="text-sm font-semibold text-gray-900">{row.name || row.car_model || row.plate_number}</p>
                   <p className="text-xs text-gray-500 mt-1">
                     {fields
                       .filter(field => field.key !== 'name' && row[field.key] !== null && row[field.key] !== undefined && row[field.key] !== '')
@@ -753,6 +753,7 @@ function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
 
 function BookingSettingsPanel() {
   const [venues, setVenues] = useState([])
+  const [vehicles, setVehicles] = useState([])
   const [categories, setCategories] = useState([])
   const [groups, setGroups] = useState([])
   const [items, setItems] = useState([])
@@ -762,19 +763,21 @@ function BookingSettingsPanel() {
   const load = async () => {
     setLoading(true)
     setError('')
-    const [venueResult, categoryResult, groupResult, itemResult] = await Promise.all([
+    const [venueResult, vehicleResult, categoryResult, groupResult, itemResult] = await Promise.all([
       supabase.from('booking_venues').select('*').order('sort_order'),
+      supabase.from('booking_vehicles').select('*').order('sort_order'),
       supabase.from('booking_equipment_categories').select('*').order('sort_order'),
       supabase.from('booking_equipment_groups').select('*').order('sort_order'),
       supabase.from('booking_equipment_items').select('*').order('sort_order'),
     ])
-    const firstError = [venueResult, categoryResult, groupResult, itemResult].find(result => result.error)?.error
+    const firstError = [venueResult, vehicleResult, categoryResult, groupResult, itemResult].find(result => result.error)?.error
     if (firstError) {
       setError(firstError.message)
       setLoading(false)
       return
     }
     setVenues(venueResult.data || [])
+    setVehicles(vehicleResult.data || [])
     setCategories(categoryResult.data || [])
     setGroups(groupResult.data || [])
     setItems(itemResult.data || [])
@@ -800,7 +803,7 @@ function BookingSettingsPanel() {
       action,
       recordTable: tableName,
       recordId: id || payload.id,
-      recordLabel: payload.name,
+      recordLabel: payload.name || payload.car_model || payload.plate_number,
       summary: `${action === 'insert' ? 'Created' : action === 'update' ? 'Updated' : 'Deleted'} booking dropdown data`,
     })
     await load()
@@ -817,6 +820,11 @@ function BookingSettingsPanel() {
     String(a?.id || '').localeCompare(String(b?.id || ''), undefined, { numeric: true, sensitivity: 'base' })
 
   const sortedCategories = [...categories].sort(compareBySortAndName)
+  const sortedVehicles = [...vehicles].sort((a, b) =>
+    (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0) ||
+    String(a?.car_model || '').localeCompare(String(b?.car_model || ''), undefined, { numeric: true, sensitivity: 'base' }) ||
+    String(a?.plate_number || '').localeCompare(String(b?.plate_number || ''), undefined, { numeric: true, sensitivity: 'base' })
+  )
   const categoriesById = Object.fromEntries(categories.map(category => [String(category.id), category]))
 
   const sortedGroups = [...groups].sort((a, b) => {
@@ -843,6 +851,12 @@ function BookingSettingsPanel() {
     { key: 'capacity', label: 'Capacity', type: 'number' },
     { key: 'sort_order', label: 'Sort Order', type: 'number', defaultValue: 0 },
     { key: 'notes', label: 'Notes', multiline: true, wide: true },
+    { key: 'is_active', label: 'Active', type: 'checkbox', defaultValue: true },
+  ]
+  const vehicleFields = [
+    { key: 'car_model', label: 'Car Model', required: true },
+    { key: 'plate_number', label: 'Plate Number', required: true },
+    { key: 'sort_order', label: 'Sort Order', type: 'number', defaultValue: 0 },
     { key: 'is_active', label: 'Active', type: 'checkbox', defaultValue: true },
   ]
   const categoryFields = [
@@ -885,6 +899,11 @@ function BookingSettingsPanel() {
           onAdd={payload => mutate('booking_venues', 'insert', payload)}
           onUpdate={(id, payload) => mutate('booking_venues', 'update', payload, id)}
           onDelete={id => deleteRow('booking_venues', id)}
+        />
+        <BookingCrudPanel title="Booking Vehicles" rows={sortedVehicles} fields={vehicleFields}
+          onAdd={payload => mutate('booking_vehicles', 'insert', payload)}
+          onUpdate={(id, payload) => mutate('booking_vehicles', 'update', payload, id)}
+          onDelete={id => deleteRow('booking_vehicles', id)}
         />
         <BookingCrudPanel title="Equipment Categories" rows={sortedCategories} fields={categoryFields}
           onAdd={payload => mutate('booking_equipment_categories', 'insert', payload)}
