@@ -28,6 +28,12 @@ const PAGE_SIZE = 30
 const TICKET_LIST_COLUMNS = 'id, ticket_id, date, warranty, category, company_id, company_name, contact_person, description, priority, due_date, status, is_completed, assigned_to, remark, user_id, created_at, serial_number'
 const TICKET_STATUSES = ['Open', 'Pending', 'Completed']
 const TICKET_STATUS_FILTERS = [...TICKET_STATUSES, 'Overdue']
+const TICKET_SEARCH_TYPES = [
+  { value: 'general', label: 'Ticket / Company' },
+  { value: 'ticket', label: 'Ticket No.' },
+  { value: 'serial', label: 'Serial Number' },
+  { value: 'company', label: 'Company Name' },
+]
 const SERIAL_SEARCH_TIMEOUT_MS = 6000
 const DEFAULT_TICKET_REPORT_TERMS = `1. Work performed is based on information available at the time of service.
 2. Parts used, findings, and service notes are recorded for internal and customer reference.
@@ -458,10 +464,13 @@ export default function Tickets() {
   const [total, setTotal]           = useState(0)
   const [page, setPage]             = useState(1)
   const [search, setSearch]         = useState('')
+  const [searchType, setSearchType] = useState('general')
   const [priorityFilter, setPF]     = useState('')
   const [assignedFilter, setAssignedFilter] = useState('')
   const [monthFilter, setMonthFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [ticketSerialMatches, setTicketSerialMatches] = useState({})
+  const [showMoreFilters, setShowMoreFilters] = useState(false)
   const [loading, setLoading]       = useState(false)
   const [form, setForm]             = useState(emptyForm)
   const [editId, setEditId]         = useState(null)
@@ -521,18 +530,82 @@ export default function Tickets() {
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTickets = useCallback(async () => {
     setLoading(true)
+    setError('')
+    const term = search.trim()
+    const serialMatchMap = {}
+
+    if (term && searchType === 'serial') {
+      const [productResult, ticketSerialResult] = await Promise.all([
+        supabase
+          .from('ticket_product')
+          .select('ticket_id, serial_number')
+          .ilike('serial_number', `%${term}%`)
+          .limit(1000),
+        supabase
+          .from('ticket')
+          .select('id, serial_number')
+          .ilike('serial_number', `%${term}%`)
+          .limit(1000),
+      ])
+
+      const serialSearchError = productResult.error || ticketSerialResult.error
+      if (serialSearchError) {
+        setError(serialSearchError.message)
+        setTickets([])
+        setTicketContacts({})
+        setTicketSerialMatches({})
+        setTotal(0)
+        setLoading(false)
+        return
+      }
+
+      ;(productResult.data || []).forEach(row => {
+        if (!row.ticket_id) return
+        const key = String(row.ticket_id)
+        if (!serialMatchMap[key]) serialMatchMap[key] = new Set()
+        if (row.serial_number) serialMatchMap[key].add(row.serial_number)
+      })
+      ;(ticketSerialResult.data || []).forEach(row => {
+        if (!row.id) return
+        const key = String(row.id)
+        if (!serialMatchMap[key]) serialMatchMap[key] = new Set()
+        if (row.serial_number) serialMatchMap[key].add(row.serial_number)
+      })
+
+      const matchedTicketIds = Object.keys(serialMatchMap).map(Number).filter(Number.isFinite)
+      if (matchedTicketIds.length === 0) {
+        setTickets([])
+        setTicketContacts({})
+        setTicketSerialMatches({})
+        setTotal(0)
+        setLoading(false)
+        return
+      }
+    }
+
     let q = supabase
       .from('ticket')
       .select(TICKET_LIST_COLUMNS, { count: 'estimated' })
       .eq('is_completed', tab === 'open' ? 0 : 1)
       .order('id', { ascending: false })
 
-    if (search) {
-      const term = search.trim()
+    if (term) {
       const tid = term.replace(/^TID/i, '')
-      const filters = [`company_name.ilike.%${term}%`, `priority.ilike.%${term}%`]
-      if (/^\d+$/.test(tid)) filters.push(`ticket_id.eq.${parseInt(tid)}`)
-      q = q.or(filters.join(','))
+      if (searchType === 'serial') {
+        q = q.in('id', Object.keys(serialMatchMap).map(Number).filter(Number.isFinite))
+      } else if (searchType === 'ticket') {
+        if (/^\d+$/.test(tid)) {
+          q = q.eq('ticket_id', parseInt(tid))
+        } else {
+          q = q.eq('ticket_id', -1)
+        }
+      } else if (searchType === 'company') {
+        q = q.ilike('company_name', `%${term}%`)
+      } else {
+        const filters = [`company_name.ilike.%${term}%`, `priority.ilike.%${term}%`]
+        if (/^\d+$/.test(tid)) filters.push(`ticket_id.eq.${parseInt(tid)}`)
+        q = q.or(filters.join(','))
+      }
     }
     if (priorityFilter) q = q.eq('priority', priorityFilter)
     if (assignedFilter) q = q.eq('assigned_to', parseInt(assignedFilter))
@@ -552,6 +625,9 @@ export default function Tickets() {
       const rows = data || []
       setTickets(rows)
       setTotal(count || 0)
+      setTicketSerialMatches(Object.fromEntries(
+        rows.map(row => [String(row.id), [...(serialMatchMap[String(row.id)] || [])]]).filter(([, serials]) => serials.length > 0),
+      ))
 
       const contactIds = [...new Set(rows
         .map(row => Number(row.contact_person))
@@ -566,9 +642,12 @@ export default function Tickets() {
       } else {
         setTicketContacts({})
       }
+    } else {
+      setError(err.message)
+      setTicketSerialMatches({})
     }
     setLoading(false)
-  }, [search, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
+  }, [search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
 
   useEffect(() => { fetchTickets() }, [fetchTickets])
 
@@ -1167,6 +1246,21 @@ export default function Tickets() {
     name: item.sku,
     description: stripHtml(item.description || ''),
   }))
+  const assignedFilterLabel = users.find(user => String(user.id) === String(assignedFilter))
+  const monthFilterLabel = ticketMonths.find(option => option.value === monthFilter)?.label
+  const activeFilterChips = [
+    assignedFilter && { key: 'assigned', label: `Assigned: ${[assignedFilterLabel?.first_name, assignedFilterLabel?.last_name].filter(Boolean).join(' ') || assignedFilter}` },
+    monthFilter && { key: 'month', label: `Month: ${monthFilterLabel || monthFilter}` },
+    priorityFilter && { key: 'priority', label: `Priority: ${priorityFilter}` },
+    statusFilter && { key: 'status', label: `Status: ${statusFilter}` },
+  ].filter(Boolean)
+  const clearAdvancedFilters = () => {
+    setAssignedFilter('')
+    setMonthFilter('')
+    setPF('')
+    setStatusFilter('')
+    setPage(1)
+  }
 
   // ══════════════════════════════════════════════════════════════════
   // LIST VIEW
@@ -1196,53 +1290,92 @@ export default function Tickets() {
         </div>
 
         {/* Search + Filters */}
-        <div className="flex flex-wrap gap-3 mb-4">
-          <div className="relative flex-1 min-w-64 max-w-sm">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search company name or TID..."
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400"
-            />
+        <div className="mb-4 space-y-3">
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={searchType}
+              onChange={e => { setSearchType(e.target.value); setPage(1) }}
+              className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+            >
+              {TICKET_SEARCH_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <div className="relative flex-1 min-w-64 max-w-lg">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder={searchType === 'serial' ? 'Search serial number...' : searchType === 'ticket' ? 'Search TID number...' : searchType === 'company' ? 'Search company name...' : 'Search company name or TID...'}
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMoreFilters(value => !value)}
+              className={`border px-3 py-2 text-sm font-medium ${showMoreFilters || activeFilterChips.length ? 'border-red-200 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            >
+              More Filters{activeFilterChips.length ? ` (${activeFilterChips.length})` : ''}
+            </button>
           </div>
-          <select
-            value={assignedFilter}
-            onChange={e => { setAssignedFilter(e.target.value); setPage(1) }}
-            className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-          >
-            <option value="">All Assigned</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
-          </select>
-          <select
-            value={monthFilter}
-            onChange={e => { setMonthFilter(e.target.value); setPage(1) }}
-            className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-          >
-            <option value="">All Months</option>
-            {ticketMonths.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-          <select
-            value={priorityFilter}
-            onChange={e => { setPF(e.target.value); setPage(1) }}
-            className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-          >
-            <option value="">All Priorities</option>
-            {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={e => {
-              setStatusFilter(e.target.value)
-              if (e.target.value === 'Overdue') setTab('open')
-              setPage(1)
-            }}
-            className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-          >
-            <option value="">All Status</option>
-            {TICKET_STATUS_FILTERS.map(status => <option key={status} value={status}>{status}</option>)}
-          </select>
+
+          {activeFilterChips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {activeFilterChips.map(chip => (
+                <span key={chip.key} className="inline-flex items-center gap-1 rounded-full border border-red-100 bg-red-50 px-3 py-1 text-xs text-red-700">
+                  {chip.label}
+                </span>
+              ))}
+              <button type="button" onClick={clearAdvancedFilters} className="text-xs font-medium text-gray-500 hover:text-red-600">
+                Clear Filters
+              </button>
+            </div>
+          )}
+
+          {showMoreFilters && (
+            <div className="grid grid-cols-1 gap-3 border border-gray-200 bg-gray-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
+              <select
+                value={assignedFilter}
+                onChange={e => { setAssignedFilter(e.target.value); setPage(1) }}
+                className="border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+              >
+                <option value="">All Assigned</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+              </select>
+              <select
+                value={monthFilter}
+                onChange={e => { setMonthFilter(e.target.value); setPage(1) }}
+                className="border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+              >
+                <option value="">All Months</option>
+                {ticketMonths.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <select
+                value={priorityFilter}
+                onChange={e => { setPF(e.target.value); setPage(1) }}
+                className="border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+              >
+                <option value="">All Priorities</option>
+                {priorities.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={e => {
+                  setStatusFilter(e.target.value)
+                  if (e.target.value === 'Overdue') setTab('open')
+                  setPage(1)
+                }}
+                className="border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+              >
+                <option value="">All Status</option>
+                {TICKET_STATUS_FILTERS.map(status => <option key={status} value={status}>{status}</option>)}
+              </select>
+              <div className="sm:col-span-2 lg:col-span-4">
+                <button type="button" onClick={clearAdvancedFilters} className="text-sm font-medium text-gray-500 hover:text-red-600">
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white border border-gray-200 overflow-hidden">
@@ -1272,7 +1405,14 @@ export default function Tickets() {
                   <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 font-semibold text-red-600">TID{t.ticket_id}</td>
                     <td className="px-4 py-3 text-gray-600">{formatDate(t.date)}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{t.company_name || '—'}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      <div>{t.company_name || '—'}</div>
+                      {ticketSerialMatches[String(t.id)]?.length > 0 && (
+                        <div className="mt-1 text-xs font-normal text-green-700">
+                          Matched Serial No: {ticketSerialMatches[String(t.id)].join(', ')}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-gray-600">{getTicketContactName(t)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${priorityColor(t.priority)}`}>
