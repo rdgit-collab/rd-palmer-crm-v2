@@ -274,6 +274,7 @@ export default function Tasks() {
   const [error, setError]         = useState('')
   const [uploadFile, setUploadFile] = useState(null)
   const [fileInputKey, setFileInputKey] = useState(0)
+  const [returnToTicketId, setReturnToTicketId] = useState(null)
 
   const [ticketLabels, setTicketLabels] = useState({})
   const [serviceTypes, setServiceTypes] = useState([])
@@ -283,9 +284,12 @@ export default function Tasks() {
   const [dropdownLoading, setDropdownLoading] = useState(true)
   const origAssignedTo                = useRef(null)
   const origFile                      = useRef('')
+  const fetchRequestId                = useRef(0)
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
+    const requestId = fetchRequestId.current + 1
+    fetchRequestId.current = requestId
     setLoading(true)
     const { data, error: err } = await supabase.rpc('search_tasks', {
       p_tab: tab,
@@ -297,6 +301,7 @@ export default function Tasks() {
       p_limit: PAGE_SIZE,
       p_offset: (page - 1) * PAGE_SIZE,
     })
+    if (fetchRequestId.current !== requestId) return
     if (!err) {
       if ((data || []).length === 0 && page > 1) {
         setPage(1)
@@ -313,6 +318,8 @@ export default function Tasks() {
           ticket_id: row.ticket_number,
           company_name: row.ticket_company_name,
         }])))
+    } else {
+      setError(err.message)
     }
     setLoading(false)
   }, [search, page, tab, scope, profile, assignedFilter, serviceTypeFilter])
@@ -340,6 +347,11 @@ export default function Tasks() {
   useEffect(() => {
     const taskId = location.state?.taskId
     if (!taskId) return
+    setReturnToTicketId(location.state?.returnToTicketId || null)
+    navigate(location.pathname, {
+      replace: true,
+      state: location.state?.returnToTicketId ? { returnToTicketId: location.state.returnToTicketId } : null,
+    })
     const load = async () => {
       const { data } = await supabase
         .from('task')
@@ -349,7 +361,7 @@ export default function Tasks() {
       if (data) openDetail(data)
     }
     load()
-  }, [location.state?.taskId, openDetail])
+  }, [location.pathname, location.state?.returnToTicketId, location.state?.taskId, navigate, openDetail])
 
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
@@ -503,12 +515,11 @@ export default function Tasks() {
 
     setSaving(false)
     setUploadFile(null)
-    fetchTasks()
+    await fetchTasks()
     setView('list')
   }
 
   const handleDetailBack = () => {
-    const returnToTicketId = location.state?.returnToTicketId
     if (returnToTicketId) {
       navigate('/tickets', { state: { ticketId: returnToTicketId } })
       return
@@ -518,7 +529,8 @@ export default function Tasks() {
 
   // ── Mark complete ─────────────────────────────────────────────────
   const markComplete = async (id) => {
-    await supabase.from('task').update({ is_completed: 1 }).eq('id', id)
+    const { error: err } = await supabase.from('task').update({ is_completed: 1 }).eq('id', id)
+    if (err) { setError(err.message); return }
     logActivity({
       module: 'tasks',
       action: 'complete',
@@ -527,11 +539,12 @@ export default function Tasks() {
       summary: `Marked task #${id} complete`,
     })
     setCompleteId(null)
-    fetchTasks()
+    await fetchTasks()
   }
 
   const reopenTask = async (id) => {
-    await supabase.from('task').update({ is_completed: 0 }).eq('id', id)
+    const { error: err } = await supabase.from('task').update({ is_completed: 0 }).eq('id', id)
+    if (err) { setError(err.message); return }
     logActivity({
       module: 'tasks',
       action: 'reopen',
@@ -540,12 +553,13 @@ export default function Tasks() {
       summary: `Reopened task #${id}`,
     })
     setReopenId(null)
-    fetchTasks()
+    await fetchTasks()
   }
 
   // ── Delete ────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
-    await supabase.from('task').delete().eq('id', id)
+    const { error: err } = await supabase.from('task').delete().eq('id', id)
+    if (err) { setError(err.message); return }
     logActivity({
       module: 'tasks',
       action: 'delete',
@@ -554,7 +568,7 @@ export default function Tasks() {
       summary: `Deleted task #${id}`,
     })
     setDeleteId(null)
-    fetchTasks()
+    await fetchTasks()
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
