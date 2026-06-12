@@ -931,12 +931,10 @@ export default function Tasks() {
             <p className="font-medium text-gray-500 mb-1">Description</p>
             <p className="text-gray-800 whitespace-pre-wrap">{displayText(detail.description)}</p>
           </div>
-          {displayText(detail.action_taken, '') && (
-            <div className="border-t border-gray-100 pt-4">
-              <p className="font-medium text-gray-500 mb-1">Action Taken</p>
-              <p className="text-gray-800 whitespace-pre-wrap">{displayText(detail.action_taken)}</p>
-            </div>
-          )}
+          <div className="border-t border-gray-100 pt-4">
+            <p className="font-medium text-gray-500 mb-1">Action Taken</p>
+            <p className="text-gray-800 whitespace-pre-wrap">{displayText(detail.action_taken)}</p>
+          </div>
         </div>
         {completeId && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
