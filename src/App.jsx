@@ -28,6 +28,8 @@ const RMA = lazy(() => import('./pages/service/RMA'))
 const Calibration = lazy(() => import('./pages/service/Calibration'))
 const SerialNumbers = lazy(() => import('./pages/service/SerialNumbers'))
 const Booking = lazy(() => import('./pages/Booking'))
+const Training = lazy(() => import('./pages/Training'))
+const TrainingSignup = lazy(() => import('./pages/TrainingSignup'))
 const Users = lazy(() => import('./pages/admin/Users'))
 const Catalogue = lazy(() => import('./pages/admin/Catalogue'))
 const Settings = lazy(() => import('./pages/admin/Settings'))
@@ -86,6 +88,7 @@ function AppRoutes() {
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+          <Route path="/training/signup/:slug" element={<TrainingSignup />} />
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<DashboardModule />} />
             <Route path="sales-dashboard"   element={<ProtectedRoute roles={salesRoles}><SalesDashboardPage /></ProtectedRoute>} />
@@ -103,6 +106,7 @@ function AppRoutes() {
             <Route path="calibration"   element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="calibration"> <Calibration /> </PermissionRoute></ProtectedRoute>} />
             <Route path="serial-numbers"element={<ProtectedRoute roles={serviceRoles}><PermissionRoute module="serial-numbers"><SerialNumbers /></PermissionRoute></ProtectedRoute>} />
             <Route path="booking"      element={<ProtectedRoute roles={sharedWorkRoles}><PermissionRoute module="booking">    <Booking />    </PermissionRoute></ProtectedRoute>} />
+            <Route path="training"     element={<ProtectedRoute roles={sharedWorkRoles}><PermissionRoute module="training">   <Training />   </PermissionRoute></ProtectedRoute>} />
             <Route path="catalogue"     element={<ProtectedRoute roles={adminRoles}><Catalogue /></ProtectedRoute>} />
             <Route path="admin/users"   element={<ProtectedRoute roles={adminRoles}><Users /></ProtectedRoute>} />
             <Route path="settings"      element={<ProtectedRoute roles={adminRoles}><Settings /></ProtectedRoute>} />

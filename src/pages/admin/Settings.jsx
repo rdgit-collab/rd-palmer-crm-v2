@@ -577,6 +577,7 @@ const SALES_MODULES = [
   { module: 'tickets',    label: 'Tickets' },
   { module: 'tasks',      label: 'Tasks' },
   { module: 'booking',    label: 'Booking' },
+  { module: 'training',   label: 'Training' },
 ]
 const SERVICE_MODULES = [
   { module: 'tickets',       label: 'Tickets' },
@@ -586,6 +587,7 @@ const SERVICE_MODULES = [
   { module: 'calibration',   label: 'Calibration' },
   { module: 'serial-numbers',label: 'Serial Numbers' },
   { module: 'booking',       label: 'Booking' },
+  { module: 'training',      label: 'Training' },
 ]
 
 const BOOKING_ITEM_STATUS_OPTIONS = [
