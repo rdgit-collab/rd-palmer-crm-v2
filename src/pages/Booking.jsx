@@ -77,6 +77,17 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
+function dateKey(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function bookingFallsOnDay(booking, day) {
+  const start = new Date(booking.start_at)
+  const end = new Date(booking.end_at)
+  return start <= new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59) &&
+    end >= new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0)
+}
+
 function formatDateTime(value) {
   if (!value) return '—'
   return new Date(value).toLocaleString('en-GB', {
@@ -169,6 +180,7 @@ export default function Booking() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [equipmentSearch, setEquipmentSearch] = useState('')
   const [selectedCalendarBookingId, setSelectedCalendarBookingId] = useState(null)
+  const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState('')
   const [showAllBookings, setShowAllBookings] = useState(false)
   const [unavailableItemIds, setUnavailableItemIds] = useState([])
   const [unavailableVehicleIds, setUnavailableVehicleIds] = useState([])
@@ -205,8 +217,18 @@ export default function Booking() {
     return visibleBookings.filter(booking => String(booking.id) === String(selectedCalendarBookingId))
   }, [selectedCalendarBookingId, showAllBookings, visibleBookings])
 
+  const selectedDayBookings = useMemo(() => {
+    if (!selectedCalendarDateKey || showAllBookings || selectedCalendarBookingId) return null
+    const [year, monthNumber, dayNumber] = selectedCalendarDateKey.split('-').map(Number)
+    const selectedDay = new Date(year, monthNumber - 1, dayNumber)
+    return visibleBookings.filter(booking => bookingFallsOnDay(booking, selectedDay))
+  }, [selectedCalendarBookingId, selectedCalendarDateKey, showAllBookings, visibleBookings])
+
+  const displayedBookings = selectedDayBookings || listBookings
+
   useEffect(() => {
     setSelectedCalendarBookingId(null)
+    setSelectedCalendarDateKey('')
     setShowAllBookings(false)
   }, [activeTab, month])
 
@@ -721,31 +743,59 @@ export default function Booking() {
           ) : (
             <div className="grid grid-cols-7">
               {monthDays.map(day => {
-                const dayBookings = visibleBookings.filter(booking => {
-                  const start = new Date(booking.start_at)
-                  const end = new Date(booking.end_at)
-                  return start <= new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59) &&
-                    end >= new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0)
-                })
+                const dayBookings = visibleBookings.filter(booking => bookingFallsOnDay(booking, day))
                 const inMonth = day.getMonth() === month.getMonth()
+                const isSelectedDay = selectedCalendarDateKey === dateKey(day) && !selectedCalendarBookingId && !showAllBookings
                 return (
-                  <div key={day.toISOString()} className={`min-h-28 border-r border-b border-gray-100 p-2 ${inMonth ? 'bg-white' : 'bg-gray-50'}`}>
-                    <div className={`mb-2 flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-                      sameDay(day, today)
-                        ? 'bg-red-600 text-white'
+                  <div
+                    key={day.toISOString()}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setSelectedCalendarBookingId(null)
+                      setSelectedCalendarDateKey(dateKey(day))
+                      setShowAllBookings(false)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      setSelectedCalendarBookingId(null)
+                      setSelectedCalendarDateKey(dateKey(day))
+                      setShowAllBookings(false)
+                    }}
+                    className={`min-h-32 border-r border-b p-2 text-left transition ${
+                      isSelectedDay
+                        ? 'border-red-200 bg-red-50/70'
                         : inMonth
-                          ? 'text-gray-700'
-                          : 'text-gray-300'
-                    }`}>
-                      {day.getDate()}
+                          ? 'border-gray-100 bg-white hover:bg-gray-50'
+                          : 'border-gray-100 bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-1">
+                      <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                        sameDay(day, today)
+                          ? 'bg-red-600 text-white'
+                          : inMonth
+                            ? 'text-gray-700'
+                            : 'text-gray-300'
+                      }`}>
+                        {day.getDate()}
+                      </div>
+                      {dayBookings.length > 1 && (
+                        <span className="shrink-0 text-[10px] font-medium text-gray-400">
+                          {dayBookings.length} bookings
+                        </span>
+                      )}
                     </div>
                     <div className="space-y-1">
                       {dayBookings.slice(0, 3).map(booking => (
                         <button
                           key={booking.id}
                           type="button"
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.stopPropagation()
                             setSelectedCalendarBookingId(booking.id)
+                            setSelectedCalendarDateKey(dateKey(day))
                             setShowAllBookings(false)
                           }}
                           className={`block w-full rounded px-2 py-1 text-left text-[11px] leading-tight transition ${
@@ -758,7 +808,11 @@ export default function Booking() {
                           <div className="truncate">{formatTime(booking.start_at)} {booking.purpose}</div>
                         </button>
                       ))}
-                      {dayBookings.length > 3 && <div className="text-[11px] text-gray-400">+{dayBookings.length - 3} more</div>}
+                      {dayBookings.length > 3 && (
+                        <div className="text-[11px] font-medium text-gray-400">
+                          +{dayBookings.length - 3} more, click day
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -773,13 +827,14 @@ export default function Booking() {
               <div>
                 <h2 className="font-semibold text-gray-900">{activeTab === 'venue' ? 'Venue' : activeTab === 'vehicle' ? 'Vehicle' : 'Equipment'} Booking List</h2>
                 <p className="text-xs text-gray-400">
-                  {showAllBookings ? monthLabel(month) : selectedCalendarBookingId ? 'Selected calendar booking' : 'Select a booking from the calendar'}
+                  {showAllBookings ? monthLabel(month) : selectedCalendarBookingId ? 'Selected calendar booking' : selectedCalendarDateKey ? 'Selected calendar day' : 'Select a day or booking from the calendar'}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   setSelectedCalendarBookingId(null)
+                  setSelectedCalendarDateKey('')
                   setShowAllBookings(true)
                 }}
                 className="px-3 py-1.5 text-xs border border-gray-200 text-gray-700 hover:bg-gray-50"
@@ -793,11 +848,11 @@ export default function Booking() {
               <div className="py-10 text-center text-sm text-gray-400">Loading...</div>
             ) : visibleBookings.length === 0 ? (
               <div className="py-10 text-center text-sm text-gray-400">No bookings this month.</div>
-            ) : listBookings.length === 0 ? (
+            ) : displayedBookings.length === 0 ? (
               <div className="py-10 px-4 text-center text-sm text-gray-400">
-                Click a booking bubble in the calendar to view its details, or use Show All.
+                Click a day to view every booking on that date, click a booking bubble to view one booking, or use Show All.
               </div>
-            ) : listBookings.map(booking => {
+            ) : displayedBookings.map(booking => {
               const owner = usersById[String(booking.requested_by_user_id)]
               const isOwner = String(booking.requested_by_user_id) === String(profile?.id)
               const canManage = (isAdmin || isOwner) && !isClosedBooking(booking)
