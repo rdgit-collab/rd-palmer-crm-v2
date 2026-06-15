@@ -53,7 +53,7 @@ export default function NotificationBell() {
     const { data } = await supabase
       .from('notification')
       .select('*')
-      .or(`assigned_to.eq.${notificationUserId},user_id.eq.${notificationUserId}`)
+      .or(`assigned_to.eq.${notificationUserId},and(assigned_to.is.null,user_id.eq.${notificationUserId})`)
       .order('created_at', { ascending: false, nullsFirst: false })
       .order('id', { ascending: false })
       .limit(20)
@@ -113,7 +113,11 @@ export default function NotificationBell() {
   // ── Mark all read ─────────────────────────────────────────────────
   const markAllRead = async () => {
     if (!user || !notificationUserId) return
-    await supabase.from('notification').update({ is_read: true }).eq('assigned_to', notificationUserId).eq('is_read', false)
+    await supabase
+      .from('notification')
+      .update({ is_read: true })
+      .or(`assigned_to.eq.${notificationUserId},and(assigned_to.is.null,user_id.eq.${notificationUserId})`)
+      .eq('is_read', false)
     setItems(prev => prev.map(n => ({ ...n, is_read: true })))
     setUnread(0)
   }

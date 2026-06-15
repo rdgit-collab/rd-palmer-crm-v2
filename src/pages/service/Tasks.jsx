@@ -338,7 +338,7 @@ export default function Tasks() {
       if (data) {
         setTicketLabels(prev => ({
           ...prev,
-          [data.id]: `TID${data.ticket_id}${data.company_name ? ` - ${data.company_name}` : ''}`,
+          [data.id]: data,
         }))
       }
     }
@@ -491,17 +491,29 @@ export default function Tasks() {
       (!editId || String(newAssignee) !== oldAssignee)
 
     if (isNewAssignment) {
-      const tickRef = ticketLabels[String(form.ticket_id)]
+      let tickRef = ticketLabels[String(form.ticket_id)]
+      if (!tickRef || typeof tickRef !== 'object' || !tickRef.ticket_id) {
+        const { data: ticketRow } = await supabase
+          .from('ticket')
+          .select('id, ticket_id, company_name')
+          .eq('id', form.ticket_id)
+          .maybeSingle()
+        if (ticketRow) {
+          tickRef = ticketRow
+          setTicketLabels(prev => ({ ...prev, [String(ticketRow.id)]: ticketRow }))
+        }
+      }
       const assignedBy = getUserName(currentLegacyUserId)
+      const ticketLabel = tickRef?.ticket_id ? `TID${tickRef.ticket_id}` : form.ticket_id ? `Ticket #${form.ticket_id}` : 'Task'
       await notifyUser(supabase, {
         userId: parseInt(newAssignee),
         actorUserId: currentLegacyUserId,
         title:  'Task assigned to you',
-        reference: tickRef ? `Task for TID${tickRef.ticket_id}` : 'Task',
+        reference: tickRef ? `Task for ${ticketLabel}` : 'Task',
         companyName: tickRef?.company_name || '',
-        body:   `You have been assigned a task${tickRef ? ' for ' + tickRef.company_name : ''}.`,
+        body:   `You have been assigned a task${tickRef?.company_name ? ' for ' + tickRef.company_name : ''}.`,
         details: [
-          ['Ticket', tickRef ? `TID${tickRef.ticket_id}` : form.ticket_id],
+          ['Ticket', ticketLabel],
           ['Company', tickRef?.company_name || ''],
           ['Service Type', form.servicetype || ''],
           ['Description', form.description || ''],
