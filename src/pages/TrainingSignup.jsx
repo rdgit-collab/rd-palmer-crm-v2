@@ -17,11 +17,12 @@ export default function TrainingSignup() {
   const [hrd, setHrd] = useState(null)
   const [hrEmail, setHrEmail] = useState('')
   const [parts, setParts] = useState([blankPart()])
+  const [website, setWebsite] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(0) // count registered
 
   useEffect(() => {
-    supabase.from('training_sessions').select('*').eq('slug', slug).maybeSingle()
+    supabase.from('training_sessions').select('*').eq('slug', slug).eq('is_open', true).maybeSingle()
       .then(({ data }) => setSession(data || null))
   }, [slug])
 
@@ -30,7 +31,7 @@ export default function TrainingSignup() {
     <div className="min-h-screen flex items-center justify-center bg-[#f5f7fa] px-4">
       <div className="text-center"><GraduationCap className="mx-auto text-gray-300 mb-3" size={40} />
         <h1 className="text-lg font-bold text-gray-800">Training not found</h1>
-        <p className="text-sm text-gray-500 mt-1">This signup link is invalid or the session has been removed.</p></div>
+        <p className="text-sm text-gray-500 mt-1">This signup link is invalid, closed, or the session has been removed.</p></div>
     </div>
   )
 
@@ -45,6 +46,10 @@ export default function TrainingSignup() {
   const rmPart = (i) => setParts(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev)
 
   const submit = async () => {
+    if (website.trim()) {
+      setDone(parts.length)
+      return
+    }
     if (!company.trim()) { alert('Please enter your company name.'); return }
     if (!hrd) { alert('Please indicate whether you are claiming HRD fund.'); return }
     for (let i = 0; i < parts.length; i++) {
@@ -62,7 +67,13 @@ export default function TrainingSignup() {
     }))
     const { error } = await supabase.from('training_registrations').insert(rows)
     setSubmitting(false)
-    if (error) { alert('Something went wrong: ' + error.message); return }
+    if (error) {
+      const msg = String(error.message || '')
+      if (msg.includes('full')) alert('This training session is already full.')
+      else if (msg.includes('closed')) alert('This training session is no longer accepting registrations.')
+      else alert('Something went wrong: ' + msg)
+      return
+    }
     setDone(rows.length)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -184,6 +195,15 @@ export default function TrainingSignup() {
               <p className="text-gray-500 text-sm mt-1.5">Enter your company details once, then add everyone attending. Fields marked <span className="text-red-600">*</span> are required.</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl shadow-lg p-6">
+              <input
+                className="hidden"
+                name="website"
+                tabIndex={-1}
+                autoComplete="off"
+                value={website}
+                onChange={e => setWebsite(e.target.value)}
+                aria-hidden="true"
+              />
               <SectionLabel>Company details</SectionLabel>
               <div className="grid sm:grid-cols-2 gap-3">
                 <Field label="Company name" req><input className={inp} value={company} onChange={e => setCompany(e.target.value)} placeholder="Your company" /></Field>

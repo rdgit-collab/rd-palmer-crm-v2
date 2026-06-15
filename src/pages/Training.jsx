@@ -116,7 +116,12 @@ export default function Training() {
                   <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedId(s.id)}>
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{s.title}</div>
-                      <div className="text-xs text-gray-400 mt-0.5">{s.location || '—'}</div>
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                        <span className="text-xs text-gray-400">{s.location || '—'}</span>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${s.is_open ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {s.is_open ? 'Open' : 'Closed'}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-4 py-3">{s.session_date ? formatDate(s.session_date) : '—'}<div className="text-xs text-gray-400">{s.start_time || ''}</div></td>
                     <td className="px-4 py-3">
@@ -409,7 +414,7 @@ function SessionModal({ session, profile, onClose }) {
     title: session?.title || '', slug: session?.slug || '', session_date: session?.session_date || '',
     start_time: session?.start_time || '09:00', location: session?.location || '', capacity: session?.capacity ?? 20,
     fee: session?.fee ?? 0, duration: session?.duration || '', level: session?.level || '', language: session?.language || '',
-    certificate: session?.certificate ?? true, hrd_claimable: session?.hrd_claimable ?? true,
+    certificate: session?.certificate ?? true, hrd_claimable: session?.hrd_claimable ?? true, is_open: session?.is_open ?? true,
     description: session?.description || '', overview: session?.overview || '',
     outcomes: arrToLines(session?.outcomes), audience: arrToLines(session?.audience),
     includes: arrToLines(session?.includes), agenda: agendaToLines(session?.agenda),
@@ -426,6 +431,7 @@ function SessionModal({ session, profile, onClose }) {
       session_date: f.session_date || null, start_time: f.start_time, location: f.location.trim(),
       capacity: Number(f.capacity) || 0, fee: Number(f.fee) || 0, duration: f.duration.trim(),
       level: f.level.trim(), language: f.language.trim(), certificate: f.certificate, hrd_claimable: f.hrd_claimable,
+      is_open: f.is_open,
       description: f.description.trim(), overview: f.overview.trim(),
       outcomes: linesToArr(f.outcomes), audience: linesToArr(f.audience),
       includes: linesToArr(f.includes), agenda: agendaToArr(f.agenda), updated_at: new Date().toISOString(),
@@ -467,6 +473,7 @@ function SessionModal({ session, profile, onClose }) {
       </div>
       <Field label="Language"><input className={inputCls} value={f.language} onChange={e => set('language', e.target.value)} placeholder="English & Bahasa Malaysia" /></Field>
       <div className="flex gap-5 mb-4">
+        <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.is_open} onChange={e => set('is_open', e.target.checked)} /> Signup open</label>
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.certificate} onChange={e => set('certificate', e.target.checked)} /> Certificate provided</label>
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.hrd_claimable} onChange={e => set('hrd_claimable', e.target.checked)} /> HRD claimable</label>
       </div>
