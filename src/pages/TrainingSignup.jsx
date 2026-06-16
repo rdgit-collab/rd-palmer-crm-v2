@@ -100,7 +100,6 @@ export default function TrainingSignup() {
             </div>
             <div className="flex flex-col items-center sm:items-end">
               <img src={rdPalmerLogo} alt="RD-Palmer" className="max-h-14 w-full max-w-[300px] object-contain sm:max-h-16" />
-              <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-gray-500">Underground Utilities Solution</span>
             </div>
           </div>
           <div className="inline-flex items-center gap-2 bg-white border border-gray-200 text-red-600 rounded-full px-3.5 py-1.5 text-xs font-bold mb-6 shadow-sm">
