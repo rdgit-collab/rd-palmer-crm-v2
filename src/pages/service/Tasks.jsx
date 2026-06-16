@@ -528,6 +528,10 @@ export default function Tasks() {
     setSaving(false)
     setUploadFile(null)
     await fetchTasks()
+    if (returnToTicketId) {
+      navigate('/tickets', { state: { ticketId: returnToTicketId } })
+      return
+    }
     setView('list')
   }
 
