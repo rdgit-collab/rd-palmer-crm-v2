@@ -18,6 +18,7 @@ const dateRangeLabel = session => {
 
 export default function TrainingSignup() {
   const { slug } = useParams()
+  const referralCode = new URLSearchParams(window.location.search).get('ref')?.trim().toUpperCase() || ''
   const [session, setSession] = useState(undefined) // undefined=loading, null=not found
   const [company, setCompany] = useState('')
   const [industry, setIndustry] = useState('')
@@ -71,6 +72,7 @@ export default function TrainingSignup() {
       participant_name: p.participant_name.trim(), company: company.trim(), email: p.email.trim(),
       phone: p.phone.trim(), nric: p.nric.trim(), industry: industry.trim(),
       existing_user: p.existing_user === 'Yes', hrd_claim: hrd === 'Yes', hr_email: hrEmail.trim(),
+      referral_code: referralCode || null,
     }))
     const { error } = await supabase.from('training_registrations').insert(rows)
     setSubmitting(false)

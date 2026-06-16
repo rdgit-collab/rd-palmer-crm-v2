@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus, ArrowRight, ArrowLeft, Copy, Check, X, Calendar, Clock, MapPin,
   Users, GraduationCap, FileText, Upload, Trash2, Link2, Info, CreditCard, Sparkles,
@@ -9,12 +9,13 @@ import { formatDate } from '../lib/dateFormat'
 import { logActivity } from '../lib/activityLog'
 import SignedFileLink from '../components/SignedFileLink'
 import { STATUS_GROUPS } from '../lib/trainingStatus'
+import { hasAdminAccess } from '../lib/roles'
 
 const slugify = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48)
 const fmtShort = v => v ? new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''
 const userName = u => u ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : '—'
 const initials = n => String(n || '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
-const signupUrl = slug => `${window.location.origin}/training/signup/${slug}`
+const signupUrl = (slug, referralCode = '') => `${window.location.origin}/training/signup/${slug}${referralCode ? `?ref=${encodeURIComponent(referralCode)}` : ''}`
 const LANGUAGE_OPTIONS = ['', 'English', 'Bahasa Malaysia', 'English & Bahasa Malaysia', 'Mandarin', 'Tamil']
 const LEVEL_OPTIONS = ['', 'Beginner', 'Intermediate', 'Advanced', 'Beginner - Intermediate', 'Intermediate - Advanced']
 const CAPACITY_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50]
@@ -46,6 +47,7 @@ const durationFromDates = (start, end) => {
 
 export default function Training() {
   const { profile } = useAuth()
+  const canManageTraining = hasAdminAccess(profile?.role_id)
   const [sessions, setSessions] = useState([])
   const [trainerLinks, setTrainerLinks] = useState([])   // {session_id, user_id, users}
   const [regCounts, setRegCounts] = useState({})
@@ -53,27 +55,36 @@ export default function Training() {
   const [selectedId, setSelectedId] = useState(null)
   const [activeUsers, setActiveUsers] = useState([])
   const [editing, setEditing] = useState(null)            // session obj | {} (new) | null
+  const [referralCode, setReferralCode] = useState('')
+  const [copiedReferralSessionId, setCopiedReferralSessionId] = useState('')
 
   const loadList = useCallback(async () => {
     setLoading(true)
-    const [{ data: sess }, { data: links }, { data: regs }] = await Promise.all([
+    const queries = [
       supabase.from('training_sessions').select('*').order('session_date', { ascending: false }),
       supabase.from('training_session_trainers').select('session_id, user_id, users(first_name,last_name)'),
-      supabase.from('training_registrations').select('id, session_id'),
-    ])
+    ]
+    if (canManageTraining) queries.push(supabase.from('training_registrations').select('id, session_id'))
+    const [{ data: sess }, { data: links }, regsResult] = await Promise.all(queries)
     setSessions(sess || [])
     setTrainerLinks(links || [])
     const counts = {}
-    ;(regs || []).forEach(r => { counts[r.session_id] = (counts[r.session_id] || 0) + 1 })
+    ;(regsResult?.data || []).forEach(r => { counts[r.session_id] = (counts[r.session_id] || 0) + 1 })
     setRegCounts(counts)
     setLoading(false)
-  }, [])
+  }, [canManageTraining])
 
   useEffect(() => { loadList() }, [loadList])
   useEffect(() => {
+    if (!canManageTraining) return
     supabase.from('users').select('id, first_name, last_name, status, is_trainer').eq('status', 'Active').eq('is_trainer', true).order('first_name')
       .then(({ data }) => setActiveUsers(data || []))
-  }, [])
+  }, [canManageTraining])
+  useEffect(() => {
+    if (!profile?.id) return
+    supabase.from('training_referral_codes').select('referral_code').eq('user_id', profile.id).eq('is_active', true).maybeSingle()
+      .then(({ data }) => setReferralCode(data?.referral_code || ''))
+  }, [profile?.id])
 
   const trainersFor = id => trainerLinks.filter(t => t.session_id === id)
   const cloneSession = (session) => {
@@ -94,34 +105,63 @@ export default function Training() {
       sessionId={selectedId}
       activeUsers={activeUsers}
       profile={profile}
+      canManageTraining={canManageTraining}
+      referralCode={referralCode}
       onBack={() => { setSelectedId(null); loadList() }}
-      onEdit={s => setEditing(s)}
-      editModal={editing}
-      closeEdit={saved => { setEditing(null); if (saved) loadList() }}
     />
   }
 
   const upcoming = sessions.filter(s => s.session_date && s.session_date >= new Date().toISOString().slice(0, 10)).length
   const totalRegs = Object.values(regCounts).reduce((a, b) => a + b, 0)
+  const copyReferralLink = (session) => {
+    if (!referralCode) return
+    navigator.clipboard?.writeText(signupUrl(session.slug, referralCode))
+    setCopiedReferralSessionId(session.id)
+    setTimeout(() => setCopiedReferralSessionId(''), 1200)
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex flex-wrap items-start gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Training Sessions</h1>
-          <p className="text-sm text-gray-500 mt-1">Create sessions, share signup links, and manage attendees & HRD claim status.</p>
+          <p className="text-sm text-gray-500 mt-1">{canManageTraining ? 'Create sessions, share signup links, and manage attendees & HRD claim status.' : 'View upcoming sessions and share your own tracked referral links.'}</p>
         </div>
-        <button onClick={() => setEditing({})}
-          className="ml-auto inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-          <Plus size={15} /> New Session
-        </button>
+        {canManageTraining && (
+          <button onClick={() => setEditing({})}
+            className="ml-auto inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Plus size={15} /> New Session
+          </button>
+        )}
       </div>
+
+      {!canManageTraining && (
+        <div className="bg-white border border-red-100 rounded-xl p-4 mb-6 flex flex-wrap items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-red-50 text-red-600 flex items-center justify-center"><Link2 size={18} /></div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-gray-900">Your referral code</div>
+            <div className="text-xs text-gray-500">Share a session link from the table below. New signups will be tracked under your name.</div>
+          </div>
+          <div className="ml-auto rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 font-mono text-sm font-semibold text-gray-700">
+            {referralCode || 'Preparing...'}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Stat icon={GraduationCap} tone="red" n={sessions.length} l="Total sessions" />
         <Stat icon={Calendar} tone="blue" n={upcoming} l="Upcoming" />
-        <Stat icon={Users} tone="green" n={totalRegs} l="Total registrations" />
-        <Stat icon={Users} tone="indigo" n={activeUsers.length} l="Training trainers" />
+        {canManageTraining ? (
+          <>
+            <Stat icon={Users} tone="green" n={totalRegs} l="Total registrations" />
+            <Stat icon={Users} tone="indigo" n={activeUsers.length} l="Training trainers" />
+          </>
+        ) : (
+          <>
+            <Stat icon={Link2} tone="green" n={referralCode ? 'Ready' : '—'} l="Referral link" />
+            <Stat icon={Users} tone="indigo" n="View" l="Access mode" />
+          </>
+        )}
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -132,18 +172,19 @@ export default function Training() {
                 <th className="px-4 py-3 font-semibold">Session</th>
                 <th className="px-4 py-3 font-semibold">Date</th>
                 <th className="px-4 py-3 font-semibold">Trainers</th>
-                <th className="px-4 py-3 font-semibold">Registered</th>
-                <th className="px-4 py-3 font-semibold">Signup link</th>
+                {canManageTraining && <th className="px-4 py-3 font-semibold">Registered</th>}
+                <th className="px-4 py-3 font-semibold">{canManageTraining ? 'Signup link' : 'Your referral link'}</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>}
+              {loading && <tr><td colSpan={canManageTraining ? 6 : 5} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>}
               {!loading && sessions.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No sessions yet. Click “New Session” to create one.</td></tr>
+                <tr><td colSpan={canManageTraining ? 6 : 5} className="px-4 py-10 text-center text-gray-400">{canManageTraining ? 'No sessions yet. Click “New Session” to create one.' : 'No sessions available yet.'}</td></tr>
               )}
               {sessions.map(s => {
                 const trs = trainersFor(s.id)
+                const trackedUrl = signupUrl(s.slug, canManageTraining ? '' : referralCode)
                 return (
                   <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedId(s.id)}>
                     <td className="px-4 py-3">
@@ -162,17 +203,30 @@ export default function Training() {
                       )) : <span className="text-xs text-gray-400">None</span>}
                       {trs.length > 2 && <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">+{trs.length - 2}</span>}
                     </td>
-                    <td className="px-4 py-3"><b>{regCounts[s.id] || 0}</b><span className="text-gray-400"> / {s.capacity || 0}</span></td>
+                    {canManageTraining && <td className="px-4 py-3"><b>{regCounts[s.id] || 0}</b><span className="text-gray-400"> / {s.capacity || 0}</span></td>}
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <span className="text-red-600 font-medium text-xs">/training/signup/{s.slug}</span>
+                      <span className="text-red-600 font-medium text-xs">{canManageTraining ? `/training/signup/${s.slug}` : trackedUrl.replace(window.location.origin, '')}</span>
                     </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => cloneSession(s)} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-100 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 mr-2">
-                        <Copy size={13} /> Clone
-                      </button>
-                      <button onClick={() => setSelectedId(s.id)} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-100 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700">
-                        Manage <ArrowRight size={13} />
-                      </button>
+                      {canManageTraining ? (
+                        <>
+                          <button onClick={() => cloneSession(s)} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-100 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 mr-2">
+                            <Copy size={13} /> Clone
+                          </button>
+                          <button onClick={() => setSelectedId(s.id)} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-100 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700">
+                            Manage <ArrowRight size={13} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button disabled={!referralCode} onClick={() => copyReferralLink(s)} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-100 disabled:opacity-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 mr-2">
+                            {copiedReferralSessionId === s.id ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy link</>}
+                          </button>
+                          <button onClick={() => setSelectedId(s.id)} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-100 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700">
+                            View <ArrowRight size={13} />
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 )
@@ -182,7 +236,7 @@ export default function Training() {
         </div>
       </div>
 
-      {editing && <SessionModal session={editing} profile={profile} activeUsers={activeUsers} onClose={saved => { setEditing(null); if (saved) loadList() }} />}
+      {canManageTraining && editing && <SessionModal session={editing} profile={profile} activeUsers={activeUsers} onClose={saved => { setEditing(null); if (saved) loadList() }} />}
     </div>
   )
 }
@@ -198,7 +252,7 @@ function Stat({ icon: Icon, tone, n, l }) {
 }
 
 // ───────────────────────── Session detail ─────────────────────────
-function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
+function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, referralCode, onBack }) {
   const [session, setSession] = useState(null)
   const [regs, setRegs] = useState([])
   const [trainers, setTrainers] = useState([])
@@ -209,18 +263,26 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
   const [copied, setCopied] = useState(false)
 
   const load = useCallback(async () => {
-    const [{ data: s }, { data: r }, { data: t }, { data: d }] = await Promise.all([
+    const queries = [
       supabase.from('training_sessions').select('*').eq('id', sessionId).single(),
-      supabase.from('training_registrations').select('*').eq('session_id', sessionId).order('created_at'),
       supabase.from('training_session_trainers').select('id, user_id, users(first_name,last_name)').eq('session_id', sessionId),
-      supabase.from('training_attendance_docs').select('*').eq('session_id', sessionId).order('created_at', { ascending: false }),
-    ])
-    setSession(s); setRegs(r || []); setTrainers(t || []); setDocs(d || [])
-  }, [sessionId])
+    ]
+    if (canManageTraining) {
+      queries.push(
+        supabase.from('training_registrations').select('*').eq('session_id', sessionId).order('created_at'),
+        supabase.from('training_attendance_docs').select('*').eq('session_id', sessionId).order('created_at', { ascending: false })
+      )
+    }
+    const [sessionResult, trainersResult, regsResult, docsResult] = await Promise.all(queries)
+    setSession(sessionResult.data)
+    setTrainers(trainersResult.data || [])
+    setRegs(regsResult?.data || [])
+    setDocs(docsResult?.data || [])
+  }, [canManageTraining, sessionId])
   useEffect(() => { load() }, [load])
 
   if (!session) return <div className="p-6 text-sm text-gray-400">Loading…</div>
-  const url = signupUrl(session.slug)
+  const url = signupUrl(session.slug, canManageTraining ? '' : referralCode)
 
   const toggleStatus = async (reg, key) => {
     const next = reg[key] ? null : new Date().toISOString()
@@ -273,53 +335,75 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
           </div>
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
-          <button onClick={() => setEditing(true)} className="inline-flex items-center gap-2 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium text-gray-700">Edit details</button>
+          {canManageTraining && <button onClick={() => setEditing(true)} className="inline-flex items-center gap-2 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium text-gray-700">Edit details</button>}
           <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"><Link2 size={15} /> View signup page</a>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <Stat icon={Users} tone="green" n={`${regs.length} / ${session.capacity || 0}`} l="Registered" />
-        <Stat icon={CreditCard} tone="blue" n={paidCount} l="Paid" />
-        <Stat icon={Sparkles} tone="indigo" n={hrdCount} l="HRD claims" />
-        <Stat icon={FileText} tone="red" n={docs.length} l="Attendance docs" />
-      </div>
+      {canManageTraining ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <Stat icon={Users} tone="green" n={`${regs.length} / ${session.capacity || 0}`} l="Registered" />
+          <Stat icon={CreditCard} tone="blue" n={paidCount} l="Paid" />
+          <Stat icon={Sparkles} tone="indigo" n={hrdCount} l="HRD claims" />
+          <Stat icon={FileText} tone="red" n={docs.length} l="Attendance docs" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <Stat icon={Users} tone="green" n={session.capacity || '—'} l="Capacity" />
+          <Stat icon={Link2} tone="blue" n={referralCode ? 'Ready' : '—'} l="Your tracking" />
+          <Stat icon={Sparkles} tone="indigo" n={session.hrd_claimable ? 'Yes' : 'No'} l="HRD claimable" />
+          <Stat icon={FileText} tone="red" n={session.certificate ? 'Yes' : 'No'} l="Certificate" />
+        </div>
+      )}
 
       <div className="bg-white border border-gray-200 rounded-xl p-3 mb-6 flex items-center gap-3 max-w-2xl">
         <Link2 size={15} className="text-gray-400 shrink-0" />
-        <span className="text-xs font-semibold text-gray-500 shrink-0">Signup link</span>
+        <span className="text-xs font-semibold text-gray-500 shrink-0">{canManageTraining ? 'Signup link' : 'Your referral link'}</span>
         <span className="flex-1 truncate font-mono text-xs text-gray-600">{url}</span>
-        <button onClick={copyLink} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700">
+        <button onClick={copyLink} disabled={!canManageTraining && !referralCode} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-50 disabled:opacity-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700">
           {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
         </button>
       </div>
 
-      <div className="inline-flex gap-1 bg-gray-100 p-1 rounded-xl mb-5">
+      {!canManageTraining && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-2xl">
+          <div className="flex items-start gap-3">
+            <span className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><Info size={17} /></span>
+            <div>
+              <h2 className="font-semibold text-gray-900">Referral tracking is automatic</h2>
+              <p className="text-sm text-gray-500 mt-1">Share your referral link above. When a customer signs up through it, the registration will be captured under your name for admin follow-up.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {canManageTraining && <div className="inline-flex gap-1 bg-gray-100 p-1 rounded-xl mb-5">
         {[['attendees', `Attendees · ${regs.length}`], ['trainers', `Trainers · ${trainers.length}`], ['docs', `Attendance Docs · ${docs.length}`]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === id ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}>{label}</button>
         ))}
-      </div>
+      </div>}
 
-      {tab === 'attendees' && (
+      {canManageTraining && tab === 'attendees' && (
         <>
           <div className="flex items-center mb-3">
             <p className="text-xs text-gray-400 flex items-center gap-1.5"><Info size={13} /> Click a milestone to toggle it — the date is recorded automatically.</p>
             <button onClick={() => setAddingAtt(true)} className="ml-auto inline-flex items-center gap-1.5 border border-gray-200 hover:bg-gray-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700"><Plus size={13} /> Add attendee</button>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
-            <table className="w-full text-sm min-w-[760px]">
+            <table className="w-full text-sm min-w-[900px]">
               <thead>
                 <tr className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-400">
                   <th className="px-4 py-3 font-semibold">Participant</th>
                   <th className="px-4 py-3 font-semibold">Company</th>
                   <th className="px-4 py-3 font-semibold">Contact</th>
+                  <th className="px-4 py-3 font-semibold">Invited by</th>
                   <th className="px-4 py-3 font-semibold">HRD</th>
                   <th className="px-4 py-3 font-semibold min-w-[360px]">Customer status</th>
                 </tr>
               </thead>
               <tbody>
-                {regs.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">No registrations yet. Share the signup link above.</td></tr>}
+                {regs.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No registrations yet. Share the signup link above.</td></tr>}
                 {regs.map(r => (
                   <tr key={r.id} className="border-t border-gray-100">
                     <td className="px-4 py-3">
@@ -333,6 +417,10 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
                     </td>
                     <td className="px-4 py-3">{r.company || '—'}<div className="text-[11px] text-gray-400">{r.industry || ''}</div></td>
                     <td className="px-4 py-3">{r.email || '—'}<div className="text-xs text-gray-400">{r.phone || ''}</div></td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-700">{r.invited_by_name_snapshot || '—'}</div>
+                      {r.referral_code && <div className="text-[11px] text-gray-400 font-mono">{r.referral_code}</div>}
+                    </td>
                     <td className="px-4 py-3">{r.hrd_claim ? <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold">HRD</span> : <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">No</span>}</td>
                     <td className="px-4 py-3"><StatusTracks reg={r} onToggle={toggleStatus} /></td>
                   </tr>
@@ -343,7 +431,7 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
         </>
       )}
 
-      {tab === 'trainers' && (
+      {canManageTraining && tab === 'trainers' && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-xl">
           <label className="block text-xs font-semibold text-gray-600 mb-2">Assigned trainers</label>
           <div className="mb-5">
@@ -369,7 +457,7 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
         </div>
       )}
 
-      {tab === 'docs' && (
+      {canManageTraining && tab === 'docs' && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-2xl">
           <label className="block text-xs font-semibold text-gray-600 mb-3">Signed attendance documents</label>
           <div className="mb-4 space-y-2">
@@ -394,8 +482,8 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
         </div>
       )}
 
-      {editing && <SessionModal session={{ ...session, trainerIds: trainers.map(t => t.user_id) }} profile={profile} activeUsers={activeUsers} onClose={saved => { setEditing(false); if (saved) load() }} />}
-      {addingAtt && <AddAttendeeModal sessionId={sessionId} onClose={saved => { setAddingAtt(false); if (saved) load() }} />}
+      {canManageTraining && editing && <SessionModal session={{ ...session, trainerIds: trainers.map(t => t.user_id) }} profile={profile} activeUsers={activeUsers} onClose={saved => { setEditing(false); if (saved) load() }} />}
+      {canManageTraining && addingAtt && <AddAttendeeModal sessionId={sessionId} onClose={saved => { setAddingAtt(false); if (saved) load() }} />}
     </div>
   )
 }
