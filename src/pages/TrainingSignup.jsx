@@ -7,7 +7,6 @@ import {
 import { supabase } from '../lib/supabase'
 import { formatDate } from '../lib/dateFormat'
 import rdPalmerLogo from '../assets/rd-palmer-logo.png'
-import hrdCorpLogo from '../assets/hrdcorp-training-provider-logo.png'
 import radiodetectionLogo from '../assets/radiodetection-training-logo.png'
 
 const blankPart = () => ({ participant_name: '', email: '', phone: '', nric: '', existing_user: null })
@@ -95,15 +94,13 @@ export default function TrainingSignup() {
         style={{ background: 'radial-gradient(820px 380px at 50% -28%, #ffe5e7 0%, #fff4f4 40%, #f5f7fa 74%)' }}>
         <div className="absolute left-0 right-0 top-0 h-1 bg-gradient-to-r from-red-600 to-rose-400" />
         <div className="relative max-w-5xl mx-auto">
-          <div className="mb-8 grid grid-cols-[64px_1fr_84px] items-center gap-2 sm:grid-cols-[130px_1fr_190px] sm:gap-6">
-            <div className="flex justify-start">
-              <img src={hrdCorpLogo} alt="HRD Corp Registered Training Provider" className="h-16 w-16 object-contain sm:h-28 sm:w-28" />
+          <div className="mb-14 grid grid-cols-1 items-center gap-7 sm:grid-cols-2 sm:gap-10">
+            <div className="flex justify-center sm:justify-start">
+              <img src={radiodetectionLogo} alt="Radiodetection" className="max-h-12 w-full max-w-[360px] object-contain sm:max-h-16" />
             </div>
-            <div className="flex justify-center">
-              <img src={rdPalmerLogo} alt="RD-Palmer" className="max-h-14 w-full max-w-[360px] object-contain sm:max-h-20" />
-            </div>
-            <div className="flex justify-end">
-              <img src={radiodetectionLogo} alt="Radiodetection" className="max-h-10 w-full max-w-[190px] object-contain sm:max-h-16" />
+            <div className="flex flex-col items-center sm:items-end">
+              <img src={rdPalmerLogo} alt="RD-Palmer" className="max-h-14 w-full max-w-[300px] object-contain sm:max-h-16" />
+              <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-gray-500">Underground Utilities Solution</span>
             </div>
           </div>
           <div className="inline-flex items-center gap-2 bg-white border border-gray-200 text-red-600 rounded-full px-3.5 py-1.5 text-xs font-bold mb-6 shadow-sm">
