@@ -8,6 +8,11 @@ import { supabase } from '../lib/supabase'
 import { formatDate } from '../lib/dateFormat'
 
 const blankPart = () => ({ participant_name: '', email: '', phone: '', nric: '', existing_user: null })
+const dateRangeLabel = session => {
+  if (!session?.session_date) return 'TBA'
+  if (session.end_date && session.end_date !== session.session_date) return `${formatDate(session.session_date)} - ${formatDate(session.end_date)}`
+  return formatDate(session.session_date)
+}
 
 export default function TrainingSignup() {
   const { slug } = useParams()
@@ -94,7 +99,7 @@ export default function TrainingSignup() {
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900 leading-tight">{session.title}</h1>
           {session.description && <p className="text-gray-500 mt-3 max-w-xl mx-auto leading-relaxed">{session.description}</p>}
           <div className="flex flex-wrap gap-2.5 justify-center mt-6">
-            <HeroChip icon={Calendar}>{session.session_date ? formatDate(session.session_date) : 'TBA'}</HeroChip>
+            <HeroChip icon={Calendar}>{dateRangeLabel(session)}</HeroChip>
             {session.start_time && <HeroChip icon={Clock}>{session.start_time}</HeroChip>}
             {session.location && <HeroChip icon={MapPin}>{session.location}</HeroChip>}
           </div>
@@ -163,7 +168,7 @@ export default function TrainingSignup() {
               </div>
             </div>
             <div className="px-5 py-2">
-              <Fact icon={Calendar} label="Date" value={session.session_date ? formatDate(session.session_date) : 'TBA'} />
+              <Fact icon={Calendar} label="Date" value={dateRangeLabel(session)} />
               <Fact icon={Clock} label="Time" value={session.start_time || '—'} />
               {session.duration && <Fact icon={Clock} label="Duration" value={session.duration} />}
               <Fact icon={MapPin} label="Venue" value={session.location || '—'} />
@@ -184,7 +189,7 @@ export default function TrainingSignup() {
           <div className="bg-white border border-gray-200 rounded-2xl shadow-lg text-center py-14 px-6">
             <div className="w-18 h-18 rounded-full bg-green-50 text-green-600 flex items-center justify-center mx-auto mb-5" style={{ width: 72, height: 72 }}><Check size={36} /></div>
             <h2 className="text-2xl font-extrabold text-gray-900 mb-2">{done > 1 ? `${done} participants registered!` : "You're registered!"}</h2>
-            <p className="text-gray-500 max-w-md mx-auto">Thanks! {done > 1 ? `All ${done} participants from ` : ''}<b>{company}</b> {done > 1 ? 'are' : 'is'} confirmed for <b>{session.title}</b>{session.session_date ? ` on ${formatDate(session.session_date)}` : ''}. We'll email payment & HRD details shortly.</p>
+            <p className="text-gray-500 max-w-md mx-auto">Thanks! {done > 1 ? `All ${done} participants from ` : ''}<b>{company}</b> {done > 1 ? 'are' : 'is'} confirmed for <b>{session.title}</b>{session.session_date ? ` on ${dateRangeLabel(session)}` : ''}. We'll email payment & HRD details shortly.</p>
             <button onClick={() => { setDone(0); setParts([blankPart()]); setCompany(''); setIndustry(''); setHrd(null); setHrEmail('') }}
               className="mt-6 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium text-gray-700">New registration</button>
           </div>
