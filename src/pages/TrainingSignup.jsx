@@ -6,6 +6,9 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatDate } from '../lib/dateFormat'
+import rdPalmerLogo from '../assets/rd-palmer-logo.png'
+import hrdCorpLogo from '../assets/hrdcorp-training-provider-logo.png'
+import radiodetectionLogo from '../assets/radiodetection-training-logo.png'
 
 const blankPart = () => ({ participant_name: '', email: '', phone: '', nric: '', existing_user: null })
 const dateRangeLabel = session => {
@@ -91,10 +94,20 @@ export default function TrainingSignup() {
       <div className="relative overflow-hidden text-center px-5 pt-14 pb-32"
         style={{ background: 'radial-gradient(820px 380px at 50% -28%, #ffe5e7 0%, #fff4f4 40%, #f5f7fa 74%)' }}>
         <div className="absolute left-0 right-0 top-0 h-1 bg-gradient-to-r from-red-600 to-rose-400" />
-        <div className="relative max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-white border border-gray-200 text-red-600 rounded-full pl-2 pr-3.5 py-1.5 text-xs font-bold mb-6 shadow-sm">
-            <span className="w-6 h-6 rounded-md bg-red-600 text-white flex items-center justify-center text-[10px] font-extrabold">RD</span>
-            RD Palmer · Professional Training
+        <div className="relative max-w-5xl mx-auto">
+          <div className="mb-8 grid grid-cols-[64px_1fr_84px] items-center gap-2 sm:grid-cols-[130px_1fr_190px] sm:gap-6">
+            <div className="flex justify-start">
+              <img src={hrdCorpLogo} alt="HRD Corp Registered Training Provider" className="h-16 w-16 object-contain sm:h-28 sm:w-28" />
+            </div>
+            <div className="flex justify-center">
+              <img src={rdPalmerLogo} alt="RD-Palmer" className="max-h-14 w-full max-w-[360px] object-contain sm:max-h-20" />
+            </div>
+            <div className="flex justify-end">
+              <img src={radiodetectionLogo} alt="Radiodetection" className="max-h-10 w-full max-w-[190px] object-contain sm:max-h-16" />
+            </div>
+          </div>
+          <div className="inline-flex items-center gap-2 bg-white border border-gray-200 text-red-600 rounded-full px-3.5 py-1.5 text-xs font-bold mb-6 shadow-sm">
+            Professional Training
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900 leading-tight">{session.title}</h1>
           {session.description && <p className="text-gray-500 mt-3 max-w-xl mx-auto leading-relaxed">{session.description}</p>}
