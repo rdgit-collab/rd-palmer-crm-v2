@@ -71,7 +71,7 @@ export default function Training() {
 
   useEffect(() => { loadList() }, [loadList])
   useEffect(() => {
-    supabase.from('users').select('id, first_name, last_name, status').eq('status', 'Active').order('first_name')
+    supabase.from('users').select('id, first_name, last_name, status, is_trainer').eq('status', 'Active').eq('is_trainer', true).order('first_name')
       .then(({ data }) => setActiveUsers(data || []))
   }, [])
 
@@ -121,7 +121,7 @@ export default function Training() {
         <Stat icon={GraduationCap} tone="red" n={sessions.length} l="Total sessions" />
         <Stat icon={Calendar} tone="blue" n={upcoming} l="Upcoming" />
         <Stat icon={Users} tone="green" n={totalRegs} l="Total registrations" />
-        <Stat icon={Users} tone="indigo" n={activeUsers.length} l="Staff (potential trainers)" />
+        <Stat icon={Users} tone="indigo" n={activeUsers.length} l="Training trainers" />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -355,7 +355,7 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
               </span>
             )) : <span className="text-sm text-gray-400">No trainers assigned yet.</span>}
           </div>
-          <label className="block text-xs font-semibold text-gray-600 mb-2">Add a trainer (from your CRM users)</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-2">Add a trainer</label>
           <div className="flex gap-2">
             <select id="trainerPick" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm">
               {activeUsers.filter(u => !trainers.some(t => t.user_id === u.id)).map(u => (
@@ -365,7 +365,7 @@ function SessionDetail({ sessionId, activeUsers, profile, onBack }) {
             <button onClick={() => addTrainer(document.getElementById('trainerPick').value)}
               className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"><Plus size={14} /> Add</button>
           </div>
-          <p className="text-xs text-gray-400 mt-4 flex items-center gap-1.5"><Info size={13} /> Trainers come read-only from your existing users table — this module never edits it.</p>
+          <p className="text-xs text-gray-400 mt-4 flex items-center gap-1.5"><Info size={13} /> Manage this trainer list in Settings → Training.</p>
         </div>
       )}
 
@@ -470,6 +470,12 @@ function SessionModal({ session, profile, activeUsers = [], onClose }) {
     : [...CAPACITY_OPTIONS, Number(f.capacity)].filter(Boolean).sort((a, b) => a - b)
   const levelOptions = LEVEL_OPTIONS.includes(f.level) ? LEVEL_OPTIONS : [...LEVEL_OPTIONS, f.level]
   const languageOptions = LANGUAGE_OPTIONS.includes(f.language) ? LANGUAGE_OPTIONS : [...LANGUAGE_OPTIONS, f.language]
+  const trainerOptions = [
+    ...activeUsers,
+    ...(session?.trainerIds || [])
+      .filter(id => !activeUsers.some(user => String(user.id) === String(id)))
+      .map(id => ({ id, first_name: 'Previously assigned', last_name: 'trainer', email: '', status: 'Active' })),
+  ]
 
   const save = async () => {
     if (!f.title.trim()) { alert('Please enter a title'); return }
@@ -559,7 +565,7 @@ function SessionModal({ session, profile, activeUsers = [], onClose }) {
       </select></Field>
       <Field label="Trainer name">
         <div className="grid sm:grid-cols-2 gap-2 max-h-36 overflow-auto rounded-lg border border-gray-200 p-2">
-          {activeUsers.length ? activeUsers.map(u => {
+          {trainerOptions.length ? trainerOptions.map(u => {
             const id = String(u.id)
             return (
               <label key={u.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
@@ -567,7 +573,7 @@ function SessionModal({ session, profile, activeUsers = [], onClose }) {
                 <span className="truncate">{userName(u)}</span>
               </label>
             )
-          }) : <span className="px-2 py-1 text-sm text-gray-400">No active users found.</span>}
+          }) : <span className="px-2 py-1 text-sm text-gray-400">No trainers selected in Settings.</span>}
         </div>
       </Field>
       <div className="flex gap-5 mb-4">

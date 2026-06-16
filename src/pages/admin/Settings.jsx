@@ -1051,6 +1051,91 @@ function BookingSettingsPanel() {
   )
 }
 
+function TrainingTrainersPanel() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(null)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    const { data, error: loadError } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, email, role_id, status, is_trainer')
+      .order('first_name')
+    if (loadError) setError(loadError.message)
+    setUsers(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const toggleTrainer = async (user) => {
+    const next = !user.is_trainer
+    setSaving(user.id)
+    setError('')
+    setUsers(prev => prev.map(row => row.id === user.id ? { ...row, is_trainer: next } : row))
+    const { error: updateError } = await supabase.from('users').update({ is_trainer: next }).eq('id', user.id)
+    if (updateError) {
+      setError(updateError.message)
+      setUsers(prev => prev.map(row => row.id === user.id ? { ...row, is_trainer: user.is_trainer } : row))
+    } else {
+      logActivity({
+        module: 'settings',
+        action: 'update',
+        recordTable: 'users',
+        recordId: user.id,
+        recordLabel: displayUserName(user),
+        summary: `${next ? 'Enabled' : 'Disabled'} training trainer status for ${displayUserName(user)}`,
+        metadata: { is_trainer: next },
+      })
+    }
+    setSaving(null)
+  }
+
+  const activeUsers = [...users]
+    .filter(user => String(user.status || '').toLowerCase() !== 'inactive')
+    .sort((a, b) =>
+      Number(Boolean(b.is_trainer)) - Number(Boolean(a.is_trainer)) ||
+      displayUserName(a).localeCompare(displayUserName(b), undefined, { sensitivity: 'base' })
+    )
+  const trainerCount = activeUsers.filter(user => user.is_trainer).length
+
+  if (loading) return <div className="text-sm text-gray-400 py-6 text-center">Loading trainer roster...</div>
+
+  return (
+    <div className="bg-white border border-gray-200 rounded overflow-hidden max-w-4xl">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-800 text-sm">Training Trainers</h3>
+        <p className="mt-1 text-xs text-gray-500">{trainerCount} active trainer{trainerCount === 1 ? '' : 's'} selected. Only these users appear when creating or editing training sessions.</p>
+      </div>
+      {error && <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      <div className="divide-y divide-gray-100 max-h-[620px] overflow-y-auto">
+        {activeUsers.length ? activeUsers.map(user => (
+          <div key={user.id} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-sm text-gray-900">{displayUserName(user)}</span>
+                {user.is_trainer && <span className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">Trainer</span>}
+              </div>
+              <div className="mt-0.5 text-xs text-gray-400 truncate">{user.email || 'No email'} · Role {user.role_id || '—'}</div>
+            </div>
+            <button
+              onClick={() => toggleTrainer(user)}
+              disabled={saving === user.id}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${user.is_trainer ? 'bg-red-600' : 'bg-gray-300'} disabled:opacity-50`}
+              title={user.is_trainer ? 'Remove from trainer list' : 'Add to trainer list'}
+            >
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${user.is_trainer ? 'translate-x-4' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        )) : <div className="px-4 py-8 text-center text-sm text-gray-400">No active users found.</div>}
+      </div>
+    </div>
+  )
+}
+
 function RolePermissionsPanel() {
   const [perms, setPerms] = useState({})
   const [saving, setSaving] = useState(null)
@@ -1153,6 +1238,7 @@ const TABS = [
   { id: 'finance',    label: 'Finance' },
   { id: 'catalogue',  label: 'Catalogue' },
   { id: 'booking',    label: 'Booking' },
+  { id: 'training',   label: 'Training' },
   { id: 'locations',  label: 'Locations' },
   { id: 'templates',  label: 'Doc Templates' },
   { id: 'roles',      label: 'Role Permissions' },
@@ -1235,6 +1321,8 @@ export default function Settings() {
       )}
 
       {tab === 'booking' && <BookingSettingsPanel />}
+
+      {tab === 'training' && <TrainingTrainersPanel />}
 
       {tab === 'locations' && <LocationsPanel />}
 
