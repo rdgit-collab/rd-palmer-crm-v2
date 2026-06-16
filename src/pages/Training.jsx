@@ -9,7 +9,7 @@ import { formatDate } from '../lib/dateFormat'
 import { logActivity } from '../lib/activityLog'
 import SignedFileLink from '../components/SignedFileLink'
 import { STATUS_GROUPS } from '../lib/trainingStatus'
-import { hasAdminAccess } from '../lib/roles'
+import { ROLE_SALES, hasAdminAccess } from '../lib/roles'
 
 const slugify = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48)
 const fmtShort = v => v ? new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''
@@ -48,6 +48,7 @@ const durationFromDates = (start, end) => {
 export default function Training() {
   const { profile } = useAuth()
   const canManageTraining = hasAdminAccess(profile?.role_id)
+  const canViewParticipants = canManageTraining || Number(profile?.role_id) === ROLE_SALES
   const [sessions, setSessions] = useState([])
   const [trainerLinks, setTrainerLinks] = useState([])   // {session_id, user_id, users}
   const [regCounts, setRegCounts] = useState({})
@@ -64,7 +65,7 @@ export default function Training() {
       supabase.from('training_sessions').select('*').order('session_date', { ascending: false }),
       supabase.from('training_session_trainers').select('session_id, user_id, users(first_name,last_name)'),
     ]
-    if (canManageTraining) queries.push(supabase.from('training_registrations').select('id, session_id'))
+    if (canViewParticipants) queries.push(supabase.from('training_registrations').select('id, session_id'))
     const [{ data: sess }, { data: links }, regsResult] = await Promise.all(queries)
     setSessions(sess || [])
     setTrainerLinks(links || [])
@@ -72,7 +73,7 @@ export default function Training() {
     ;(regsResult?.data || []).forEach(r => { counts[r.session_id] = (counts[r.session_id] || 0) + 1 })
     setRegCounts(counts)
     setLoading(false)
-  }, [canManageTraining])
+  }, [canViewParticipants])
 
   useEffect(() => { loadList() }, [loadList])
   useEffect(() => {
@@ -106,6 +107,7 @@ export default function Training() {
       activeUsers={activeUsers}
       profile={profile}
       canManageTraining={canManageTraining}
+      canViewParticipants={canViewParticipants}
       referralCode={referralCode}
       onBack={() => { setSelectedId(null); loadList() }}
     />
@@ -151,10 +153,10 @@ export default function Training() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Stat icon={GraduationCap} tone="red" n={sessions.length} l="Total sessions" />
         <Stat icon={Calendar} tone="blue" n={upcoming} l="Upcoming" />
-        {canManageTraining ? (
+        {canViewParticipants ? (
           <>
             <Stat icon={Users} tone="green" n={totalRegs} l="Total registrations" />
-            <Stat icon={Users} tone="indigo" n={activeUsers.length} l="Training trainers" />
+            {canManageTraining ? <Stat icon={Users} tone="indigo" n={activeUsers.length} l="Training trainers" /> : <Stat icon={Users} tone="indigo" n="View" l="Participants" />}
           </>
         ) : (
           <>
@@ -172,15 +174,15 @@ export default function Training() {
                 <th className="px-4 py-3 font-semibold">Session</th>
                 <th className="px-4 py-3 font-semibold">Date</th>
                 <th className="px-4 py-3 font-semibold">Trainers</th>
-                {canManageTraining && <th className="px-4 py-3 font-semibold">Registered</th>}
+                {canViewParticipants && <th className="px-4 py-3 font-semibold">Registered</th>}
                 <th className="px-4 py-3 font-semibold">{canManageTraining ? 'Signup link' : 'Your referral link'}</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={canManageTraining ? 6 : 5} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>}
+              {loading && <tr><td colSpan={canViewParticipants ? 6 : 5} className="px-4 py-10 text-center text-gray-400">Loading…</td></tr>}
               {!loading && sessions.length === 0 && (
-                <tr><td colSpan={canManageTraining ? 6 : 5} className="px-4 py-10 text-center text-gray-400">{canManageTraining ? 'No sessions yet. Click “New Session” to create one.' : 'No sessions available yet.'}</td></tr>
+                <tr><td colSpan={canViewParticipants ? 6 : 5} className="px-4 py-10 text-center text-gray-400">{canManageTraining ? 'No sessions yet. Click “New Session” to create one.' : 'No sessions available yet.'}</td></tr>
               )}
               {sessions.map(s => {
                 const trs = trainersFor(s.id)
@@ -203,7 +205,7 @@ export default function Training() {
                       )) : <span className="text-xs text-gray-400">None</span>}
                       {trs.length > 2 && <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">+{trs.length - 2}</span>}
                     </td>
-                    {canManageTraining && <td className="px-4 py-3"><b>{regCounts[s.id] || 0}</b><span className="text-gray-400"> / {s.capacity || 0}</span></td>}
+                    {canViewParticipants && <td className="px-4 py-3"><b>{regCounts[s.id] || 0}</b><span className="text-gray-400"> / {s.capacity || 0}</span></td>}
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <span className="text-red-600 font-medium text-xs">{canManageTraining ? `/training/signup/${s.slug}` : trackedUrl.replace(window.location.origin, '')}</span>
                     </td>
@@ -252,7 +254,7 @@ function Stat({ icon: Icon, tone, n, l }) {
 }
 
 // ───────────────────────── Session detail ─────────────────────────
-function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, referralCode, onBack }) {
+function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, canViewParticipants, referralCode, onBack }) {
   const [session, setSession] = useState(null)
   const [regs, setRegs] = useState([])
   const [trainers, setTrainers] = useState([])
@@ -267,9 +269,11 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, ref
       supabase.from('training_sessions').select('*').eq('id', sessionId).single(),
       supabase.from('training_session_trainers').select('id, user_id, users(first_name,last_name)').eq('session_id', sessionId),
     ]
+    if (canViewParticipants) {
+      queries.push(supabase.from('training_registrations').select('*').eq('session_id', sessionId).order('created_at'))
+    }
     if (canManageTraining) {
       queries.push(
-        supabase.from('training_registrations').select('*').eq('session_id', sessionId).order('created_at'),
         supabase.from('training_attendance_docs').select('*').eq('session_id', sessionId).order('created_at', { ascending: false })
       )
     }
@@ -278,7 +282,7 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, ref
     setTrainers(trainersResult.data || [])
     setRegs(regsResult?.data || [])
     setDocs(docsResult?.data || [])
-  }, [canManageTraining, sessionId])
+  }, [canManageTraining, canViewParticipants, sessionId])
   useEffect(() => { load() }, [load])
 
   if (!session) return <div className="p-6 text-sm text-gray-400">Loading…</div>
@@ -340,12 +344,12 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, ref
         </div>
       </div>
 
-      {canManageTraining ? (
+      {canViewParticipants ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <Stat icon={Users} tone="green" n={`${regs.length} / ${session.capacity || 0}`} l="Registered" />
-          <Stat icon={CreditCard} tone="blue" n={paidCount} l="Paid" />
-          <Stat icon={Sparkles} tone="indigo" n={hrdCount} l="HRD claims" />
-          <Stat icon={FileText} tone="red" n={docs.length} l="Attendance docs" />
+          {canManageTraining ? <Stat icon={CreditCard} tone="blue" n={paidCount} l="Paid" /> : <Stat icon={Link2} tone="blue" n={referralCode ? 'Ready' : '—'} l="Your tracking" />}
+          <Stat icon={Sparkles} tone="indigo" n={canManageTraining ? hrdCount : (session.hrd_claimable ? 'Yes' : 'No')} l={canManageTraining ? 'HRD claims' : 'HRD claimable'} />
+          <Stat icon={FileText} tone="red" n={canManageTraining ? docs.length : (session.certificate ? 'Yes' : 'No')} l={canManageTraining ? 'Attendance docs' : 'Certificate'} />
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -384,11 +388,13 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, ref
         ))}
       </div>}
 
-      {canManageTraining && tab === 'attendees' && (
+      {canViewParticipants && (!canManageTraining || tab === 'attendees') && (
         <>
           <div className="flex items-center mb-3">
-            <p className="text-xs text-gray-400 flex items-center gap-1.5"><Info size={13} /> Click a milestone to toggle it — the date is recorded automatically.</p>
-            <button onClick={() => setAddingAtt(true)} className="ml-auto inline-flex items-center gap-1.5 border border-gray-200 hover:bg-gray-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700"><Plus size={13} /> Add attendee</button>
+            <p className="text-xs text-gray-400 flex items-center gap-1.5">
+              <Info size={13} /> {canManageTraining ? 'Click a milestone to toggle it — the date is recorded automatically.' : 'Participant registrations are view-only for Sales users.'}
+            </p>
+            {canManageTraining && <button onClick={() => setAddingAtt(true)} className="ml-auto inline-flex items-center gap-1.5 border border-gray-200 hover:bg-gray-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700"><Plus size={13} /> Add attendee</button>}
           </div>
           <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
             <table className="w-full text-sm min-w-[900px]">
@@ -422,7 +428,7 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, ref
                       {r.referral_code && <div className="text-[11px] text-gray-400 font-mono">{r.referral_code}</div>}
                     </td>
                     <td className="px-4 py-3">{r.hrd_claim ? <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold">HRD</span> : <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">No</span>}</td>
-                    <td className="px-4 py-3"><StatusTracks reg={r} onToggle={toggleStatus} /></td>
+                    <td className="px-4 py-3"><StatusTracks reg={r} onToggle={toggleStatus} readOnly={!canManageTraining} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -492,7 +498,7 @@ function Meta({ icon: Icon, children }) {
   return <span className="inline-flex items-center gap-1.5 bg-gray-100 rounded-lg px-3 py-1.5">{Icon && <Icon size={14} className="text-red-600" />}{children}</span>
 }
 
-function StatusTracks({ reg, onToggle }) {
+function StatusTracks({ reg, onToggle, readOnly = false }) {
   return (
     <div className="space-y-2">
       {STATUS_GROUPS.map(g => {
@@ -504,16 +510,27 @@ function StatusTracks({ reg, onToggle }) {
             <div className="flex flex-wrap gap-1.5">
               {g.steps.map(st => {
                 const on = !!reg[st.key]
-                return (
-                  <button key={st.key} onClick={() => onToggle(reg, st.key)}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition
-                      ${on ? (green ? 'border-green-200 bg-green-50 text-green-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700')
-                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                const cls = `inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition
+                  ${on ? (green ? 'border-green-200 bg-green-50 text-green-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700')
+                        : 'border-gray-200 bg-white text-gray-500'}`
+                const content = (
+                  <>
                     <span className={`flex h-3.5 w-3.5 items-center justify-center rounded border
                       ${on ? (green ? 'border-green-600 bg-green-600' : 'border-indigo-600 bg-indigo-600') : 'border-gray-300'}`}>
                       {on && <Check size={9} className="text-white" />}
                     </span>
                     {st.label}{on && <span className="font-normal opacity-70">{fmtShort(reg[st.key])}</span>}
+                  </>
+                )
+                if (readOnly) {
+                  return <span key={st.key} className={cls}>{content}</span>
+                }
+                return (
+                  <button key={st.key} onClick={() => onToggle(reg, st.key)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold transition
+                      ${on ? (green ? 'border-green-200 bg-green-50 text-green-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700')
+                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
+                    {content}
                   </button>
                 )
               })}
