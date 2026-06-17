@@ -2,4 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 * { box-sizing: border-box; }
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; }
+
+.crm-content,
+.crm-content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.crm-content input,
+.crm-content select,
+.crm-content textarea,
+.crm-content button {
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .crm-content > [class~="p-6"],
+  .crm-content [class~="p-6"] {
+    padding: 1rem;
+  }
+
+  .crm-content h1[class*="text-2xl"] {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+
+  .crm-content .grid[class*="grid-cols-2"],
+  .crm-content .grid[class*="grid-cols-3"],
+  .crm-content .grid[class*="grid-cols-4"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .crm-content [class*="col-span-2"],
+  .crm-content [class*="col-span-3"],
+  .crm-content [class*="col-span-4"] {
+    grid-column: 1 / -1 !important;
+  }
+
+  .crm-content [class*="justify-between"] {
+    flex-wrap: wrap;
+  }
+
+  .crm-content table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

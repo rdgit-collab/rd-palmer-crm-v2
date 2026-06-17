@@ -8,9 +8,11 @@ export default function Layout() {
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col lg:ml-64 min-w-0">
+      <div className="flex-1 flex flex-col lg:ml-64 min-w-0 min-h-0">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-6"><Outlet /></main>
+        <main className="crm-content flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6">
+          <Outlet />
+        </main>
       </div>
     </div>
   )
