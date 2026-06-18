@@ -8,7 +8,7 @@ import { formatDate } from '../../lib/dateFormat'
 import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, X, Printer } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Printer } from 'lucide-react'
 
 const PAGE_SIZE = 30
 
@@ -673,16 +673,32 @@ export default function Calibration() {
             {loading ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">Loading...</td></tr>
             : pagedRows.length === 0 ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">No calibration records found.</td></tr>
             : pagedRows.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr
+                key={r.id}
+                onClick={() => openDetail(r)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    openDetail(r)
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-label={`View calibration ${r.certificate_number || ''}`}
+                className="border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none cursor-pointer"
+              >
                 <td className="px-4 py-3 font-semibold text-red-600">{r.certificate_number || '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{getTicketLabel(r.ticket_id)}</td>
                 <td className="px-4 py-3 text-gray-600">{r.serial_number || '-'}</td>
                 <td className="px-4 py-3 text-gray-600">{getUserName(r.conduct_by)}</td>
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || '-'}</span></td>
-                <td className="px-4 py-3">
+                <td
+                  className="px-4 py-3"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <div className="flex items-center justify-end gap-2">
                     {r.file && <SignedFileLink path={r.file} label="" className="text-gray-500 hover:text-red-600" />}
-                    <button onClick={() => openDetail(r)} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                     <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                     <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
                   </div>

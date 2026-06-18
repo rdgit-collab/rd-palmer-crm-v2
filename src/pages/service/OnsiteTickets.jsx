@@ -9,7 +9,7 @@ import { formatDate } from '../../lib/dateFormat'
 import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 30
 const ONSITE_LIST_COLUMNS = 'id, ticket_id, product, issue_description, serial_number, location, vandor_order_ref, spare, remark, assigned_to, status, is_completed, workdone, date, user_id, file'
@@ -430,16 +430,33 @@ export default function OnsiteTickets() {
             {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
             : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No {tab} On-Site records.</td></tr>
             : rows.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr
+                key={r.id}
+                onClick={() => { setDetail(r); setView('detail') }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setDetail(r)
+                    setView('detail')
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-label={`View on-site record for ${getTicketLabel(r.ticket_id)}`}
+                className="border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none cursor-pointer"
+              >
                 <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(r.ticket_id)}</td>
                 <td className="px-4 py-3 text-gray-600">{formatDate(r.date)}</td>
                 <td className="px-4 py-3 text-gray-800 max-w-xs truncate">{r.issue_description || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{r.location || '—'}</td>
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(r.status)}`}>{r.status || 'Open'}</span></td>
                 <td className="px-4 py-3 text-gray-600">{getUserName(r.assigned_to)}</td>
-                <td className="px-4 py-3">
+                <td
+                  className="px-4 py-3"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
                   <div className="flex items-center justify-end gap-2">
-                    <button onClick={() => { setDetail(r); setView('detail') }} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                     <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                     {tab === 'open' && <button onClick={() => setCompleteId(r.id)} className="text-green-600 hover:text-green-700" title="Mark Complete"><CheckCircle size={15} /></button>}
                     {tab === 'closed' && <button onClick={() => setReopenId(r.id)} className="text-amber-600 hover:text-amber-700" title="Undo Complete / Reopen"><RotateCcw size={15} /></button>}

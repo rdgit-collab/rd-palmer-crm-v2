@@ -12,7 +12,7 @@ import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import TicketSearchSelect from '../../components/TicketSearchSelect'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
 const TASK_LIST_COLUMNS = 'id, ticket_id, servicetype, startdate, starttime, enddate, endtime, spare, description, action_taken, assigned_to, is_completed, user_id, file, created_at'
@@ -713,15 +713,31 @@ export default function Tasks() {
               ) : tasks.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-12 text-gray-400">No {tab} tasks found.</td></tr>
               ) : tasks.map(t => (
-                <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr
+                  key={t.id}
+                  onClick={() => openDetail(t)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      openDetail(t)
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View task for ${getTicketLabel(t.ticket_id)}`}
+                  className="border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none cursor-pointer"
+                >
                   <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(t.ticket_id)}</td>
                   <td className="px-4 py-3 text-gray-700">{displayText(t.servicetype)}</td>
                   <td className="px-4 py-3 text-gray-600">{formatTaskDateTime(t.startdate, t.starttime)}</td>
                   <td className="px-4 py-3 text-gray-600">{formatTaskDateTime(t.enddate, t.endtime)}</td>
                   <td className="px-4 py-3 text-gray-600">{getUserName(t.assigned_to)}</td>
-                  <td className="px-4 py-3">
+                  <td
+                    className="px-4 py-3"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => openDetail(t)} className="text-gray-500 hover:text-gray-700"><Eye size={15} /></button>
                       <button onClick={() => openEdit(t)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
                       {tab === 'open' && <button onClick={() => setCompleteId(t.id)} className="text-green-600 hover:text-green-700" title="Mark Complete"><CheckCircle size={15} /></button>}
                       {tab === 'closed' && <button onClick={() => setReopenId(t.id)} className="text-amber-600 hover:text-amber-700" title="Undo Complete / Reopen"><RotateCcw size={15} /></button>}

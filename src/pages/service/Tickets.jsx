@@ -22,7 +22,7 @@ import {
   useVendors,
 } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
 const TICKET_LIST_COLUMNS = 'id, ticket_id, date, warranty, category, company_id, company_name, contact_person, description, priority, due_date, status, is_completed, assigned_to, remark, user_id, created_at, serial_number'
@@ -1446,11 +1446,12 @@ export default function Tickets() {
                     <td className="px-4 py-3 text-gray-600">
                       {formatUserName(users, t.assigned_to)}
                     </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td
+                      className="px-4 py-3"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openDetail(t)} className="text-gray-500 hover:text-gray-700" title="View">
-                          <Eye size={15} />
-                        </button>
                         <button onClick={() => openEdit(t)} className="text-gray-500 hover:text-gray-700" title="Edit">
                           <Edit2 size={15} />
                         </button>
