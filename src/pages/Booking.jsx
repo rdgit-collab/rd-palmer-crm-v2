@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   CalendarDays, Check, ChevronLeft, ChevronRight, Edit, MapPin,
-  Car, Package, Plus, Search, X,
+  Car, Eye, Package, Plus, Search, X,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -181,6 +181,7 @@ export default function Booking() {
   const [equipmentSearch, setEquipmentSearch] = useState('')
   const [selectedCalendarBookingId, setSelectedCalendarBookingId] = useState(null)
   const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState('')
+  const [viewBookingId, setViewBookingId] = useState(null)
   const [showAllBookings, setShowAllBookings] = useState(false)
   const [unavailableItemIds, setUnavailableItemIds] = useState([])
   const [unavailableVehicleIds, setUnavailableVehicleIds] = useState([])
@@ -229,6 +230,7 @@ export default function Booking() {
   useEffect(() => {
     setSelectedCalendarBookingId(null)
     setSelectedCalendarDateKey('')
+    setViewBookingId(null)
     setShowAllBookings(false)
   }, [activeTab, month])
 
@@ -857,6 +859,8 @@ export default function Booking() {
               const isOwner = String(booking.requested_by_user_id) === String(profile?.id)
               const canManage = (isAdmin || isOwner) && !isClosedBooking(booking)
               const canApprove = booking.booking_type === 'vehicle' && booking.status === 'pending' && canApproveVehicleBookings
+              const bookingItemsList = itemsByBooking[String(booking.id)] || []
+              const isViewing = String(viewBookingId) === String(booking.id)
               return (
                 <div key={booking.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -875,12 +879,23 @@ export default function Booking() {
                       <p><span className="font-medium">Vehicle:</span> {vehicleLabel(vehiclesById[String(booking.vehicle_id)]) || '—'}</p>
                     )}
                     <p><span className="font-medium">Booked By:</span> {displayName(owner)}</p>
-                    {itemsByBooking[String(booking.id)]?.length > 0 && (
-                      <p><span className="font-medium">Items:</span> {itemsByBooking[String(booking.id)].map(item => item.serial_no ? `${item.name} (${item.serial_no})` : item.name).join(', ')}</p>
+                    {bookingItemsList.length > 0 && (
+                      <p><span className="font-medium">Items:</span> {bookingItemsList.length} item{bookingItemsList.length === 1 ? '' : 's'} booked</p>
                     )}
                     {booking.notes && <p><span className="font-medium">Notes:</span> {booking.notes}</p>}
                   </div>
                   <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setViewBookingId(isViewing ? null : booking.id)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs border ${
+                        isViewing
+                          ? 'border-red-200 bg-red-50 text-red-700'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Eye size={13} /> {isViewing ? 'Hide' : 'View'}
+                    </button>
                     {canApprove && (
                       <button onClick={() => updateStatus(booking, 'approved')} className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white hover:bg-green-700">
                         <Check size={13} /> Approve
@@ -897,6 +912,40 @@ export default function Booking() {
                       </button>
                     )}
                   </div>
+                  {isViewing && (
+                    <div className="mt-4 border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <p><span className="font-medium text-gray-700">Start:</span> {formatDateTime(booking.start_at)}</p>
+                        <p><span className="font-medium text-gray-700">End:</span> {formatDateTime(booking.end_at)}</p>
+                        <p><span className="font-medium text-gray-700">Purpose:</span> {booking.purpose || '—'}</p>
+                        <p><span className="font-medium text-gray-700">Booked By:</span> {displayName(owner)}</p>
+                        {booking.customer_name && <p><span className="font-medium text-gray-700">Customer:</span> {booking.customer_name}</p>}
+                        {booking.booking_type === 'vehicle' && (
+                          <p><span className="font-medium text-gray-700">Vehicle:</span> {vehicleLabel(vehiclesById[String(booking.vehicle_id)]) || '—'}</p>
+                        )}
+                      </div>
+                      {bookingItemsList.length > 0 && (
+                        <div className="mt-3">
+                          <p className="mb-2 font-medium text-gray-700">Booked Items</p>
+                          <div className="space-y-2">
+                            {bookingItemsList.map(item => (
+                              <div key={item.id} className="border border-gray-200 bg-white px-3 py-2">
+                                <p className="font-medium text-gray-800">{item.name || 'Unnamed item'}</p>
+                                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-gray-500">
+                                  {item.serial_no && <span>Serial: {item.serial_no}</span>}
+                                  {item.sku && <span>SKU: {item.sku}</span>}
+                                  {item.category && <span>Category: {item.category}</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {booking.notes && (
+                        <p className="mt-3 whitespace-pre-wrap"><span className="font-medium text-gray-700">Notes:</span> {booking.notes}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
