@@ -537,8 +537,6 @@ export default function Calibration() {
     const customerName = customer?.company_name || ticket?.company_name || '-'
     const customerAddress = customerAddressLine(customer)
     const conductedBy = getUserName(detail.conduct_by)
-    const selectedTerms = getTermName(detail.termid)
-    const terms = selectedTerms && selectedTerms !== '-' ? selectedTerms : DEFAULT_CALIBRATION_TERMS
     const checklistRowsHtml = detailChecklist.map(item => `
       <tr>
         <td class="description">${escapeHtml(item.name || '-')}</td>
@@ -557,8 +555,8 @@ export default function Calibration() {
         <style>
           @page { size: A4; margin: 0; }
           body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 9px; }
-          .sheet { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 17mm 15mm 30mm; box-sizing: border-box; }
-          .letterhead-space { height: 30mm; margin-bottom: 6mm; }
+          .sheet { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 50mm 15mm 40mm; box-sizing: border-box; }
+          .report-body { min-height: 207mm; }
           .meta { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; margin-bottom: 8px; }
           .customer-block, .certificate-block { line-height: 1.25; }
           .customer-block .label, .certificate-block .label { font-weight: 400; }
@@ -571,48 +569,39 @@ export default function Calibration() {
           th.conducted, td.conducted { width: 21%; text-align: center; }
           th.result, td.result { width: 19%; text-align: center; }
           .note { margin: 9px 7px 0; line-height: 1.35; }
-          .terms { margin: 18px 0 0; line-height: 1.22; white-space: pre-wrap; overflow-wrap: anywhere; }
-          .footer { position: absolute; left: 15mm; right: 15mm; bottom: 8mm; font-size: 8px; line-height: 1.25; }
-          .service-title { font-weight: 700; text-decoration: underline; margin-bottom: 7px; }
-          .company-red { color: #c43f3f; font-weight: 700; }
+          .warranty-note { margin-top: 3px; }
           @media print {
             body { background: #fff; }
-            .sheet { width: auto; min-height: 297mm; margin: 0; padding: 17mm 15mm 30mm; }
+            .sheet { width: auto; min-height: 297mm; margin: 0; padding: 50mm 15mm 40mm; }
           }
         </style>
       </head>
       <body>
         <div class="sheet">
-          <div class="letterhead-space" aria-hidden="true"></div>
-          <div class="meta">
-            <div class="customer-block">
-              <div><span class="label">Customer:</span> ${escapeHtml(customerName)}</div>
-              <div><span class="label">Address:</span> ${escapeHtml(customerAddress)}</div>
+          <div class="report-body">
+            <div class="meta">
+              <div class="customer-block">
+                <div><span class="label">Customer:</span> ${escapeHtml(customerName)}</div>
+                <div><span class="label">Address:</span> ${escapeHtml(customerAddress)}</div>
+              </div>
+              <div class="certificate-block">
+                <div><span class="label">Certificate No:</span> ${escapeHtml(detail.certificate_number || '-')}</div>
+                <div><span class="label">Serial Number:</span> ${escapeHtml(detail.serial_number || '-')}</div>
+                <div><span class="label">Date:</span> ${formatDate(detail.created_at, '-')}</div>
+              </div>
             </div>
-            <div class="certificate-block">
-              <div><span class="label">Certificate No:</span> ${escapeHtml(detail.certificate_number || '-')}</div>
-              <div><span class="label">Date:</span> ${formatDate(detail.created_at, '-')}</div>
+            <div class="summary-title">Summary Verification</div>
+            <table>
+              <thead>
+                <tr><th class="description">Description</th><th class="conducted">Conducted<br>by</th><th class="result">Result</th></tr>
+              </thead>
+              <tbody>${checklistRowsHtml || '<tr><td colspan="3" style="text-align:center;color:#777;">No checklist rows.</td></tr>'}</tbody>
+            </table>
+            <div class="note">
+              <div>${escapeHtml(noteLine)}</div>
+              <div class="warranty-note">Service by non-approved service centers or operators may void the manufacturer's warranty.</div>
+              ${detail.remark ? `<div>${escapeHtml(detail.remark)}</div>` : ''}
             </div>
-          </div>
-          <div class="summary-title">Summary Verification</div>
-          <table>
-            <thead>
-              <tr><th class="description">Description</th><th class="conducted">Conducted<br>by</th><th class="result">Result</th></tr>
-            </thead>
-            <tbody>${checklistRowsHtml || '<tr><td colspan="3" style="text-align:center;color:#777;">No checklist rows.</td></tr>'}</tbody>
-          </table>
-          <div class="note">
-            <div>${escapeHtml(noteLine)}</div>
-            <div>Service by non-approved service centers or operators may void the manufacturer's warranty.</div>
-            ${detail.remark ? `<div>${escapeHtml(detail.remark)}</div>` : ''}
-          </div>
-          <div class="terms">${escapeHtml(terms)}</div>
-          <div class="footer">
-            <div class="service-title">Authorised Service Centre</div>
-            <div class="company-red">RD-PALMER TECHNOLOGY (M) SDN BHD</div>
-            <div>Co. Reg. 200301008331 / 610731-W</div>
-            <div>No. 63, Jalan Seri Utara 1, Sri Utara Kipark, 68100 Kuala Lumpur.</div>
-            <div>Tel: +603 6250 2071 Email: info@rd-palmer.com</div>
           </div>
         </div>
       </body>
