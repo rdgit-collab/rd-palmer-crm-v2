@@ -537,6 +537,8 @@ export default function Calibration() {
     const customerName = customer?.company_name || ticket?.company_name || '-'
     const customerAddress = customerAddressLine(customer)
     const conductedBy = getUserName(detail.conduct_by)
+    const selectedTerms = getTermName(detail.termid)
+    const terms = selectedTerms && selectedTerms !== '-' ? selectedTerms : DEFAULT_CALIBRATION_TERMS
     const checklistRowsHtml = detailChecklist.map(item => `
       <tr>
         <td class="description">${escapeHtml(item.name || '-')}</td>
@@ -570,6 +572,7 @@ export default function Calibration() {
           th.result, td.result { width: 19%; text-align: center; }
           .note { margin: 9px 7px 0; line-height: 1.35; }
           .warranty-note { margin-top: 3px; }
+          .terms { margin: 14px 8px 0; line-height: 1.22; white-space: pre-wrap; overflow-wrap: anywhere; }
           @media print {
             body { background: #fff; }
             .sheet { width: auto; min-height: 297mm; margin: 0; padding: 50mm 15mm 40mm; }
@@ -602,6 +605,7 @@ export default function Calibration() {
               <div class="warranty-note">Service by non-approved service centers or operators may void the manufacturer's warranty.</div>
               ${detail.remark ? `<div>${escapeHtml(detail.remark)}</div>` : ''}
             </div>
+            <div class="terms">${escapeHtml(terms)}</div>
           </div>
         </div>
       </body>
