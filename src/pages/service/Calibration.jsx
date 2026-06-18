@@ -556,7 +556,7 @@ export default function Calibration() {
         <title>${escapeHtml(detail.certificate_number || 'Calibration Report')}</title>
         <style>
           @page { size: A4; margin: 0; }
-          body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 9px; }
+          body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 12px; }
           .sheet { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 50mm 15mm 40mm; box-sizing: border-box; }
           .report-body { min-height: 207mm; }
           .meta { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; margin-bottom: 8px; }
