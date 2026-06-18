@@ -109,10 +109,7 @@ export default function Sidebar({ open, onClose }) {
 
         {/* Logo */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-gray-800">
-          <div className="flex min-w-0 items-center gap-2">
-            <img src={sidebarLogo} alt="RD-Palmer" className="h-12 w-auto max-w-[150px] object-contain" />
-            <span className="shrink-0 text-2xl font-bold leading-none text-white">CRM</span>
-          </div>
+          <img src={sidebarLogo} alt="RD-Palmer" className="h-12 w-auto max-w-[180px] object-contain" />
           <button onClick={onClose} className="text-gray-500 hover:text-white lg:hidden"><X size={18} /></button>
         </div>
 
