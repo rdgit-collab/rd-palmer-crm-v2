@@ -1402,7 +1402,20 @@ export default function Tickets() {
                 const today = new Date().toISOString().split('T')[0]
                 const isOverdue = t.due_date && t.due_date < today
                 return (
-                  <tr key={t.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <tr
+                    key={t.id}
+                    onClick={() => openDetail(t)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        openDetail(t)
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View TID${t.ticket_id}`}
+                    className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50"
+                  >
                     <td className="px-4 py-3 font-semibold text-red-600">TID{t.ticket_id}</td>
                     <td className="px-4 py-3 text-gray-600">{formatDate(t.date)}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">
@@ -1433,7 +1446,7 @@ export default function Tickets() {
                     <td className="px-4 py-3 text-gray-600">
                       {formatUserName(users, t.assigned_to)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => openDetail(t)} className="text-gray-500 hover:text-gray-700" title="View">
                           <Eye size={15} />
