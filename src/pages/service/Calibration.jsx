@@ -558,6 +558,7 @@ export default function Calibration() {
           @page { size: A4; margin: 0; }
           body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 9px; }
           .sheet { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 17mm 15mm 30mm; box-sizing: border-box; }
+          .letterhead-space { height: 30mm; margin-bottom: 6mm; }
           .meta { display: grid; grid-template-columns: 1fr 190px; gap: 24px; align-items: start; margin-bottom: 8px; }
           .customer-block, .certificate-block { line-height: 1.25; }
           .customer-block .label, .certificate-block .label { font-weight: 400; }
@@ -582,6 +583,7 @@ export default function Calibration() {
       </head>
       <body>
         <div class="sheet">
+          <div class="letterhead-space" aria-hidden="true"></div>
           <div class="meta">
             <div class="customer-block">
               <div><span class="label">Customer:</span> ${escapeHtml(customerName)}</div>
