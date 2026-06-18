@@ -317,14 +317,14 @@ export default function Contacts() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Manage Contacts</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} contact{total !== 1 ? 's' : ''} total</p>
         </div>
         <button
           onClick={() => { setEditContact(null); setView('form') }}
-          className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700"
+          className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 sm:w-auto"
         >
           <Plus size={16} /> Add Contact
         </button>

@@ -633,14 +633,14 @@ export default function Activities() {
     const history = historyForDetail(detail)
     return (
       <div className="p-6 max-w-5xl">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+          <div className="flex flex-wrap items-center gap-3">
             <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"><ArrowLeft size={15} /> Back</button>
             <h1 className="text-2xl font-bold text-gray-900">{detail.companyName}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            {detail.lead_id && <button onClick={() => navigate('/leads', { state: { leadId: detail.lead_id } })} className="px-3 py-1.5 text-sm border border-gray-200 hover:bg-gray-50">Open Lead</button>}
-            <button onClick={() => openUpdate(detail)} className="flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 text-sm hover:bg-red-700"><Plus size={14} /> Add Update</button>
+          <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+            {detail.lead_id && <button onClick={() => navigate('/leads', { state: { leadId: detail.lead_id } })} className="px-3 py-1.5 text-sm border border-gray-200 hover:bg-gray-50 whitespace-nowrap">Open Lead</button>}
+            <button onClick={() => openUpdate(detail)} className="flex items-center justify-center gap-1.5 bg-red-600 text-white px-3 py-1.5 text-sm hover:bg-red-700 whitespace-nowrap"><Plus size={14} /> Add Update</button>
           </div>
         </div>
         <div className="bg-white border border-gray-200">
@@ -676,12 +676,12 @@ export default function Activities() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Activity Follow Ups</h1>
           <p className="text-sm text-gray-500 mt-1">{total} lead follow up{total !== 1 ? 's' : ''}</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Update</button>
+        <button onClick={openAdd} className="flex w-full items-center justify-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 sm:w-auto"><Plus size={16} /> New Update</button>
       </div>
 
       <div className="flex flex-wrap gap-1 mb-5 border-b border-gray-200">

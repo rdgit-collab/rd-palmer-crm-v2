@@ -434,15 +434,15 @@ function CustomerDetail({ customerId, onBack, onEdit }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={onBack} className="flex items-center gap-1 text-gray-500 hover:text-gray-800 text-sm">
             <ArrowLeft size={16} /> Back
           </button>
           <h1 className="text-xl font-semibold text-gray-900">Customer Information</h1>
         </div>
         <button onClick={onEdit}
-          className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+          className="flex w-full items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 sm:w-auto">
           <Pencil size={14} /> Edit
         </button>
       </div>
@@ -673,14 +673,14 @@ export default function Customers() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Manage Customers</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} customer{total !== 1 ? 's' : ''} total</p>
         </div>
         <button
           onClick={() => { setEditCustomer(null); setView('form') }}
-          className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700"
+          className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 sm:w-auto"
         >
           <Plus size={16} /> Add Customer
         </button>

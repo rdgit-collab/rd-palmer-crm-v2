@@ -11,7 +11,7 @@ import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
-  Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
+  Plus, Search, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, FileText, RefreshCw, Download, Bold, Underline, Copy
 } from 'lucide-react'
 
@@ -26,6 +26,13 @@ const markedRate = (baseRate, markup) => {
 const PAGE_SIZE = 30
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
 const CUSTOMER_FORM_COLUMNS = 'id, company_name, assigned, assignto, address1, address2, city, state, zipcode, country'
+const PAYMENT_MILESTONE_OPTIONS = [
+  'Deposit',
+  'Progress Payment',
+  'Final Payment',
+  'Balance Payment',
+  'Custom Payment',
+]
 const DEFAULT_QUOTATION_NOTES = 'Thank you for your interest in our product. Please feel free to contact us for further assistance.'
 const DEFAULT_QUOTATION_TERMS = `Availability:
 Validity: 30 days from quotation date.
@@ -217,6 +224,20 @@ function addressLines(customer) {
 
 function documentFileName(number, companyName, fallback = 'document') {
   return [number, companyName].map(value => String(value || '').trim()).filter(Boolean).join(' - ') || fallback
+}
+
+function moneyValue(value) {
+  const number = Number(value || 0)
+  return Number.isFinite(number) ? number : 0
+}
+
+function roundMoney(value) {
+  return Math.round(moneyValue(value) * 100) / 100
+}
+
+function paymentInvoiceLabel(type, quotationNumber) {
+  const label = String(type || '').trim() || 'Partial Payment'
+  return `${label} for quotation ${quotationNumber || ''}`.trim()
 }
 
 function quotationHtml(quotation, items, contactName, customer, contactMobile = '', salesContactNumber = '') {
@@ -1157,13 +1178,21 @@ function QuotationForm({ quotation, onSave, onCancel }) {
 
 // ─── Quotation Detail View ─────────────────────────────────────────────────────
 function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) {
+  const { profile } = useAuth()
   const [quotation, setQuotation] = useState(null)
   const [items, setItems] = useState([])
+  const [linkedInvoices, setLinkedInvoices] = useState([])
   const [contact, setContact] = useState(null)
   const [customer, setCustomer] = useState(null)
   const [salesContactNumber, setSalesContactNumber] = useState('')
   const [loading, setLoading] = useState(true)
   const [converting, setConverting] = useState(false)
+  const [showConvertDialog, setShowConvertDialog] = useState(false)
+  const [convertMode, setConvertMode] = useState('full')
+  const [paymentType, setPaymentType] = useState('Deposit')
+  const [paymentPercent, setPaymentPercent] = useState('')
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [convertError, setConvertError] = useState('')
   const [pdfDownloading, setPdfDownloading] = useState(false)
 
   useEffect(() => {
@@ -1190,8 +1219,18 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
         const { data: goodsRows } = await supabase.from('goodsservices').select('id, sku').in('id', itemIds)
         skuByItemId = Object.fromEntries((goodsRows || []).map(row => [String(row.id), row.sku || '']))
       }
+      let invoices = []
+      if (q?.number) {
+        const { data } = await supabase
+          .from('invoice')
+          .select('id, invoice_number, date, total, currency, quote_ref_number')
+          .eq('quote_ref_number', q.number)
+          .order('id', { ascending: true })
+        invoices = data || []
+      }
       setQuotation(q)
       setItems((qi || []).map(item => ({ ...item, sku: skuByItemId[String(item.itemid)] || item.sku || '' })))
+      setLinkedInvoices(invoices)
       setContact(contactRow)
       setCustomer(customerRow)
       setSalesContactNumber(salesPhone)
@@ -1200,8 +1239,37 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
     load()
   }, [quotationId])
 
+  const quotationTotal = roundMoney(quotation?.total)
+  const invoicedTotal = roundMoney(linkedInvoices.reduce((sum, invoice) => sum + moneyValue(invoice.total), 0))
+  const remainingTotal = Math.max(0, roundMoney(quotationTotal - invoicedTotal))
+  const partialAmount = roundMoney(paymentAmount || (quotationTotal * (moneyValue(paymentPercent) / 100)))
+  const targetInvoiceAmount = convertMode === 'full' ? remainingTotal : partialAmount
+  const hasInvoiceBalance = remainingTotal > 0.009
+
+  const openConvertDialog = () => {
+    setConvertMode('full')
+    setPaymentType(linkedInvoices.length > 0 ? 'Balance Payment' : 'Deposit')
+    setPaymentPercent('')
+    setPaymentAmount(remainingTotal ? String(remainingTotal.toFixed(2)) : '')
+    setConvertError('')
+    setShowConvertDialog(true)
+  }
+
   const handleConvert = async () => {
-    if (!window.confirm('Convert this quotation to an invoice? The quotation will be marked as converted.')) return
+    if (!quotation) return
+    const amount = roundMoney(targetInvoiceAmount)
+    if (amount <= 0) {
+      setConvertError('There is no remaining amount to invoice.')
+      return
+    }
+    if (amount - remainingTotal > 0.009) {
+      setConvertError(`Invoice amount cannot be more than the remaining balance of ${quotation.currency || 'MYR'} ${fmtMoney(remainingTotal)}.`)
+      return
+    }
+    const milestoneLabel = convertMode === 'full'
+      ? (linkedInvoices.length > 0 ? 'Balance Payment' : 'Full Invoice')
+      : paymentType
+    const shouldCopyQuotationItems = convertMode === 'full' && linkedInvoices.length === 0
     setConverting(true)
     const [invoiceNumber, { data: tplData }] = await Promise.all([
       getNextInvoiceNumber(),
@@ -1225,14 +1293,14 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       contact_person: quotation.contact_person,
       currency: quotation.currency || 'MYR',
       notes: invoiceTemplate.invoice_notes || DEFAULT_INVOICE_NOTES,
-      subtotal: quotation.subtotal,
-      discount: quotation.discount,
-      discouttype: quotation.discouttype,
-      discountvalue: quotation.discountvalue,
-      shiping_charge: quotation.shiping_charge,
+      subtotal: shouldCopyQuotationItems ? quotation.subtotal : amount,
+      discount: shouldCopyQuotationItems ? quotation.discount : 0,
+      discouttype: shouldCopyQuotationItems ? quotation.discouttype : '%',
+      discountvalue: shouldCopyQuotationItems ? quotation.discountvalue : '0',
+      shiping_charge: shouldCopyQuotationItems ? quotation.shiping_charge : 0,
       tax: quotation.tax || 0,
-      adjustment: quotation.adjustment,
-      total: quotation.total,
+      adjustment: shouldCopyQuotationItems ? quotation.adjustment : 0,
+      total: amount,
       created_at: now,
       updated_at: now,
     }
@@ -1242,8 +1310,10 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       setConverting(false)
       return
     }
-    if (items.length > 0) {
-      const invoiceItems = items.map(item => ({
+    const label = paymentInvoiceLabel(milestoneLabel, quotation.number)
+    const description = `${label}${quotation.name ? `\nCustomer: ${quotation.name}` : ''}${quotation.total ? `\nQuotation total: ${quotation.currency || 'MYR'} ${fmtMoney(quotation.total)}` : ''}${remainingTotal ? `\nRemaining before this invoice: ${quotation.currency || 'MYR'} ${fmtMoney(remainingTotal)}` : ''}`
+    const invoiceItems = shouldCopyQuotationItems
+      ? items.map(item => ({
         user_id: item.user_id || quotation.user_id || getLegacyUserId(profile),
         invoiceid: invoice.id,
         item: item.item,
@@ -1259,24 +1329,45 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
         created_at: now,
         updated_at: now,
       }))
+      : [{
+        user_id: quotation.user_id || getLegacyUserId(profile),
+        invoiceid: invoice.id,
+        item: label,
+        description,
+        qty: 1,
+        rate: amount,
+        tax: 0,
+        amount,
+        itemid: null,
+        taxid: null,
+        taxlbl: null,
+        markup: null,
+        created_at: now,
+        updated_at: now,
+      }]
+    if (invoiceItems.length > 0) {
       const { error: itemErr } = await supabase.from('invoice_item').insert(invoiceItems)
       if (itemErr) {
+        await supabase.from('invoice').delete().eq('id', invoice.id)
         alert(itemErr.message)
         setConverting(false)
         return
       }
     }
-    await supabase.from('quotation').update({ isconvert: 1 }).eq('id', quotationId)
+    const newInvoicedTotal = roundMoney(invoicedTotal + amount)
+    const fullyInvoiced = newInvoicedTotal + 0.009 >= quotationTotal
+    await supabase.from('quotation').update({ isconvert: fullyInvoiced ? 1 : 0 }).eq('id', quotationId)
     logActivity({
       module: 'quotations',
       action: 'convert',
       recordTable: 'quotation',
       recordId: quotationId,
       recordLabel: quotation.number,
-      summary: `Converted quotation ${quotation.number} to invoice ${invoice.invoice_number || invoice.id}`,
-      metadata: { invoice_id: invoice.id },
+      summary: `${fullyInvoiced ? 'Converted' : 'Partially invoiced'} quotation ${quotation.number} to invoice ${invoice.invoice_number || invoice.id}`,
+      metadata: { invoice_id: invoice.id, amount, fully_invoiced: fullyInvoiced },
     })
     setConverting(false)
+    setShowConvertDialog(false)
     onConverted()
   }
 
@@ -1284,6 +1375,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
   if (!quotation) return <div className="text-gray-500 text-sm p-4">Quotation not found.</div>
 
   const isConverted = quotation.isconvert === 1
+  const isPartiallyInvoiced = !isConverted && invoicedTotal > 0
   const contactName = resolvedContactName(quotation.contact_person, contact)
   const printableHtml = () => quotationHtml(quotation, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => openPrintable(printableHtml())
@@ -1301,8 +1393,8 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={onBack} className="flex items-center gap-1 text-gray-500 hover:text-gray-800 text-sm">
             <ArrowLeft size={16} /> Back
           </button>
@@ -1310,32 +1402,82 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
           {isConverted && (
             <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 font-medium">Converted to Invoice</span>
           )}
+          {isPartiallyInvoiced && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 font-medium">Partially Invoiced</span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:justify-end">
           <button onClick={openPreview}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap">
             <FileText size={14} /> Preview PDF
           </button>
           <button onClick={downloadPdf} disabled={pdfDownloading}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60">
+            className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap">
             {pdfDownloading ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
             {pdfDownloading ? 'Preparing PDF...' : 'Download PDF'}
           </button>
           <button onClick={onClone}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap">
             <Copy size={14} /> Clone
           </button>
           {!isConverted && (
             <>
               <button onClick={onEdit}
-                className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+                className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap">
                 <Pencil size={14} /> Edit
               </button>
-              <button onClick={handleConvert} disabled={converting}
-                className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50">
+              <button onClick={openConvertDialog} disabled={converting || !hasInvoiceBalance}
+                className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50 whitespace-nowrap sm:col-span-1">
                 <RefreshCw size={14} /> {converting ? 'Converting...' : 'Convert to Invoice'}
               </button>
             </>
+          )}
+        </div>
+      </div>
+
+      {/* Invoice Progress */}
+      <div className="bg-white rounded-lg border border-gray-200 mb-4">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Invoice Progress</h2>
+        </div>
+        <div className="p-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <div className="border border-gray-100 rounded p-3 bg-gray-50">
+              <p className="text-xs text-gray-500">Quotation Total</p>
+              <p className="text-sm font-semibold text-gray-900">{quotation.currency || 'MYR'} {fmtMoney(quotationTotal)}</p>
+            </div>
+            <div className="border border-gray-100 rounded p-3 bg-gray-50">
+              <p className="text-xs text-gray-500">Invoiced</p>
+              <p className="text-sm font-semibold text-gray-900">{quotation.currency || 'MYR'} {fmtMoney(invoicedTotal)}</p>
+            </div>
+            <div className="border border-gray-100 rounded p-3 bg-gray-50">
+              <p className="text-xs text-gray-500">Balance</p>
+              <p className="text-sm font-semibold text-gray-900">{quotation.currency || 'MYR'} {fmtMoney(remainingTotal)}</p>
+            </div>
+          </div>
+          {linkedInvoices.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 text-xs text-gray-500">
+                    <th className="py-2 pr-4 text-left font-medium">Invoice No.</th>
+                    <th className="py-2 pr-4 text-left font-medium">Date</th>
+                    <th className="py-2 text-right font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linkedInvoices.map(invoice => (
+                    <tr key={invoice.id} className="border-b border-gray-50 last:border-0">
+                      <td className="py-2 pr-4 text-red-600 font-medium">{invoice.invoice_number || invoice.id}</td>
+                      <td className="py-2 pr-4 text-gray-600">{fmt(invoice.date)}</td>
+                      <td className="py-2 text-right text-gray-900 font-medium">{invoice.currency || quotation.currency || 'MYR'} {fmtMoney(invoice.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">No invoice created from this quotation yet.</p>
           )}
         </div>
       </div>
@@ -1466,6 +1608,125 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
           </div>
         </div>
       )}
+
+      {showConvertDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-3 py-4">
+          <div className="w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto bg-white rounded-lg shadow-xl">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Convert Quotation to Invoice</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{quotation.number} · Balance {quotation.currency || 'MYR'} {fmtMoney(remainingTotal)}</p>
+              </div>
+              <button type="button" onClick={() => setShowConvertDialog(false)} className="p-1.5 text-gray-400 hover:text-gray-700">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setConvertMode('full'); setConvertError(''); setPaymentAmount(String(remainingTotal.toFixed(2))) }}
+                  className={`border rounded px-4 py-3 text-left ${convertMode === 'full' ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 hover:bg-gray-50'}`}
+                >
+                  <span className="block text-sm font-semibold">Full / Balance</span>
+                  <span className="block text-xs text-gray-500 mt-1">Invoice the remaining quotation balance.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setConvertMode('partial'); setPaymentAmount(''); setPaymentPercent(''); setConvertError('') }}
+                  className={`border rounded px-4 py-3 text-left ${convertMode === 'partial' ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 hover:bg-gray-50'}`}
+                >
+                  <span className="block text-sm font-semibold">Partial / Progress</span>
+                  <span className="block text-xs text-gray-500 mt-1">Create deposit or progress invoice.</span>
+                </button>
+              </div>
+
+              {convertMode === 'partial' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Payment Type</label>
+                    <select
+                      value={paymentType}
+                      onChange={event => setPaymentType(event.target.value)}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                    >
+                      {PAYMENT_MILESTONE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Percentage</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={paymentPercent}
+                        onChange={event => {
+                          const next = event.target.value
+                          setPaymentPercent(next)
+                          const percentAmount = quotationTotal * (moneyValue(next) / 100)
+                          setPaymentAmount(next ? String(roundMoney(percentAmount).toFixed(2)) : '')
+                          setConvertError('')
+                        }}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                        placeholder="e.g. 30"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Amount</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={paymentAmount}
+                        onChange={event => { setPaymentAmount(event.target.value); setPaymentPercent(''); setConvertError('') }}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Quotation Total</span>
+                  <span>{quotation.currency || 'MYR'} {fmtMoney(quotationTotal)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 mt-1">
+                  <span>Already Invoiced</span>
+                  <span>{quotation.currency || 'MYR'} {fmtMoney(invoicedTotal)}</span>
+                </div>
+                <div className="flex justify-between text-gray-900 font-semibold mt-2 pt-2 border-t border-gray-200">
+                  <span>This Invoice</span>
+                  <span>{quotation.currency || 'MYR'} {fmtMoney(targetInvoiceAmount)}</span>
+                </div>
+              </div>
+
+              {convertError && <p className="text-sm text-red-600">{convertError}</p>}
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConvertDialog(false)}
+                className="px-4 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConvert}
+                disabled={converting || targetInvoiceAmount <= 0}
+                className="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {converting ? 'Creating Invoice...' : 'Create Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1585,13 +1846,13 @@ export default function Quotations() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Manage Quotations</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} quotation{total !== 1 ? 's' : ''} total</p>
         </div>
         <button onClick={() => { setEditQuotation(null); setView('form') }}
-          className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+          className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 sm:w-auto">
           <Plus size={16} /> New Quotation
         </button>
       </div>
@@ -1641,13 +1902,26 @@ export default function Quotations() {
                 </tr>
               ) : (
                 quotations.map(q => (
-                  <tr key={q.id} className="hover:bg-gray-50">
+                  <tr
+                    key={q.id}
+                    onClick={() => { setSelectedId(q.id); setView('detail') }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        setSelectedId(q.id)
+                        setView('detail')
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View quotation ${q.number || ''}`}
+                    className="hover:bg-gray-50 focus:bg-gray-50 focus:outline-none cursor-pointer"
+                  >
                     <td className="px-4 py-3">
-                      <button onClick={() => { setSelectedId(q.id); setView('detail') }}
-                        className="flex items-center gap-2 text-[#CC0000] hover:text-red-700 font-medium text-sm">
+                      <span className="flex items-center gap-2 text-[#CC0000] font-medium text-sm">
                         <FileText size={13} />
                         {q.number}
-                      </button>
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-gray-800 text-xs">{q.name || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{q.sales_person || '—'}</td>
@@ -1663,12 +1937,12 @@ export default function Quotations() {
                         : <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">Pending</span>
                       }
                     </td>
-                    <td className="px-4 py-3">
+                    <td
+                      className="px-4 py-3"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => { setSelectedId(q.id); setView('detail') }}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="View">
-                          <Eye size={14} />
-                        </button>
                         {q.isconvert !== 1 && (
                           <button onClick={() => openEdit(q)}
                             className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Edit">

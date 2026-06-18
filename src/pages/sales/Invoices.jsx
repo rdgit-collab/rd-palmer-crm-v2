@@ -1165,30 +1165,30 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={onBack} className="flex items-center gap-1 text-gray-500 hover:text-gray-800 text-sm">
             <ArrowLeft size={16} /> Back
           </button>
           <h1 className="text-xl font-semibold text-gray-900">{invoice.invoice_number}</h1>
           {isOverdue && <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 font-medium">Overdue</span>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:justify-end">
           <button onClick={openPreview}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap">
             <FileText size={14} /> Preview PDF
           </button>
           <button onClick={downloadPdf} disabled={pdfDownloading}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60">
+            className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap">
             {pdfDownloading ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
             {pdfDownloading ? 'Preparing PDF...' : 'Download PDF'}
           </button>
           <button onClick={onClone}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap">
             <Copy size={14} /> Clone
           </button>
           <button onClick={onEdit}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50">
+            className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap">
             <Pencil size={14} /> Edit
           </button>
         </div>
@@ -1430,13 +1430,13 @@ export default function Invoices() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Manage Invoices</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} invoice{total !== 1 ? 's' : ''} total</p>
         </div>
         <button onClick={() => { setEditInvoice(null); setView('form') }}
-          className="flex items-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700">
+          className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 sm:w-auto">
           <Plus size={16} /> New Invoice
         </button>
       </div>

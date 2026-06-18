@@ -156,9 +156,9 @@ export default function RMA() {
 
   if (view === 'list') return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">RMA</h1>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New RMA</button>
+        <button onClick={openAdd} className="flex w-full items-center justify-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 sm:w-auto"><Plus size={16} /> New RMA</button>
       </div>
       <div className="flex gap-1 mb-5 border-b border-gray-200">
         {[['open', 'Open'], ['closed', 'Closed']].map(([id, label]) => (
@@ -312,12 +312,12 @@ export default function RMA() {
 
   if (view === 'detail' && detail) return (
     <div className="p-6 max-w-3xl">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
           <h1 className="text-2xl font-bold text-gray-900">RMA — {detail.rma_number}</h1>
         </div>
-        <button onClick={() => openEdit(detail)} className="flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"><Edit2 size={14}/> Edit</button>
+        <button onClick={() => openEdit(detail)} className="flex w-full items-center justify-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50 sm:w-auto"><Edit2 size={14}/> Edit</button>
       </div>
       <div className="bg-white border border-gray-200 p-6 text-sm space-y-3">
         <div className="grid grid-cols-2 gap-x-8 gap-y-3">
