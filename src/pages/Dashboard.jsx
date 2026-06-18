@@ -560,7 +560,7 @@ function ServiceDashboard({ firstName }) {
         <StatCard label="Open Tickets"     value={stats.openTickets}    icon={Ticket}        color="#D97706" bg="#FFFBEB" to="/tickets" info={serviceStatInfo.openTickets} />
         <StatCard label="Closed Tickets"   value={stats.closedTickets}  icon={CheckCircle2}  color="#059669" bg="#ECFDF5" to="/tickets" info={serviceStatInfo.closedTickets} />
         <StatCard label="Open Tasks"       value={stats.openTasks}      icon={ClipboardList} color="#0891B2" bg="#ECFEFF" to="/tasks" info={serviceStatInfo.openTasks} />
-        <StatCard label="Onsite Tickets"   value={stats.onsiteTickets}  icon={MapPin}        color="#7C3AED" bg="#F5F3FF" to="/onsite-tickets" info={serviceStatInfo.onsiteTickets} />
+        <StatCard label="On-Site"          value={stats.onsiteTickets}  icon={MapPin}        color="#7C3AED" bg="#F5F3FF" to="/onsite-tickets" info={serviceStatInfo.onsiteTickets} />
         <StatCard label="Overdue Tickets"  value={stats.overdueTickets} icon={AlertTriangle} color="#CC0000" bg="#FEF2F2" to="/tickets" info={serviceStatInfo.overdueTickets} />
         <StatCard label="Due Today"        value={stats.dueToday}       icon={Gauge}         color="#2563EB" bg="#EFF6FF" to="/tasks" info={serviceStatInfo.dueToday} />
         <StatCard label="Work Completion"  value={`${stats.completionRate ?? 0}%`} icon={CheckCircle2} color="#059669" bg="#ECFDF5" info={serviceStatInfo.completionRate} />
@@ -701,7 +701,7 @@ function ServiceDashboard({ firstName }) {
       <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
         <h3 className="font-semibold text-[#111111] text-sm mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[['+ New Ticket','/tickets'],['+ New Task','/tasks'],['+ Onsite Ticket','/onsite-tickets'],['+ Serial Number','/serial-numbers']].map(([l,h]) => (
+          {[['+ New Ticket','/tickets'],['+ New Task','/tasks'],['+ New On-Site','/onsite-tickets'],['+ Serial Number','/serial-numbers']].map(([l,h]) => (
             <Link key={l} to={h} className="border border-[#E0E0E0] rounded-lg px-4 py-3 text-sm font-medium text-[#111111] hover:border-[#CC0000] hover:text-[#CC0000] transition-colors text-center">{l}</Link>
           ))}
         </div>

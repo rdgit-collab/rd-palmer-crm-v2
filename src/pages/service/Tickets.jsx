@@ -876,7 +876,7 @@ export default function Tickets() {
           user_id:          getLegacyUserId(profile),
           ticket_id:        ticketId,
           sku:              p.sku,
-          item_description: p.item_description,
+          item_description: p.item_description || null,
           serial_number:    p.serial_number,
           remark:           p.remark,
         }))
@@ -1194,7 +1194,7 @@ export default function Tickets() {
       action: 'create',
       recordTable: table,
       recordLabel: quickAction === 'rma' ? quickForm.rma_number : `TID${detail.ticket_id}`,
-      summary: `Added ${quickAction === 'rma' ? 'RMA' : quickAction === 'onsite' ? 'onsite ticket' : quickAction === 'remark' ? 'remark' : 'task'} to TID${detail.ticket_id}`,
+      summary: `Added ${quickAction === 'rma' ? 'RMA' : quickAction === 'onsite' ? 'On-Site' : quickAction === 'remark' ? 'remark' : 'task'} to TID${detail.ticket_id}`,
       metadata: { ticket_id: detail.id, ticket_number: detail.ticket_id },
     })
 
@@ -1204,10 +1204,10 @@ export default function Tickets() {
         await notifyUser(supabase, {
           userId: payload.assigned_to,
           actorUserId: currentLegacyUserId,
-          title: quickAction === 'task' ? 'Task assigned to you' : 'Onsite ticket assigned to you',
-          reference: quickAction === 'task' ? `Task for TID${detail.ticket_id}` : `Onsite for TID${detail.ticket_id}`,
+          title: quickAction === 'task' ? 'Task assigned to you' : 'On-Site assigned to you',
+          reference: quickAction === 'task' ? `Task for TID${detail.ticket_id}` : `On-Site for TID${detail.ticket_id}`,
           companyName: detail.company_name || '',
-          body: `You have been assigned ${quickAction === 'task' ? 'a task' : 'an onsite ticket'} for TID${detail.ticket_id}${detail.company_name ? ' - ' + detail.company_name : ''}.`,
+          body: `You have been assigned ${quickAction === 'task' ? 'a task' : 'an On-Site record'} for TID${detail.ticket_id}${detail.company_name ? ' - ' + detail.company_name : ''}.`,
           details: quickAction === 'task'
             ? [
                 ['Ticket', `TID${detail.ticket_id}`],
@@ -1647,7 +1647,7 @@ export default function Tickets() {
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Serial Number</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Date</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Warranty</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-700">Item Description</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Item Description <span className="font-normal text-gray-400">(Optional)</span></th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">SKU</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Remarks</th>
                     <th className="px-3 py-2"></th>
@@ -1697,7 +1697,7 @@ export default function Tickets() {
                           type="text"
                           value={prod.item_description}
                           onChange={e => updateProd(idx, 'item_description', e.target.value)}
-                          placeholder="Description"
+                          placeholder="Description (optional)"
                           className="w-full border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:border-red-400"
                         />
                       </td>
@@ -1979,7 +1979,7 @@ export default function Tickets() {
             <form onSubmit={saveQuickAction} className="border border-red-100 bg-red-50/30 p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">
-                  Add {quickAction === 'rma' ? 'RMA' : quickAction === 'onsite' ? 'Onsite Ticket' : quickAction === 'remark' ? 'Remark' : 'Task'} to TID{detail.ticket_id}
+                  Add {quickAction === 'rma' ? 'RMA' : quickAction === 'onsite' ? 'On-Site' : quickAction === 'remark' ? 'Remark' : 'Task'} to TID{detail.ticket_id}
                 </h3>
                 <button type="button" onClick={closeQuickAction} className="text-gray-400 hover:text-gray-700"><X size={16} /></button>
               </div>
@@ -2191,7 +2191,7 @@ export default function Tickets() {
               <p className={`mt-2 text-sm font-semibold ${readyToClose ? 'text-green-700' : 'text-gray-900'}`}>
                 {detail.is_completed == 1 ? 'Ticket closed' : readyToClose ? 'Ready to close' : `${workTotal - workDoneTotal} work item${workTotal - workDoneTotal !== 1 ? 's' : ''} open`}
               </p>
-              <p className="mt-1 text-xs text-gray-500">Based on linked tasks and onsite tickets.</p>
+              <p className="mt-1 text-xs text-gray-500">Based on linked tasks and On-Site records.</p>
             </div>
           </div>
 
@@ -2395,11 +2395,11 @@ export default function Tickets() {
             )}
           </div>
 
-          {/* Onsite Tickets */}
+          {/* On-Site */}
           <div className="border-t border-gray-100 pt-5">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Onsite Tickets</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">On-Site</p>
             {detailOnsites.length === 0 ? (
-              <p className="text-sm text-gray-400">No onsite tickets for this ticket.</p>
+              <p className="text-sm text-gray-400">No On-Site records for this ticket.</p>
             ) : (
               <table className="w-full text-sm border border-gray-200">
                 <thead>

@@ -309,7 +309,7 @@ export default function OnsiteTickets() {
       recordTable: 'onsiteticket',
       recordId: editId || null,
       recordLabel: form.product || form.issue_description,
-      summary: `${editId ? 'Updated' : 'Created'} onsite ticket${form.ticket_id ? ` for ticket #${form.ticket_id}` : ''}`,
+      summary: `${editId ? 'Updated' : 'Created'} On-Site record${form.ticket_id ? ` for ticket #${form.ticket_id}` : ''}`,
       metadata: { ticket_id: form.ticket_id || null, assigned_to: form.assigned_to || null },
     })
     const newAssignee = form.assigned_to || ''
@@ -324,10 +324,10 @@ export default function OnsiteTickets() {
       await notifyUser(supabase, {
         userId: parseInt(newAssignee),
         actorUserId: currentLegacyUserId,
-        title: 'Onsite ticket assigned to you',
-        reference: ticket ? `Onsite for TID${ticket.ticket_id}` : 'Onsite ticket',
+        title: 'On-Site assigned to you',
+        reference: ticket ? `On-Site for TID${ticket.ticket_id}` : 'On-Site',
         companyName: ticket?.company_name || '',
-        body: `You have been assigned an onsite ticket${ticket?.company_name ? ' for ' + ticket.company_name : ''}.`,
+        body: `You have been assigned an On-Site record${ticket?.company_name ? ' for ' + ticket.company_name : ''}.`,
         details: [
           ['Ticket', ticket ? `TID${ticket.ticket_id}` : form.ticket_id],
           ['Company', ticket?.company_name || ''],
@@ -350,7 +350,7 @@ export default function OnsiteTickets() {
       action: 'complete',
       recordTable: 'onsiteticket',
       recordId: id,
-      summary: `Marked onsite ticket #${id} complete`,
+      summary: `Marked On-Site #${id} complete`,
     })
     setCompleteId(null); fetchRows()
   }
@@ -361,7 +361,7 @@ export default function OnsiteTickets() {
       action: 'reopen',
       recordTable: 'onsiteticket',
       recordId: id,
-      summary: `Reopened onsite ticket #${id}`,
+      summary: `Reopened On-Site #${id}`,
     })
     setReopenId(null); fetchRows()
   }
@@ -372,7 +372,7 @@ export default function OnsiteTickets() {
       action: 'delete',
       recordTable: 'onsiteticket',
       recordId: id,
-      summary: `Deleted onsite ticket #${id}`,
+      summary: `Deleted On-Site #${id}`,
     })
     setDeleteId(null); fetchRows()
   }
@@ -382,8 +382,8 @@ export default function OnsiteTickets() {
   if (view === 'list') return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">On-Site Service Tickets</h1>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New Onsite Ticket</button>
+        <h1 className="text-2xl font-bold text-gray-900">On-Site</h1>
+        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> New On-Site</button>
       </div>
       {/* Open / Closed tabs */}
       <div className="flex gap-1 mb-5 border-b border-gray-200">
@@ -402,7 +402,7 @@ export default function OnsiteTickets() {
             className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
         </div>
         <div className="flex border border-gray-200 bg-white text-sm">
-          {[['all', 'All Onsite'], ['mine', 'My Assigned']].map(([id, label]) => (
+          {[['all', 'All On-Site'], ['mine', 'My Assigned']].map(([id, label]) => (
             <button
               key={id}
               onClick={() => { setScope(id); setPage(1) }}
@@ -428,7 +428,7 @@ export default function OnsiteTickets() {
           </thead>
           <tbody>
             {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No {tab} onsite tickets.</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No {tab} On-Site records.</td></tr>
             : rows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-red-600">{getTicketLabel(r.ticket_id)}</td>
@@ -453,8 +453,8 @@ export default function OnsiteTickets() {
       </div>
       <PaginationControls page={page} totalPages={totalPages} total={total} label="record" onPageChange={setPage} />
       {completeId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Mark as Completed?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setCompleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => markComplete(completeId)} className="px-4 py-2 text-sm bg-green-600 text-white hover:bg-green-700">Confirm</button></div></div></div>}
-      {reopenId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Reopen this onsite ticket?</h3><p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => reopenRow(reopenId)} className="px-4 py-2 text-sm bg-amber-600 text-white hover:bg-amber-700">Reopen</button></div></div></div>}
-      {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Delete Onsite Ticket?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700">Delete</button></div></div></div>}
+      {reopenId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Reopen this On-Site record?</h3><p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => reopenRow(reopenId)} className="px-4 py-2 text-sm bg-amber-600 text-white hover:bg-amber-700">Reopen</button></div></div></div>}
+      {deleteId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold text-gray-900 mb-2">Delete On-Site Record?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50">Cancel</button><button onClick={() => handleDelete(deleteId)} className="px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700">Delete</button></div></div></div>}
     </div>
   )
 
@@ -462,7 +462,7 @@ export default function OnsiteTickets() {
     <div className="p-6 max-w-3xl">
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
-        <h1 className="text-2xl font-bold text-gray-900">{editId ? 'Edit Onsite Ticket' : 'New Onsite Ticket'}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{editId ? 'Edit On-Site' : 'New On-Site'}</h1>
       </div>
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
       <form onSubmit={handleSave} className="bg-white border border-gray-200 p-6 space-y-5">
@@ -473,13 +473,13 @@ export default function OnsiteTickets() {
             setForm(f => ({...f, ticket_id: ticketId, product: ''}))
             await loadTicketProducts(ticketId)
           }} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="">Please Select</option>{tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} — {t.company_name}</option>)}</select>],
-          ['Product Description *', <div>
+	          ['Product Description', <div>
             <select multiple value={productValues(form.product)} onChange={e => {
               const selected = Array.from(e.target.selectedOptions).map(option => option.value)
               const selectedProducts = productOptions.filter(option => selected.includes(option.sku))
               const serials = selectedProducts.map(option => option.serial_number).filter(Boolean)
               setForm(f => ({...f, product: selected.join(','), serial_number: serials.join(',') || f.serial_number}))
-            }} required className="w-full min-h-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="" disabled>Please Select</option>{productOptions.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.item_description ? ` - ${stripHtml(p.item_description)}` : ''}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}</select>
+	            }} className="w-full min-h-28 border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"><option value="" disabled>Please Select</option>{productOptions.map(p => <option key={p.id} value={p.sku}>{p.sku}{p.item_description ? ` - ${stripHtml(p.item_description)}` : ''}{p.serial_number ? ` (${p.serial_number})` : ''}</option>)}</select>
             {productLoading && <LoadingHint text="Loading ticket products..." />}
           </div>],
           ['Serial Number', <div>
@@ -591,7 +591,7 @@ export default function OnsiteTickets() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <button onClick={() => setView('list')} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
-          <h1 className="text-2xl font-bold text-gray-900">Onsite Ticket Detail</h1>
+          <h1 className="text-2xl font-bold text-gray-900">On-Site Detail</h1>
           <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status}</span>
         </div>
         <div className="flex gap-2">
@@ -624,7 +624,7 @@ export default function OnsiteTickets() {
         {detail.remark && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Remark</p><p className="whitespace-pre-wrap">{detail.remark}</p></div>}
       </div>
       {completeId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Mark as Completed?</h3><div className="flex justify-end gap-3 mt-4"><button onClick={() => setCompleteId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={async () => { await markComplete(completeId); setView('list') }} className="px-4 py-2 text-sm bg-green-600 text-white">Confirm</button></div></div></div>}
-      {reopenId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Reopen this onsite ticket?</h3><p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={async () => { await reopenRow(reopenId); setView('list') }} className="px-4 py-2 text-sm bg-amber-600 text-white">Reopen</button></div></div></div>}
+      {reopenId && <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white p-6 w-full max-w-sm shadow-lg"><h3 className="font-semibold mb-2">Reopen this On-Site record?</h3><p className="text-sm text-gray-600 mb-4">This will undo the completion and move it back to the open list.</p><div className="flex justify-end gap-3 mt-4"><button onClick={() => setReopenId(null)} className="px-4 py-2 text-sm border border-gray-200">Cancel</button><button onClick={async () => { await reopenRow(reopenId); setView('list') }} className="px-4 py-2 text-sm bg-amber-600 text-white">Reopen</button></div></div></div>}
     </div>
   )
 

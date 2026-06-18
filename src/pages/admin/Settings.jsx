@@ -582,7 +582,7 @@ const SALES_MODULES = [
 const SERVICE_MODULES = [
   { module: 'tickets',       label: 'Tickets' },
   { module: 'tasks',         label: 'Tasks' },
-  { module: 'onsite-tickets',label: 'Onsite Tickets' },
+  { module: 'onsite-tickets',label: 'On-Site' },
   { module: 'rma',           label: 'RMA' },
   { module: 'calibration',   label: 'Calibration' },
   { module: 'serial-numbers',label: 'Serial Numbers' },
