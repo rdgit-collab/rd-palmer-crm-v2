@@ -1481,7 +1481,7 @@ export default function Tickets() {
                     <td className="px-4 py-3 text-gray-600">
                       {latestTask ? (
                         <div>
-                          <div className="font-medium text-gray-700">{displayText(latestTask.servicetype, 'Task')}</div>
+                          <div className="font-medium text-red-600">{displayText(latestTask.servicetype, 'Task')}</div>
                           <div>{formatUserName(users, latestTask.assigned_to)}</div>
                           <div className="mt-0.5 text-xs text-gray-400">{formatDate(latestTask.created_at || latestTask.startdate)}</div>
                         </div>
