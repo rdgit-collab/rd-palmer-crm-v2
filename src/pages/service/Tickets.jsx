@@ -43,6 +43,10 @@ const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).fi
 const stripHtml = (value = '') => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const escapeHtml = (value = '') =>
   String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+const getTaskTimelineFields = (task) => ([
+  { label: 'Description', value: task?.description || '' },
+  { label: 'Action Taken', value: task?.action_taken || '' },
+])
 
 function sanitizeHtml(value = '') {
   const raw = String(value || '')
@@ -312,6 +316,9 @@ function ticketReportHtml(ticket, {
         </div>
         <div class="timeline-meta">Owner: ${escapeHtml(item.owner ? formatUserName(users, item.owner) : '-')}</div>
         ${item.spare ? `<div class="timeline-meta">Spare Used: ${escapeHtml(displayText(item.spare))}</div>` : ''}
+        ${item.fields?.length ? item.fields.map(field => `
+          <div class="timeline-text"><strong>${escapeHtml(field.label)}:</strong> ${escapeHtml(stripHtml(displayText(field.value, '-')))}</div>
+        `).join('') : ''}
         ${item.text ? `<div class="timeline-text">${escapeHtml(stripHtml(displayText(item.text, '')))}</div>` : ''}
       </div>
     `).join('')
@@ -461,6 +468,7 @@ export default function Tickets() {
   const [tab, setTab]               = useState('open')
   const [tickets, setTickets]       = useState([])
   const [ticketContacts, setTicketContacts] = useState({})
+  const [latestTicketTasks, setLatestTicketTasks] = useState({})
   const [total, setTotal]           = useState(0)
   const [page, setPage]             = useState(1)
   const [search, setSearch]         = useState('')
@@ -553,6 +561,7 @@ export default function Tickets() {
         setError(serialSearchError.message)
         setTickets([])
         setTicketContacts({})
+        setLatestTicketTasks({})
         setTicketSerialMatches({})
         setTotal(0)
         setLoading(false)
@@ -576,6 +585,7 @@ export default function Tickets() {
       if (matchedTicketIds.length === 0) {
         setTickets([])
         setTicketContacts({})
+        setLatestTicketTasks({})
         setTicketSerialMatches({})
         setTotal(0)
         setLoading(false)
@@ -642,9 +652,33 @@ export default function Tickets() {
       } else {
         setTicketContacts({})
       }
+
+      const ticketIds = rows.map(row => row.id).filter(Boolean)
+      if (ticketIds.length) {
+        const { data: taskRows, error: taskErr } = await supabase
+          .from('task')
+          .select('id, ticket_id, assigned_to, created_at, startdate')
+          .in('ticket_id', ticketIds)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(1000)
+        if (!taskErr) {
+          const latestByTicket = {}
+          ;(taskRows || []).forEach(task => {
+            const key = String(task.ticket_id)
+            if (!latestByTicket[key]) latestByTicket[key] = task
+          })
+          setLatestTicketTasks(latestByTicket)
+        } else {
+          setLatestTicketTasks({})
+        }
+      } else {
+        setLatestTicketTasks({})
+      }
     } else {
       setError(err.message)
       setTicketSerialMatches({})
+      setLatestTicketTasks({})
     }
     setLoading(false)
   }, [search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
@@ -1389,7 +1423,7 @@ export default function Tickets() {
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Priority</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
                 <th className="text-left px-4 py-3 font-semibold text-gray-700">Due Date</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-700">Assigned To</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-700">Latest Task Assigned</th>
                 <th className="text-right px-4 py-3 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
@@ -1401,6 +1435,7 @@ export default function Tickets() {
               ) : tickets.map(t => {
                 const today = new Date().toISOString().split('T')[0]
                 const isOverdue = t.due_date && t.due_date < today
+                const latestTask = latestTicketTasks[String(t.id)]
                 return (
                   <tr
                     key={t.id}
@@ -1444,7 +1479,12 @@ export default function Tickets() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{formatDate(t.due_date)}</td>
                     <td className="px-4 py-3 text-gray-600">
-                      {formatUserName(users, t.assigned_to)}
+                      {latestTask ? (
+                        <div>
+                          <div>{formatUserName(users, latestTask.assigned_to)}</div>
+                          <div className="mt-0.5 text-xs text-gray-400">{formatDateTime(latestTask.created_at || latestTask.startdate)}</div>
+                        </div>
+                      ) : '—'}
                     </td>
                     <td
                       className="px-4 py-3"
@@ -1900,7 +1940,7 @@ export default function Tickets() {
     const readyToClose = workTotal > 0 && workDoneTotal === workTotal && detail.is_completed == 0
     const timelineItems = [
       { type: 'Ticket', label: `Ticket ${detail.status || 'Open'}`, date: detail.created_at || detail.date, owner: detail.assigned_to, text: detail.description },
-      ...detailTasks.map(task => ({ type: 'Task', id: task.id, label: task.servicetype || 'Task', date: timelineDate(task), owner: task.assigned_to, status: workStatus(task), spare: task.spare, text: task.action_taken || task.description, to: '/tasks', state: { taskId: task.id, returnToTicketId: detail.id } })),
+      ...detailTasks.map(task => ({ type: 'Task', id: task.id, label: task.servicetype || 'Task', date: timelineDate(task), owner: task.assigned_to, status: workStatus(task), spare: task.spare, fields: getTaskTimelineFields(task), to: '/tasks', state: { taskId: task.id, returnToTicketId: detail.id } })),
       ...detailOnsites.map(onsite => ({ type: 'Onsite', label: onsite.product || onsite.issue_description || 'Onsite ticket', date: timelineDate(onsite), owner: onsite.assigned_to, status: workStatus(onsite), text: onsite.workdone || onsite.issue_description || onsite.remark })),
       ...detailRmas.map(rma => ({ type: 'RMA', label: rma.rma_number || 'RMA', date: rma.date_sent || rma.created_at, owner: null, status: rma.date_return ? 'Returned' : 'Sent', text: [rma.vendor, rma.remark].filter(Boolean).join(' - ') })),
       ...detailRemarks.map(remark => ({ type: 'Remark', label: 'Remark', date: remark.created_at, owner: remark.user_id, status: '', text: remark.remark })),
@@ -2320,7 +2360,18 @@ export default function Tickets() {
                           Spare Used: {displayText(item.spare)}
                         </div>
                       )}
-                      {item.text && <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{stripHtml(displayText(item.text, ''))}</p>}
+                      {item.fields?.length > 0 ? (
+                        <div className="mt-2 space-y-1">
+                          {item.fields.map(field => (
+                            <div key={field.label} className="text-sm text-gray-700">
+                              <span className="font-medium text-gray-500">{field.label}: </span>
+                              <span className="whitespace-pre-wrap">{stripHtml(displayText(field.value, '—'))}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : item.text && (
+                        <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{stripHtml(displayText(item.text, ''))}</p>
+                      )}
                     </>
                   )
                   return (
