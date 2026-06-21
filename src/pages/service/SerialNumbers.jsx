@@ -313,6 +313,7 @@ export default function SerialNumbers() {
               value={form.sku}
               displayLabel={form.sku}
               placeholder="Search SKU…"
+              filter={{ is_archived: false }}
               minSearchLength={2}
               onSelect={(val) => setForm(f => ({ ...f, sku: val || '' }))}
             />

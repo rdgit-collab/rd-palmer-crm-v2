@@ -734,7 +734,7 @@ export default function Tickets() {
       // Customers are no longer pulled whole here — the company picker below uses
       // <SearchSelect>, which queries on demand. Only the catalogue (goodsservices)
       // is loaded, and only when the ticket form is opened.
-      const skuR = await fetchAllRows('goodsservices', 'id, sku, name, description', 'sku')
+      const skuR = await fetchAllRows('goodsservices', 'id, sku, name, description', 'sku', { eq: { is_archived: false } })
       setSkuList(skuR || [])
     } catch (err) {
       formDataLoadedRef.current = false

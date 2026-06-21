@@ -181,7 +181,7 @@ export default function OnsiteTickets() {
     try {
       const [tickR, spareR] = await Promise.all([
         fetchAllRows('ticket', 'id, ticket_id, company_name, description, assigned_to', 'id', { ascending: false, eq: { is_completed: 0 } }),
-        fetchAllRows('goodsservices', 'id, name', 'name'),
+        fetchAllRows('goodsservices', 'id, name', 'name', { eq: { is_archived: false } }),
       ])
       setTickets(tickR || [])
       setSpares(spareR || [])

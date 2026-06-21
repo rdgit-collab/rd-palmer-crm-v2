@@ -4,15 +4,16 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Eye, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Archive, Plus, Search, Eye, Edit2, Trash2, RotateCcw } from 'lucide-react'
 
 const PAGE_SIZE = 15
-const CATALOGUE_LIST_COLUMNS = 'id, type, name, sku, price, qty, remark, description, category, model, manufacture, item_type, tax'
+const CATALOGUE_LIST_COLUMNS = 'id, type, name, sku, price, qty, remark, description, category, model, manufacture, item_type, tax, is_archived'
 
 const emptyForm = {
   type: 'Goods', name: '', sku: '', price: '',
   qty: '', remark: '', description: '', category: '',
   model: '', manufacture: '', item_type: '', tax: '',
+  is_archived: false,
 }
 
 export default function Catalogue() {
@@ -23,6 +24,8 @@ export default function Catalogue() {
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
   const [typeFilter, setTF]     = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [archiveFilter, setArchiveFilter] = useState('active')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
@@ -63,11 +66,14 @@ export default function Catalogue() {
     let q = supabase.from('goodsservices').select(CATALOGUE_LIST_COLUMNS, { count: 'estimated' }).order('name')
     if (search)     q = q.or(`name.ilike.%${search}%,sku.ilike.%${search}%`)
     if (typeFilter) q = q.eq('type', typeFilter)
+    if (categoryFilter) q = q.eq('category', categoryFilter)
+    if (archiveFilter === 'active') q = q.eq('is_archived', false)
+    if (archiveFilter === 'archived') q = q.eq('is_archived', true)
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
     if (!err) { setRows(data || []); setTotal(count || 0) }
     setLoading(false)
-  }, [search, typeFilter, page])
+  }, [search, typeFilter, categoryFilter, archiveFilter, page])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 
@@ -83,6 +89,7 @@ export default function Catalogue() {
       price: r.price || '', qty: r.qty || '', remark: r.remark || '', description: r.description || '',
       category: r.category || '', model: r.model || '',
       manufacture: r.manufacture || '', item_type: r.item_type || '', tax: r.tax || '',
+      is_archived: Boolean(r.is_archived),
     })
     setEditId(r.id); setError(''); setView('form')
   }
@@ -95,6 +102,7 @@ export default function Catalogue() {
       remark: form.remark || null, description: form.description || null, category: form.category || null,
       model: form.model || null, manufacture: form.manufacture || null,
       item_type: form.item_type || null, tax: form.tax || null,
+      is_archived: Boolean(form.is_archived),
       user_id: getLegacyUserId(profile),
     }
     const { error: err } = editId
@@ -111,6 +119,33 @@ export default function Catalogue() {
       metadata: { sku: form.sku || null, name: form.name || null },
     })
     setSaving(false); fetchRows(); setView('list')
+  }
+
+  const handleArchiveToggle = async (item, isArchived) => {
+    setSaving(true)
+    setError('')
+    const { error: err } = await supabase
+      .from('goodsservices')
+      .update({ is_archived: isArchived })
+      .eq('id', item.id)
+    if (err) {
+      setError(err.message)
+      setSaving(false)
+      return
+    }
+    logActivity({
+      module: 'catalogue',
+      action: isArchived ? 'archive' : 'restore',
+      recordTable: 'goodsservices',
+      recordId: item.id,
+      recordLabel: item.sku || item.name,
+      summary: `${isArchived ? 'Archived' : 'Restored'} catalogue item ${item.sku || item.name}`,
+      metadata: { sku: item.sku || null, name: item.name || null },
+    })
+    setRows(prev => prev.map(row => row.id === item.id ? { ...row, is_archived: isArchived } : row))
+    setDetail(prev => prev?.id === item.id ? { ...prev, is_archived: isArchived } : prev)
+    setSaving(false)
+    fetchRows()
   }
 
   const handleDelete = async (id) => {
@@ -133,7 +168,8 @@ export default function Catalogue() {
         <h1 className="text-2xl font-bold text-gray-900">Catalogue</h1>
         <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700"><Plus size={16} /> Add Item</button>
       </div>
-      <div className="flex gap-3 mb-4">
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
+      <div className="flex flex-col gap-3 mb-4 lg:flex-row">
         <div className="relative flex-1 max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input type="text" placeholder="Search name or SKU..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
@@ -143,6 +179,15 @@ export default function Catalogue() {
           <option value="">All Types</option>
           <option>Goods</option>
           <option>Services</option>
+        </select>
+        <select value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+          <option value="">All Categories</option>
+          {categories.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+        </select>
+        <select value={archiveFilter} onChange={e => { setArchiveFilter(e.target.value); setPage(1) }} className="border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+          <option value="active">Active Items</option>
+          <option value="archived">Archived Items</option>
+          <option value="all">All Status</option>
         </select>
       </div>
       <div className="bg-white border border-gray-200">
@@ -155,14 +200,15 @@ export default function Catalogue() {
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Price (MYR)</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Qty</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Category</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
               <th className="text-right px-4 py-3 font-semibold text-gray-700">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-400">No items found.</td></tr>
+            {loading ? <tr><td colSpan={8} className="text-center py-12 text-gray-400">Loading...</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={8} className="text-center py-12 text-gray-400">No items found.</td></tr>
             : rows.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={r.id} className={`border-b border-gray-100 hover:bg-gray-50 ${r.is_archived ? 'bg-gray-50 text-gray-500' : ''}`}>
                 <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
                 <td className="px-4 py-3 text-red-600 font-medium">{r.sku || '—'}</td>
                 <td className="px-4 py-3"><span className={`inline-block px-2 py-0.5 text-xs rounded ${r.type === 'Services' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{r.type}</span></td>
@@ -170,9 +216,22 @@ export default function Catalogue() {
                 <td className="px-4 py-3 text-gray-600">{r.qty || '—'}</td>
                 <td className="px-4 py-3 text-gray-600">{lookupLabel(categories, r.category)}</td>
                 <td className="px-4 py-3">
+                  <span className={`inline-block px-2 py-0.5 text-xs rounded ${r.is_archived ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>
+                    {r.is_archived ? 'Archived' : 'Active'}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-2">
                     <button onClick={() => openView(r)} className="text-gray-500 hover:text-blue-600" title="View"><Eye size={15} /></button>
-                    <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700"><Edit2 size={15} /></button>
+                    <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-gray-700" title="Edit"><Edit2 size={15} /></button>
+                    <button
+                      onClick={() => handleArchiveToggle(r, !r.is_archived)}
+                      disabled={saving}
+                      className={r.is_archived ? 'text-gray-500 hover:text-green-700 disabled:opacity-50' : 'text-gray-500 hover:text-amber-700 disabled:opacity-50'}
+                      title={r.is_archived ? 'Restore item' : 'Archive item'}
+                    >
+                      {r.is_archived ? <RotateCcw size={15} /> : <Archive size={15} />}
+                    </button>
                     <button onClick={() => setDeleteId(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
                   </div>
                 </td>
@@ -193,10 +252,17 @@ export default function Catalogue() {
           <button onClick={() => { setDetail(null); setView('list') }} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
           <h1 className="text-2xl font-bold text-gray-900">Catalogue Item</h1>
           <span className={`inline-block px-2 py-0.5 text-xs rounded ${detail.type === 'Services' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{detail.type || '—'}</span>
+          <span className={`inline-block px-2 py-0.5 text-xs rounded ${detail.is_archived ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>{detail.is_archived ? 'Archived' : 'Active'}</span>
         </div>
-        <button onClick={() => openEdit(detail)} className="flex items-center gap-2 border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50">
-          <Edit2 size={14} /> Edit
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => handleArchiveToggle(detail, !detail.is_archived)} disabled={saving} className="flex items-center gap-2 border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60">
+            {detail.is_archived ? <RotateCcw size={14} /> : <Archive size={14} />}
+            {detail.is_archived ? 'Restore' : 'Archive'}
+          </button>
+          <button onClick={() => openEdit(detail)} className="flex items-center gap-2 border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50">
+            <Edit2 size={14} /> Edit
+          </button>
+        </div>
       </div>
 
       <div className="bg-white border border-gray-200 p-6 space-y-5">
@@ -211,6 +277,7 @@ export default function Catalogue() {
             ['Quantity', detail.qty],
             ['Remark', detail.remark],
             ['Category', lookupLabel(categories, detail.category)],
+            ['Status', detail.is_archived ? 'Archived' : 'Active'],
             ['Model', lookupLabel(models, detail.model)],
             ['Manufacturer', lookupLabel(manufacturers, detail.manufacture)],
             ['Item Type', lookupLabel(itemTypes, detail.item_type)],
@@ -318,6 +385,18 @@ export default function Catalogue() {
               {taxes.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
             </select>
           </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 items-start">
+          <label className="text-sm font-medium text-gray-700 pt-1">Status</label>
+          <label className="col-span-2 flex items-start gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={Boolean(form.is_archived)}
+              onChange={e => setForm(f => ({...f, is_archived: e.target.checked}))}
+              className="mt-1"
+            />
+            <span>Archived obsolete item</span>
+          </label>
         </div>
         <div className="grid grid-cols-3 gap-4">
           <label className="text-sm font-medium text-gray-700 pt-2">Description</label>

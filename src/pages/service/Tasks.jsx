@@ -371,7 +371,7 @@ export default function Tasks() {
         supabase.from('service_type').select('id, type').order('type'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
-        fetchAllRows('goodsservices', 'id, sku, name, description', 'sku'),
+        fetchAllRows('goodsservices', 'id, sku, name, description', 'sku', { eq: { is_archived: false } }),
         supabase.from('task').select('spare').not('spare', 'is', null).neq('spare', '').limit(1000),
       ])
       if (!stR.error)   setServiceTypes(stR.data || [])

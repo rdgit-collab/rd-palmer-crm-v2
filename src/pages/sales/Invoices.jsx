@@ -451,8 +451,8 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
     let cancelled = false
     setItemLoading(true)
     const timer = setTimeout(async () => {
-      let skuQuery = supabase.from('goodsservices').select('id, sku, name, price, description').ilike('sku', `%${term}%`).limit(50)
-      let nameQuery = supabase.from('goodsservices').select('id, sku, name, price, description').limit(50)
+      let skuQuery = supabase.from('goodsservices').select('id, sku, name, price, description').eq('is_archived', false).ilike('sku', `%${term}%`).limit(50)
+      let nameQuery = supabase.from('goodsservices').select('id, sku, name, price, description').eq('is_archived', false).limit(50)
       nameQuery = applyTokenIlike(nameQuery, 'name', term)
       const [skuR, nameR] = await Promise.all([skuQuery, nameQuery])
       if (cancelled) return
