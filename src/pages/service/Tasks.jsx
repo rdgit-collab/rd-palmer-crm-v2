@@ -60,11 +60,35 @@ function isImageFile(path = '') {
   return /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(path).split('?')[0])
 }
 
-function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileUrl }) {
-  const photoBlock = task.file
-    ? isImageFile(task.file) && fileUrl
-      ? `<div class="section"><h2>Uploaded Photo</h2><img class="task-photo" src="${escapeHtml(fileUrl)}" alt="Uploaded task file"></div>`
-      : `<div class="section"><h2>Uploaded File</h2><div>${escapeHtml(task.file)}</div></div>`
+function splitMultiValue(value = '') {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function joinMultiValue(values = []) {
+  return [...new Set(values.map(item => String(item || '').trim()).filter(Boolean))].join('\n')
+}
+
+function formatMultiValue(value = '', fallback = '—') {
+  const items = splitMultiValue(value)
+  return items.length ? items.join(', ') : fallback
+}
+
+function fileNameFromPath(path = '') {
+  const cleanPath = String(path || '').split('?')[0]
+  return decodeURIComponent(cleanPath.split('/').pop() || cleanPath || 'Document')
+}
+
+function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileEntries = [] }) {
+  const imageEntries = fileEntries.filter(entry => isImageFile(entry.path) && entry.url)
+  const fileListEntries = fileEntries.filter(entry => !isImageFile(entry.path) || !entry.url)
+  const photoBlock = imageEntries.length
+    ? `<div class="section"><h2>Uploaded Photos</h2>${imageEntries.map(entry => `<img class="task-photo" src="${escapeHtml(entry.url)}" alt="${escapeHtml(fileNameFromPath(entry.path))}">`).join('')}</div>`
+    : ''
+  const fileBlock = fileListEntries.length
+    ? `<div class="section"><h2>Uploaded Files</h2><ul class="file-list">${fileListEntries.map(entry => `<li>${escapeHtml(fileNameFromPath(entry.path))}</li>`).join('')}</ul></div>`
     : ''
 
   return `<!doctype html>
@@ -92,6 +116,7 @@ function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileU
         .text-box { border: 1px solid #d4d4d4; min-height: 60px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
         .terms-box { border: 1px solid #222; min-height: 80px; padding: 10px; line-height: 1.45; }
         .task-photo { display: block; max-width: 100%; max-height: 105mm; object-fit: contain; border: 1px solid #ddd; margin-top: 8px; }
+        .file-list { margin: 0; padding-left: 18px; line-height: 1.5; }
         .document-signature { display: grid; grid-template-columns: 270px 270px; gap: 48px; margin-top: 34px; break-inside: avoid; page-break-inside: avoid; }
         .signature-line { border-top: 1px dotted #111; padding-top: 10px; font-style: italic; min-height: 64px; line-height: 1.45; }
         @media print {
@@ -124,7 +149,7 @@ function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileU
           <div class="summary-row"><span>Service:</span><span>${escapeHtml(task.servicetype || '-')}</span></div>
           <div class="summary-row"><span>Start:</span><span>${escapeHtml(`${formatDate(task.startdate)}${task.starttime ? ` ${task.starttime}` : ''}`)}</span></div>
           <div class="summary-row"><span>End:</span><span>${escapeHtml(`${formatDate(task.enddate)}${task.endtime ? ` ${task.endtime}` : ''}`)}</span></div>
-          <div class="summary-row"><span>Spare Used:</span><span>${escapeHtml(task.spare || '-')}</span></div>
+          <div class="summary-row"><span>Spare Used:</span><span>${escapeHtml(formatMultiValue(task.spare, '-'))}</span></div>
           <div class="summary-row"><span>Assigned To:</span><span>${escapeHtml(assignedTo || '-')}</span></div>
           <div class="summary-row"><span>Created By:</span><span>${escapeHtml(createdBy || '-')}</span></div>
           <div class="summary-row"><span>Created:</span><span>${escapeHtml(formatDateTime(task.created_at))}</span></div>
@@ -135,6 +160,7 @@ function taskReportHtml(task, { ticketLabel, assignedTo, createdBy, terms, fileU
         </div>
         ${task.action_taken ? `<div class="section"><h2>Action Taken</h2><div class="text-box">${escapeHtml(task.action_taken)}</div></div>` : ''}
         ${photoBlock}
+        ${fileBlock}
         <div class="section">
           <h2>Terms & Conditions</h2>
           <div class="terms-box">${sanitizeHtml(terms || DEFAULT_TASK_TERMS)}</div>
@@ -165,14 +191,10 @@ function spareLabel(spare) {
   return sku || description || 'Unnamed item'
 }
 
-function SpareSearchSelect({ options, value, onChange, loading }) {
+function SpareMultiSelect({ options, value, onChange, loading }) {
   const [term, setTerm] = useState('')
-  const [open, setOpen] = useState(false)
-  const selected = options.find(item =>
-    String(item.sku || item.name || '') === String(value || '') ||
-    String(item.name || '') === String(value || '')
-  )
-  const inputValue = open ? term : (selected ? spareLabel(selected) : value || '')
+  const selected = splitMultiValue(value)
+  const selectedSet = new Set(selected)
   const search = term.trim().toLowerCase()
   const filtered = search
     ? options.filter(item => [
@@ -182,55 +204,54 @@ function SpareSearchSelect({ options, value, onChange, loading }) {
       ].some(part => String(part || '').toLowerCase().includes(search)))
     : options
 
-  const choose = (item) => {
-    onChange(item.sku || item.name || '')
-    setTerm('')
-    setOpen(false)
+  const toggle = (item) => {
+    const spareValue = item.sku || item.name || ''
+    const next = selectedSet.has(spareValue)
+      ? selected.filter(current => current !== spareValue)
+      : [...selected, spareValue]
+    onChange(joinMultiValue(next))
   }
 
   return (
-    <div className="relative">
-      <input
-        type="text"
-        value={inputValue}
-        onFocus={() => { setOpen(true); setTerm('') }}
-        onBlur={() => setTimeout(() => setOpen(false), 100)}
-        onChange={e => {
-          setTerm(e.target.value)
-          setOpen(true)
-          if (!e.target.value.trim()) onChange('')
-        }}
-        placeholder="Search SKU or description..."
-        className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-      />
-      {open && (
-        <div className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto border border-gray-200 bg-white shadow-lg">
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); onChange(''); setTerm(''); setOpen(false) }}
-            className="block w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
-          >
-            None
-          </button>
-          {filtered.length === 0 ? (
-            <div className="px-3 py-3 text-sm text-gray-400">
-              {loading ? 'Loading spare options...' : 'No matching spare found.'}
-            </div>
-          ) : filtered.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              onMouseDown={e => { e.preventDefault(); choose(item) }}
-              className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-            >
-              <span className="block font-medium text-gray-800">{item.sku || item.name || '—'}</span>
-              {(item.description || item.name) && (
-                <span className="block truncate text-xs text-gray-500">{stripHtml(item.description || item.name)}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="border border-gray-200 bg-white">
+      <div className="relative border-b border-gray-100">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={term}
+          onChange={e => setTerm(e.target.value)}
+          placeholder="Search SKU or description..."
+          className="w-full pl-8 pr-3 py-2 text-sm focus:outline-none"
+        />
+      </div>
+      <div className="max-h-56 overflow-y-auto p-2 space-y-1">
+        {filtered.length === 0 ? (
+          <p className="px-2 py-3 text-sm text-gray-400">
+            {loading ? 'Loading spare options...' : 'No matching spare found.'}
+          </p>
+        ) : filtered.map(item => {
+          const spareValue = item.sku || item.name || ''
+          return (
+            <label key={item.id} className="flex cursor-pointer items-start gap-2 px-2 py-1.5 text-sm hover:bg-gray-50">
+              <input
+                type="checkbox"
+                checked={selectedSet.has(spareValue)}
+                onChange={() => toggle(item)}
+                className="mt-0.5 h-4 w-4 accent-red-600"
+              />
+              <span className="min-w-0">
+                <span className="block font-medium text-gray-800">{item.sku || item.name || '—'}</span>
+                {(item.description || item.name) && (
+                  <span className="block truncate text-xs text-gray-500">{stripHtml(item.description || item.name)}</span>
+                )}
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
+        {selected.length ? `${selected.length} selected: ${selected.join(', ')}` : 'No spare parts selected'}
+      </div>
       {loading && <LoadingHint text="Loading spare options..." />}
     </div>
   )
@@ -272,7 +293,7 @@ export default function Tasks() {
   const [reopenId, setReopenId]     = useState(null)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
-  const [uploadFile, setUploadFile] = useState(null)
+  const [uploadFiles, setUploadFiles] = useState([])
   const [fileInputKey, setFileInputKey] = useState(0)
   const [returnToTicketId, setReturnToTicketId] = useState(null)
 
@@ -384,7 +405,7 @@ export default function Tasks() {
         description: item.description || item.name || '',
       })).filter(item => item.sku || item.name)
       const existingTaskSpares = !taskSpareR.error
-        ? [...new Set((taskSpareR.data || []).map(row => row.spare).filter(Boolean))]
+        ? [...new Set((taskSpareR.data || []).flatMap(row => splitMultiValue(row.spare)))]
         : []
       const catalogueValues = new Set(catalogue.map(item => String(item.sku || item.name || '')))
       const legacyTaskSpares = existingTaskSpares
@@ -399,7 +420,7 @@ export default function Tasks() {
   // ── Open add ─────────────────────────────────────────────────────
   const openAdd = async () => {
     setForm({ ...emptyForm, startdate: new Date().toISOString().split('T')[0] })
-    setUploadFile(null)
+    setUploadFiles([])
     setFileInputKey(key => key + 1)
     setEditId(null)
     origFile.current = ''
@@ -422,7 +443,7 @@ export default function Tasks() {
       assigned_to: String(t.assigned_to || ''),
       file:        t.file               || '',
     })
-    setUploadFile(null)
+    setUploadFiles([])
     setFileInputKey(key => key + 1)
     origAssignedTo.current = t.assigned_to || ''
     origFile.current = t.file || ''
@@ -437,13 +458,21 @@ export default function Tasks() {
     setSaving(true)
     setError('')
 
-    let filePath = form.file || null
-    if (uploadFile) {
-      const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      filePath = `task/${Date.now()}-${safeName}`
-      const { error: uploadErr } = await supabase.storage.from('crm-uploads').upload(filePath, uploadFile, { upsert: true })
-      if (uploadErr) { setError(uploadErr.message); setSaving(false); return }
+    const existingFiles = splitMultiValue(form.file)
+    const uploadedPaths = []
+    for (const file of uploadFiles) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `task/${Date.now()}-${uploadedPaths.length}-${safeName}`
+      const { error: uploadErr } = await supabase.storage.from('crm-uploads').upload(filePath, file, { upsert: true })
+      if (uploadErr) {
+        if (uploadedPaths.length) supabase.storage.from('crm-uploads').remove(uploadedPaths).catch(() => {})
+        setError(uploadErr.message)
+        setSaving(false)
+        return
+      }
+      uploadedPaths.push(filePath)
     }
+    const filePath = joinMultiValue([...existingFiles, ...uploadedPaths]) || null
 
     const payload = {
       ticket_id:    form.ticket_id   ? parseInt(form.ticket_id)   : null,
@@ -452,7 +481,7 @@ export default function Tasks() {
       starttime:    form.starttime   || null,
       enddate:      form.enddate     || null,
       endtime:      form.endtime     || null,
-      spare:        form.spare       || null,
+      spare:        joinMultiValue(splitMultiValue(form.spare)) || null,
       description:  form.description,
       action_taken: form.action_taken || null,
       assigned_to:  form.assigned_to ? parseInt(form.assigned_to) : null,
@@ -464,13 +493,25 @@ export default function Tasks() {
 
     if (editId) {
       const { error: err } = await supabase.from('task').update(payload).eq('id', editId)
-      if (err) { setError(err.message); setSaving(false); return }
+      if (err) {
+        if (uploadedPaths.length) supabase.storage.from('crm-uploads').remove(uploadedPaths).catch(() => {})
+        setError(err.message)
+        setSaving(false)
+        return
+      }
     } else {
       const { error: err } = await supabase.from('task').insert([payload])
-      if (err) { setError(err.message); setSaving(false); return }
+      if (err) {
+        if (uploadedPaths.length) supabase.storage.from('crm-uploads').remove(uploadedPaths).catch(() => {})
+        setError(err.message)
+        setSaving(false)
+        return
+      }
     }
-    if (editId && origFile.current && origFile.current !== filePath) {
-      supabase.storage.from('crm-uploads').remove([origFile.current]).catch(() => {})
+    if (editId && origFile.current) {
+      const nextFileSet = new Set(splitMultiValue(filePath))
+      const removedFiles = splitMultiValue(origFile.current).filter(path => !nextFileSet.has(path))
+      if (removedFiles.length) supabase.storage.from('crm-uploads').remove(removedFiles).catch(() => {})
     }
     logActivity({
       module: 'tasks',
@@ -517,7 +558,7 @@ export default function Tasks() {
           ['Company', tickRef?.company_name || ''],
           ['Service Type', form.servicetype || ''],
           ['Description', form.description || ''],
-          ['Spare Used', form.spare || 'NIL'],
+          ['Spare Used', formatMultiValue(form.spare, 'NIL')],
           ['Due/End Date', form.enddate || ''],
           ['Assigned By', assignedBy],
         ],
@@ -526,7 +567,7 @@ export default function Tasks() {
     }
 
     setSaving(false)
-    setUploadFile(null)
+    setUploadFiles([])
     await fetchTasks()
     if (returnToTicketId) {
       navigate('/tickets', { state: { ticketId: returnToTicketId } })
@@ -613,18 +654,20 @@ export default function Tasks() {
   }
 
   const printTaskReport = async (task) => {
-    const [{ data: termsRow }, fileResult] = await Promise.all([
+    const filePaths = splitMultiValue(task.file)
+    const [{ data: termsRow }, fileResults] = await Promise.all([
       supabase.from('app_setting').select('value').eq('key', 'task_terms').maybeSingle(),
-      task.file
-        ? supabase.storage.from('crm-uploads').createSignedUrl(task.file, 60 * 10)
-        : Promise.resolve({ data: null }),
+      Promise.all(filePaths.map(async (path) => {
+        const { data } = await supabase.storage.from('crm-uploads').createSignedUrl(path, 60 * 10)
+        return { path, url: data?.signedUrl || '' }
+      })),
     ])
     const html = taskReportHtml(task, {
       ticketLabel: getTicketLabel(task.ticket_id),
       assignedTo: getUserName(task.assigned_to),
       createdBy: getUserName(task.user_id),
       terms: termsRow?.value || DEFAULT_TASK_TERMS,
-      fileUrl: fileResult?.data?.signedUrl || '',
+      fileEntries: fileResults || [],
     })
     openPrintable(html, true)
   }
@@ -851,7 +894,7 @@ export default function Tasks() {
           <div className="grid grid-cols-3 gap-4 items-center">
             <label className="text-sm font-medium text-gray-700">Spare Used</label>
             <div className="col-span-2">
-              <SpareSearchSelect
+              <SpareMultiSelect
                 options={spares}
                 value={form.spare}
                 onChange={value => setForm(f => ({ ...f, spare: value }))}
@@ -866,32 +909,44 @@ export default function Tasks() {
               <input
                 key={fileInputKey}
                 type="file"
+                multiple
                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-                onChange={e => setUploadFile(e.target.files?.[0] || null)}
+                onChange={e => setUploadFiles(Array.from(e.target.files || []))}
                 className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
               />
-              {form.file && !uploadFile && (
-                <div className="mt-2 flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
-                  <SignedFileLink path={form.file} label="Current document" className="text-xs text-red-600 hover:underline" />
-                  <button
-                    type="button"
-                    onClick={() => setForm(f => ({ ...f, file: '' }))}
-                    className="text-xs text-gray-500 hover:text-red-600"
-                  >
-                    Remove
-                  </button>
+              {splitMultiValue(form.file).length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {splitMultiValue(form.file).map(path => (
+                    <div key={path} className="flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
+                      <SignedFileLink path={path} label={fileNameFromPath(path)} className="min-w-0 truncate text-xs text-red-600 hover:underline" />
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, file: joinMultiValue(splitMultiValue(f.file).filter(item => item !== path)) }))}
+                        className="text-xs text-gray-500 hover:text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {uploadFile && (
-                <div className="mt-2 flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
-                  <p className="min-w-0 truncate text-xs text-gray-500">{uploadFile.name}</p>
-                  <button
-                    type="button"
-                    onClick={() => { setUploadFile(null); setFileInputKey(key => key + 1) }}
-                    className="text-xs text-gray-500 hover:text-red-600"
-                  >
-                    Remove
-                  </button>
+              {uploadFiles.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {uploadFiles.map((file, index) => (
+                    <div key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3 border border-gray-100 bg-gray-50 px-3 py-2">
+                      <p className="min-w-0 truncate text-xs text-gray-500">{file.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUploadFiles(prev => prev.filter((_, itemIndex) => itemIndex !== index))
+                          setFileInputKey(key => key + 1)
+                        }}
+                        className="text-xs text-gray-500 hover:text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -960,15 +1015,21 @@ export default function Tasks() {
             <div><span className="font-medium text-gray-500">Service Type: </span>{displayText(detail.servicetype)}</div>
             <div><span className="font-medium text-gray-500">Start: </span>{formatTaskDateTime(detail.startdate, detail.starttime)}</div>
             <div><span className="font-medium text-gray-500">End: </span>{formatTaskDateTime(detail.enddate, detail.endtime)}</div>
-            <div><span className="font-medium text-gray-500">Spare Used: </span>{displayText(detail.spare)}</div>
+            <div><span className="font-medium text-gray-500">Spare Used: </span>{formatMultiValue(detail.spare)}</div>
             <div><span className="font-medium text-gray-500">Assigned To: </span>{getUserName(detail.assigned_to)}</div>
             <div><span className="font-medium text-gray-500">Created By: </span>{getUserName(detail.user_id)}</div>
             <div><span className="font-medium text-gray-500">Date Created: </span>{formatDateTime(detail.created_at)}</div>
           </div>
           <div className="border-t border-gray-100 pt-4">
             <p className="font-medium text-gray-500 mb-1">Document</p>
-            {detail.file ? (
-              <SignedFileLink path={detail.file} label="View uploaded document" className="text-red-600 hover:underline" />
+            {splitMultiValue(detail.file).length ? (
+              <div className="space-y-1">
+                {splitMultiValue(detail.file).map(path => (
+                  <div key={path}>
+                    <SignedFileLink path={path} label={fileNameFromPath(path)} className="text-red-600 hover:underline" />
+                  </div>
+                ))}
+              </div>
             ) : (
               <p className="text-gray-400">No document uploaded.</p>
             )}
