@@ -22,6 +22,7 @@ import {
   useVendors,
 } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
+import SignedFileLink from '../../components/SignedFileLink'
 import { Plus, Search, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -488,6 +489,7 @@ export default function Tickets() {
   const [detailTasks, setDetailTasks] = useState([])
   const [detailOnsites, setDetailOnsites] = useState([])
   const [detailRmas, setDetailRmas] = useState([])
+  const [detailCalibrations, setDetailCalibrations] = useState([])
   const [detailRemarks, setDetailRemarks] = useState([])
   const [quickAction, setQuickAction] = useState(null)
   const [quickForm, setQuickForm] = useState({})
@@ -847,12 +849,17 @@ export default function Tickets() {
 
   // ── Open detail ───────────────────────────────────────────────────
   const openDetail = async (t) => {
-    const [prodR, contactR, taskR, onsiteR, rmaR, remarkR] = await Promise.all([
+    const [prodR, contactR, taskR, onsiteR, rmaR, calibrationR, remarkR] = await Promise.all([
       supabase.from('ticket_product').select('*').eq('ticket_id', t.id).order('id'),
       t.contact_person ? supabase.from('contact').select('*').eq('id', t.contact_person).maybeSingle() : Promise.resolve({ data: null }),
       supabase.from('task').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
       supabase.from('onsiteticket').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
       supabase.from('rma').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
+      supabase
+        .from('calibration')
+        .select('id, ticket_id, certificate_number, serial_number, conduct_by, file, status, created_at, updated_at')
+        .eq('ticket_id', String(t.id))
+        .order('id', { ascending: false }),
       supabase.from('ticket_remark').select('*').eq('ticket_id', t.id).order('id', { ascending: false }),
     ])
     setDetail(t)
@@ -861,6 +868,7 @@ export default function Tickets() {
     setDetailTasks(taskR.data || [])
     setDetailOnsites(onsiteR.data || [])
     setDetailRmas(rmaR.data || [])
+    setDetailCalibrations(calibrationR.data || [])
     setDetailRemarks(remarkR.data || [])
     setView('detail')
   }
@@ -2425,6 +2433,45 @@ export default function Tickets() {
               </table>
             </div>
           )}
+
+          {/* Calibrations */}
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Calibration</p>
+            {detailCalibrations.length === 0 ? (
+              <p className="text-sm text-gray-400">No calibration records for this ticket.</p>
+            ) : (
+              <table className="w-full text-sm border border-gray-200">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Certificate No.</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Serial Number</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Conducted By</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Certificate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailCalibrations.map(calibration => (
+                    <tr key={calibration.id} className="border-b border-gray-100">
+                      <td className="px-3 py-2 font-medium text-red-600">{calibration.certificate_number || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{calibration.serial_number || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{formatUserName(allUsers.length ? allUsers : users, calibration.conduct_by)}</td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {calibration.file ? (
+                          <SignedFileLink
+                            path={calibration.file}
+                            label="Download certificate"
+                            className="inline-flex border border-gray-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                          />
+                        ) : (
+                          <span className="text-gray-400">No certificate attached</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
 
           {/* Tasks */}
           <div className="border-t border-gray-100 pt-5">
