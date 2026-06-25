@@ -998,7 +998,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
                     <select className="border border-gray-200 rounded px-1.5 py-1 text-xs focus:outline-none"
                       value={form.discounttype} onChange={e => setF('discounttype', e.target.value)}>
                       <option value="%">%</option>
-                      <option value="fixed">Fixed</option>
+                      <option value="fixed">RM</option>
                     </select>
                     <input type="number" min="0" step="0.01"
                       className="w-20 border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-red-400"
@@ -1278,7 +1278,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
             </div>
             {invoice.discount > 0 && (
               <div className="flex justify-between text-gray-600">
-                <span>Discount {invoice.discouttype === '%' ? `(${invoice.discountvalue}%)` : '(Fixed)'}</span>
+                <span>Discount {invoice.discouttype === '%' ? `(${invoice.discountvalue}%)` : '(RM)'}</span>
                 <span>− {fmtMoney(invoice.discount)}</span>
               </div>
             )}
