@@ -14,7 +14,7 @@ const statusStyles = {
   pending: 'bg-amber-100 text-amber-700',
   approved: 'bg-green-100 text-green-700',
   cancelled: 'bg-gray-100 text-gray-600',
-  completed: 'bg-blue-100 text-blue-700',
+  completed: 'bg-gray-100 text-gray-600',
 }
 
 const itemStatusStyles = {
@@ -135,6 +135,10 @@ function isClosedBooking(booking) {
   return ['cancelled', 'completed'].includes(booking?.status)
 }
 
+function isPastBooking(booking, now = new Date()) {
+  return booking?.end_at && new Date(booking.end_at) < now
+}
+
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, ch => ({
     '&': '&amp;',
@@ -208,7 +212,7 @@ export default function Booking() {
   }, [bookingItems, itemsById])
 
   const visibleBookings = useMemo(
-    () => bookings.filter(booking => booking.booking_type === activeTab && !isClosedBooking(booking)),
+    () => bookings.filter(booking => booking.booking_type === activeTab),
     [bookings, activeTab],
   )
 
@@ -790,26 +794,34 @@ export default function Booking() {
                       )}
                     </div>
                     <div className="space-y-1">
-                      {dayBookings.slice(0, 3).map(booking => (
-                        <button
-                          key={booking.id}
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setSelectedCalendarBookingId(booking.id)
-                            setSelectedCalendarDateKey(dateKey(day))
-                            setShowAllBookings(false)
-                          }}
-                          className={`block w-full rounded px-2 py-1 text-left text-[11px] leading-tight transition ${
-                            String(selectedCalendarBookingId) === String(booking.id) && !showAllBookings
-                              ? 'bg-red-600 text-white'
-                              : 'bg-red-50 text-red-700 hover:bg-red-100'
-                          }`}
-                        >
-                          <div className="font-semibold truncate">{bookingTitle(booking, { venuesById, vehiclesById, itemsByBooking })}</div>
-                          <div className="truncate">{formatTime(booking.start_at)} {booking.purpose}</div>
-                        </button>
-                      ))}
+                      {dayBookings.slice(0, 3).map(booking => {
+                        const isSelectedBooking = String(selectedCalendarBookingId) === String(booking.id) && !showAllBookings
+                        const isHistoricalBooking = isClosedBooking(booking) || isPastBooking(booking, today)
+                        return (
+                          <button
+                            key={booking.id}
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setSelectedCalendarBookingId(booking.id)
+                              setSelectedCalendarDateKey(dateKey(day))
+                              setShowAllBookings(false)
+                            }}
+                            className={`block w-full rounded px-2 py-1 text-left text-[11px] leading-tight transition ${
+                              isSelectedBooking
+                                ? isHistoricalBooking
+                                  ? 'bg-gray-600 text-white'
+                                  : 'bg-red-600 text-white'
+                                : isHistoricalBooking
+                                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                  : 'bg-red-50 text-red-700 hover:bg-red-100'
+                            }`}
+                          >
+                            <div className="font-semibold truncate">{bookingTitle(booking, { venuesById, vehiclesById, itemsByBooking })}</div>
+                            <div className="truncate">{formatTime(booking.start_at)} {booking.purpose}</div>
+                          </button>
+                        )
+                      })}
                       {dayBookings.length > 3 && (
                         <div className="text-[11px] font-medium text-gray-400">
                           +{dayBookings.length - 3} more, click day
