@@ -16,6 +16,7 @@ const SEARCH_FIELDS = [
   { value: 'certificate_number', label: 'Certificate No.', placeholder: 'Search certificate number...' },
   { value: 'serial_number', label: 'Serial No.', placeholder: 'Search serial number...' },
   { value: 'ticket', label: 'Ticket', placeholder: 'Search ticket number...' },
+  { value: 'company_name', label: 'Company Name', placeholder: 'Search company name...' },
 ]
 
 const DEFAULT_CALIBRATION_TERMS = `General
@@ -214,15 +215,18 @@ export default function Calibration() {
   }
 
   const ticketInfoById = useMemo(() => {
+    const customerById = new Map(customers.map(customer => [String(customer.id), customer]))
     const map = new Map()
     tickets.forEach(t => {
+      const customer = customerById.get(String(t.company_id))
       map.set(String(t.id), {
         number: Number(t.ticket_id) || 0,
         label: `TID${t.ticket_id} - ${t.company_name || ''}`,
+        companyName: t.company_name || customer?.company_name || '',
       })
     })
     return map
-  }, [tickets])
+  }, [customers, tickets])
 
   const getUserName = (id) => {
     const name = formatUserName(allUsers.length ? allUsers : users, id)
@@ -259,6 +263,9 @@ export default function Calibration() {
         return String(r.serial_number || '').toLowerCase().includes(term)
       }
       const ticket = ticketInfoById.get(String(r.ticket_id))
+      if (searchField === 'company_name') {
+        return String(ticket?.companyName || '').toLowerCase().includes(term)
+      }
       const ticketNumber = ticket?.number ? `tid${ticket.number}` : ''
       const rawTicketNumber = ticket?.number ? String(ticket.number) : ''
       const ticketLabel = ticket?.label || r.ticket_id
