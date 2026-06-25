@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { logActivity } from '../../lib/activityLog'
+import RolePermissionsPanel from '../../components/admin/RolePermissionsPanel'
 import {
   ROLE_ADMIN,
   ROLE_SALES,
@@ -57,6 +58,7 @@ const emptyForm = {
 export default function Users() {
   const { user: currentUser, profile } = useAuth()
   const [view, setView]             = useState('list')
+  const [activeTab, setActiveTab]   = useState('users')
   const [rows, setRows]             = useState([])
   const [total, setTotal]           = useState(0)
   const [page, setPage]             = useState(1)
@@ -72,6 +74,10 @@ export default function Users() {
   const availableRoles = canManageSuperAdmin
     ? ROLES
     : ROLES.filter(role => role.id !== ROLE_SUPER_ADMIN)
+
+  useEffect(() => {
+    if (!canManageSuperAdmin && activeTab === 'permissions') setActiveTab('users')
+  }, [activeTab, canManageSuperAdmin])
 
   const fetchRows = useCallback(async () => {
     setLoading(true)
@@ -212,95 +218,123 @@ export default function Users() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700">
-          <Plus size={16} /> Add User
-        </button>
+        {activeTab === 'users' && (
+          <button onClick={openAdd} className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700">
+            <Plus size={16} /> Add User
+          </button>
+        )}
       </div>
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
 
-      <div className="relative max-w-sm mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Search by name or email..." value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1) }}
-          className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
-      </div>
+      {canManageSuperAdmin && (
+        <div className="flex flex-wrap gap-1 mb-6 border-b border-gray-200">
+          {[
+            { id: 'users', label: 'Users' },
+            { id: 'permissions', label: 'Role Permissions' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === tab.id ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="bg-white border border-gray-200">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Name</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Email</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Role</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Department</th>
-              <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
-              <th className="text-right px-4 py-3 font-semibold text-gray-700">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading
-              ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">Loading...</td></tr>
-              : rows.length === 0
-              ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">No users found.</td></tr>
-              : rows.map(r => {
-                  const isActive = r.status !== 'Inactive'
-                  const isMe = r.id === currentUser?.id
-                  const isProtectedSuperAdmin = isSuperAdminRole(r.role_id) && !canManageSuperAdmin
-                  return (
-                    <tr key={r.id} className={`border-b border-gray-100 ${isActive ? 'hover:bg-gray-50' : 'bg-gray-50 opacity-60'}`}>
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        {r.first_name} {r.last_name}
-                        {isMe && <span className="ml-2 text-xs text-gray-400">(you)</span>}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{r.email}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${roleColor(r.role_id)}`}>
-                          {roleLabel(r.role_id)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{r.department || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-0.5 text-xs rounded font-medium ${
-                          isActive ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'
-                        }`}>
-                          {isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => openEdit(r)} title={isProtectedSuperAdmin ? 'Only Super Admin can edit this account' : 'Edit'}
-                            disabled={isProtectedSuperAdmin}
-                            className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed">
-                            <Edit2 size={15} />
-                          </button>
-                          {!isMe && !isProtectedSuperAdmin && (
-                            isActive ? (
-                              <button
-                                onClick={() => setConfirmToggle({ id: r.id, role_id: r.role_id, name: `${r.first_name} ${r.last_name}`, activate: false })}
-                                title="Deactivate account"
-                                className="text-gray-400 hover:text-red-600">
-                                <UserX size={15} />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => setConfirmToggle({ id: r.id, role_id: r.role_id, name: `${r.first_name} ${r.last_name}`, activate: true })}
-                                title="Reactivate account"
-                                className="text-gray-400 hover:text-green-600">
-                                <UserCheck size={15} />
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })
-            }
-          </tbody>
-        </table>
-      </div>
+      {activeTab === 'permissions' && canManageSuperAdmin ? (
+        <RolePermissionsPanel />
+      ) : (
+        <>
+          <div className="relative max-w-sm mb-4">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input type="text" placeholder="Search by name or email..." value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+              className="w-full pl-9 pr-3 py-2 border border-gray-200 text-sm focus:outline-none focus:border-red-400" />
+          </div>
 
-      <PaginationControls page={page} totalPages={totalPages} total={total} label="user" onPageChange={setPage} />
+          <div className="bg-white border border-gray-200">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Name</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Email</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Role</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Department</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
+                  <th className="text-right px-4 py-3 font-semibold text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading
+                  ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">Loading...</td></tr>
+                  : rows.length === 0
+                  ? <tr><td colSpan={6} className="text-center py-12 text-gray-400">No users found.</td></tr>
+                  : rows.map(r => {
+                      const isActive = r.status !== 'Inactive'
+                      const isMe = r.id === currentUser?.id
+                      const isProtectedSuperAdmin = isSuperAdminRole(r.role_id) && !canManageSuperAdmin
+                      return (
+                        <tr key={r.id} className={`border-b border-gray-100 ${isActive ? 'hover:bg-gray-50' : 'bg-gray-50 opacity-60'}`}>
+                          <td className="px-4 py-3 font-medium text-gray-900">
+                            {r.first_name} {r.last_name}
+                            {isMe && <span className="ml-2 text-xs text-gray-400">(you)</span>}
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{r.email}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${roleColor(r.role_id)}`}>
+                              {roleLabel(r.role_id)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{r.department || '—'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-block px-2 py-0.5 text-xs rounded font-medium ${
+                              isActive ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'
+                            }`}>
+                              {isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                              <button onClick={() => openEdit(r)} title={isProtectedSuperAdmin ? 'Only Super Admin can edit this account' : 'Edit'}
+                                disabled={isProtectedSuperAdmin}
+                                className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                                <Edit2 size={15} />
+                              </button>
+                              {!isMe && !isProtectedSuperAdmin && (
+                                isActive ? (
+                                  <button
+                                    onClick={() => setConfirmToggle({ id: r.id, role_id: r.role_id, name: `${r.first_name} ${r.last_name}`, activate: false })}
+                                    title="Deactivate account"
+                                    className="text-gray-400 hover:text-red-600">
+                                    <UserX size={15} />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => setConfirmToggle({ id: r.id, role_id: r.role_id, name: `${r.first_name} ${r.last_name}`, activate: true })}
+                                    title="Reactivate account"
+                                    className="text-gray-400 hover:text-green-600">
+                                    <UserCheck size={15} />
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <PaginationControls page={page} totalPages={totalPages} total={total} label="user" onPageChange={setPage} />
+        </>
+      )}
 
       {/* Deactivate / Reactivate confirmation modal */}
       {confirmToggle && (
