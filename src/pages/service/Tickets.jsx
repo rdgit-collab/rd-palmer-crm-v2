@@ -548,7 +548,7 @@ export default function Tickets() {
       const [productResult, ticketSerialResult] = await Promise.all([
         supabase
           .from('ticket_product')
-          .select('ticket_id, serial_number')
+          .select('ticket_id, serial_number, sku')
           .ilike('serial_number', `%${term}%`)
           .limit(1000),
         supabase
@@ -573,14 +573,15 @@ export default function Tickets() {
       ;(productResult.data || []).forEach(row => {
         if (!row.ticket_id) return
         const key = String(row.ticket_id)
-        if (!serialMatchMap[key]) serialMatchMap[key] = new Set()
-        if (row.serial_number) serialMatchMap[key].add(row.serial_number)
+        if (!serialMatchMap[key]) serialMatchMap[key] = { serials: new Set(), skus: new Set() }
+        if (row.serial_number) serialMatchMap[key].serials.add(row.serial_number)
+        if (row.sku) serialMatchMap[key].skus.add(row.sku)
       })
       ;(ticketSerialResult.data || []).forEach(row => {
         if (!row.id) return
         const key = String(row.id)
-        if (!serialMatchMap[key]) serialMatchMap[key] = new Set()
-        if (row.serial_number) serialMatchMap[key].add(row.serial_number)
+        if (!serialMatchMap[key]) serialMatchMap[key] = { serials: new Set(), skus: new Set() }
+        if (row.serial_number) serialMatchMap[key].serials.add(row.serial_number)
       })
 
       const matchedTicketIds = Object.keys(serialMatchMap).map(Number).filter(Number.isFinite)
@@ -638,7 +639,15 @@ export default function Tickets() {
       setTickets(rows)
       setTotal(count || 0)
       setTicketSerialMatches(Object.fromEntries(
-        rows.map(row => [String(row.id), [...(serialMatchMap[String(row.id)] || [])]]).filter(([, serials]) => serials.length > 0),
+        rows
+          .map(row => {
+            const match = serialMatchMap[String(row.id)]
+            return [String(row.id), {
+              serials: [...(match?.serials || [])],
+              skus: [...(match?.skus || [])],
+            }]
+          })
+          .filter(([, match]) => match.serials.length > 0),
       ))
 
       const contactIds = [...new Set(rows
@@ -1444,6 +1453,7 @@ export default function Tickets() {
                 const today = new Date().toISOString().split('T')[0]
                 const isOverdue = t.due_date && t.due_date < today
                 const latestTask = latestTicketTasks[String(t.id)]
+                const serialMatch = ticketSerialMatches[String(t.id)]
                 return (
                   <tr
                     key={t.id}
@@ -1463,9 +1473,14 @@ export default function Tickets() {
                     <td className="px-4 py-3 text-gray-600">{formatDate(t.date)}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">
                       <div>{t.company_name || '—'}</div>
-                      {ticketSerialMatches[String(t.id)]?.length > 0 && (
+                      {serialMatch?.serials?.length > 0 && (
                         <div className="mt-1 text-xs font-normal text-green-700">
-                          Matched Serial No: {ticketSerialMatches[String(t.id)].join(', ')}
+                          Matched Serial No: {serialMatch.serials.join(', ')}
+                        </div>
+                      )}
+                      {serialMatch?.skus?.length > 0 && (
+                        <div className="mt-0.5 text-xs font-normal text-green-700">
+                          Matched SKU: {serialMatch.skus.join(', ')}
                         </div>
                       )}
                     </td>
