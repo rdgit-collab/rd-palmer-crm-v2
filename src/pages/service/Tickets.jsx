@@ -315,7 +315,10 @@ function ticketReportHtml(ticket, {
           ${item.status ? `<span class="badge">${escapeHtml(displayText(item.status))}</span>` : ''}
           <span class="timeline-date">${escapeHtml(formatDateTime(item.date))}</span>
         </div>
-        <div class="timeline-meta">Owner: ${escapeHtml(item.owner ? formatUserName(users, item.owner) : '-')}</div>
+        <div class="timeline-meta">
+          Assigned To: ${escapeHtml(item.owner ? formatUserName(users, item.owner) : '-')}
+          ${Object.prototype.hasOwnProperty.call(item, 'createdBy') ? ` | Created By: ${escapeHtml(item.createdBy ? formatUserName(users, item.createdBy) : '-')}` : ''}
+        </div>
         ${item.spare ? `<div class="timeline-meta">Spare Used: ${escapeHtml(displayText(item.spare))}</div>` : ''}
         ${item.fields?.length ? item.fields.map(field => `
           <div class="timeline-text"><strong>${escapeHtml(field.label)}:</strong> ${escapeHtml(stripHtml(displayText(field.value, '-')))}</div>
@@ -1963,8 +1966,8 @@ export default function Tickets() {
     const progress     = workTotal > 0 ? Math.round((workDoneTotal / workTotal) * 100) : (detail.is_completed == 1 ? 100 : 0)
     const readyToClose = workTotal > 0 && workDoneTotal === workTotal && detail.is_completed == 0
     const timelineItems = [
-      { type: 'Ticket', label: `Ticket ${detail.status || 'Open'}`, date: detail.created_at || detail.date, owner: detail.assigned_to, text: detail.description },
-      ...detailTasks.map(task => ({ type: 'Task', id: task.id, label: task.servicetype || 'Task', date: timelineDate(task), owner: task.assigned_to, status: workStatus(task), spare: task.spare, fields: getTaskTimelineFields(task), to: '/tasks', state: { taskId: task.id, returnToTicketId: detail.id } })),
+      { type: 'Ticket', label: `Ticket ${detail.status || 'Open'}`, date: detail.created_at || detail.date, owner: detail.assigned_to, createdBy: detail.user_id, text: detail.description },
+      ...detailTasks.map(task => ({ type: 'Task', id: task.id, label: task.servicetype || 'Task', date: timelineDate(task), owner: task.assigned_to, createdBy: task.user_id, status: workStatus(task), spare: task.spare, fields: getTaskTimelineFields(task), to: '/tasks', state: { taskId: task.id, returnToTicketId: detail.id } })),
       ...detailOnsites.map(onsite => ({ type: 'Onsite', label: onsite.product || onsite.issue_description || 'Onsite ticket', date: timelineDate(onsite), owner: onsite.assigned_to, status: workStatus(onsite), text: onsite.workdone || onsite.issue_description || onsite.remark })),
       ...detailRmas.map(rma => ({ type: 'RMA', label: rma.rma_number || 'RMA', date: rma.date_sent || rma.created_at, owner: null, status: rma.date_return ? 'Returned' : 'Sent', text: [rma.vendor, rma.remark].filter(Boolean).join(' - ') })),
       ...detailRemarks.map(remark => ({ type: 'Remark', label: 'Remark', date: remark.created_at, owner: remark.user_id, status: '', text: remark.remark })),
@@ -2377,7 +2380,12 @@ export default function Tickets() {
                         <span className="ml-auto text-xs text-gray-400">{formatDateTime(item.date)}</span>
                       </div>
                       <div className="mt-1 text-xs text-gray-500">
-                        {item.owner ? `Owner: ${formatUserName(allUsers.length ? allUsers : users, item.owner)}` : 'Owner: —'}
+                        <span>Assigned To: {item.owner ? formatUserName(allUsers.length ? allUsers : users, item.owner) : '—'}</span>
+                        {Object.prototype.hasOwnProperty.call(item, 'createdBy') && (
+                          <span className="ml-2 border-l border-gray-200 pl-2">
+                            Created By: {item.createdBy ? formatUserName(allUsers.length ? allUsers : users, item.createdBy) : '—'}
+                          </span>
+                        )}
                       </div>
                       {item.spare && (
                         <div className="mt-1 text-xs text-gray-500">
