@@ -5,7 +5,7 @@ import sidebarLogo from '../../assets/sidebar-logo.png'
 import {
   LayoutDashboard, Building2, UserCircle, TrendingUp, FileText, Receipt,
   Activity, Ticket, Wrench, MapPin, RotateCcw, Gauge, Hash, Package,
-  CalendarDays, Settings, Users, X, User, LogOut, GraduationCap,
+  CalendarDays, Settings, Users, X, User, LogOut, GraduationCap, Inbox,
 } from 'lucide-react'
 
 const salesItems = [
@@ -18,6 +18,7 @@ const salesItems = [
   { name: 'Invoices',     href: '/invoices',         icon: Receipt,     module: 'invoices' },
   { name: 'Tickets',      href: '/tickets',          icon: Ticket,      module: 'tickets' },
   { name: 'Tasks',        href: '/tasks',            icon: Wrench,      module: 'tasks' },
+  { name: 'Work Inbox',   href: '/work-inbox',       icon: Inbox },
   { name: 'Booking',      href: '/booking',          icon: CalendarDays,module: 'booking' },
   { name: 'Training',     href: '/training',         icon: GraduationCap,module: 'training' },
 ]
@@ -26,6 +27,7 @@ const serviceItems = [
   { name: 'Dashboard',      href: '/service-dashboard', icon: LayoutDashboard },
   { name: 'Tickets',        href: '/tickets',            icon: Ticket,       module: 'tickets' },
   { name: 'Tasks',          href: '/tasks',              icon: Wrench,       module: 'tasks' },
+  { name: 'Work Inbox',     href: '/work-inbox',         icon: Inbox },
   { name: 'On-Site',        href: '/onsite-tickets',     icon: MapPin,       module: 'onsite-tickets' },
   { name: 'RMA',            href: '/rma',                icon: RotateCcw,    module: 'rma' },
   { name: 'Calibration',    href: '/calibration',        icon: Gauge,        module: 'calibration' },
@@ -48,6 +50,7 @@ const adminItems = [
   { name: 'Service Dashboard', href: '/service-dashboard', icon: LayoutDashboard },
   { name: 'Tickets',        href: '/tickets',        icon: Ticket   },
   { name: 'Tasks',          href: '/tasks',          icon: Wrench   },
+  { name: 'Work Inbox',     href: '/work-inbox',     icon: Inbox    },
   { name: 'On-Site',        href: '/onsite-tickets', icon: MapPin   },
   { name: 'RMA',            href: '/rma',            icon: RotateCcw},
   { name: 'Calibration',    href: '/calibration',    icon: Gauge    },

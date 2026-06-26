@@ -23,6 +23,7 @@ import {
 } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
 import SignedFileLink from '../../components/SignedFileLink'
+import WorkThread from '../../components/work/WorkThread'
 import { Plus, Search, Edit2, Trash2, CheckCircle, RotateCcw, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -2357,6 +2358,15 @@ export default function Tickets() {
               <p className="text-sm text-gray-800 whitespace-pre-wrap">{detail.remark}</p>
             </div>
           )}
+
+          <WorkThread
+            recordType="ticket"
+            recordId={detail.id}
+            title={`TID${detail.ticket_id}`}
+            reference={`TID${detail.ticket_id}`}
+            companyName={detail.company_name || ''}
+            link="/tickets"
+          />
 
           <div className="border-t border-gray-100 pt-5">
             <div className="flex items-center justify-between mb-3">
