@@ -456,8 +456,14 @@ export default function Tasks() {
   // ── Save ──────────────────────────────────────────────────────────
   const handleSave = async (e) => {
     e.preventDefault()
-    setSaving(true)
     setError('')
+
+    if (!form.assigned_to) {
+      setError('Please select Assigned To before saving the task.')
+      return
+    }
+
+    setSaving(true)
 
     const existingFiles = splitMultiValue(form.file)
     const uploadedPaths = []
@@ -968,9 +974,9 @@ export default function Tasks() {
           </div>
 
           <div className="grid grid-cols-3 gap-4 items-center">
-            <label className="text-sm font-medium text-gray-700">Assigned To</label>
+            <label className="text-sm font-medium text-gray-700">Assigned To <span className="text-red-500">*</span></label>
             <div className="col-span-2">
-              <select value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+              <select value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
                 <option value="">Please Select</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
               </select>
