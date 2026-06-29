@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Paperclip, Send, Users, X } from 'lucide-react'
+import { Paperclip, Search, Send, Users, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
@@ -25,6 +25,10 @@ function fileNameFromPath(path = '') {
   return String(path || '').split('/').pop() || 'Attachment'
 }
 
+function formatUserName(user) {
+  return `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Unnamed user'
+}
+
 export default function WorkThread({
   recordType,
   recordId,
@@ -41,6 +45,7 @@ export default function WorkThread({
   const [users, setUsers] = useState([])
   const [draft, setDraft] = useState('')
   const [notifyIds, setNotifyIds] = useState([])
+  const [notifySearch, setNotifySearch] = useState('')
   const [files, setFiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -58,6 +63,34 @@ export default function WorkThread({
   const notifyUsers = useMemo(() => users.filter(user =>
     String(user.id) !== String(currentOldUserId || '')
   ), [currentOldUserId, users])
+
+  const selectedNotifyUsers = useMemo(() => notifyIds
+    .map(id => notifyUsers.find(user => String(user.id) === String(id)))
+    .filter(Boolean), [notifyIds, notifyUsers])
+
+  const filteredNotifyUsers = useMemo(() => {
+    const term = notifySearch.trim().toLowerCase()
+    const selected = new Set(notifyIds.map(String))
+    return notifyUsers
+      .filter(user => !selected.has(String(user.id)))
+      .filter(user => {
+        if (!term) return true
+        const haystack = `${formatUserName(user)} ${user.id}`.toLowerCase()
+        return haystack.includes(term)
+      })
+      .slice(0, 8)
+  }, [notifyIds, notifySearch, notifyUsers])
+
+  const addNotifyUser = (userId) => {
+    const nextId = String(userId)
+    setNotifyIds(prev => prev.includes(nextId) ? prev : [...prev, nextId])
+    setNotifySearch('')
+  }
+
+  const removeNotifyUser = (userId) => {
+    const nextId = String(userId)
+    setNotifyIds(prev => prev.filter(id => id !== nextId))
+  }
 
   const loadMessages = useCallback(async (threadId) => {
     const { data, error: messageError } = await supabase
@@ -227,7 +260,16 @@ export default function WorkThread({
     if (!thread?.id || saving) return
 
     const body = draft.trim()
-    if (!body && files.length === 0) {
+    const mentionedIds = notifyIds
+      .map(id => parseInt(id))
+      .filter(id => Number.isFinite(id) && String(id) !== String(currentOldUserId || ''))
+    const mentionedUsers = mentionedIds
+      .map(id => notifyUsers.find(user => String(user.id) === String(id)))
+      .filter(Boolean)
+    const mentionPrefix = mentionedUsers.map(user => `@${formatUserName(user)}`).join(' ')
+    const messageBody = [mentionPrefix, body].filter(Boolean).join(' ').trim()
+
+    if (!messageBody && files.length === 0) {
       setError('Type a message or attach a file first.')
       return
     }
@@ -259,15 +301,11 @@ export default function WorkThread({
       uploadedPaths.push(filePath)
     }
 
-    const mentionedIds = notifyIds
-      .map(id => parseInt(id))
-      .filter(id => Number.isFinite(id) && String(id) !== String(currentOldUserId || ''))
-
     const { data: inserted, error: insertError } = await supabase
       .from('work_messages')
       .insert([{
         thread_id: thread.id,
-        body: body || null,
+        body: messageBody || null,
         attachment_paths: uploadedPaths,
         mentioned_old_user_ids: mentionedIds,
         created_by: profile?.id || null,
@@ -289,6 +327,7 @@ export default function WorkThread({
     setDraft('')
     setFiles([])
     setNotifyIds([])
+    setNotifySearch('')
     if (fileInputRef.current) fileInputRef.current.value = ''
     await markRead(thread.id)
 
@@ -299,7 +338,7 @@ export default function WorkThread({
       title: 'New discussion message',
       reference: reference || title || 'Work discussion',
       companyName,
-      body: `${senderName}: ${body || `${uploadedPaths.length} attachment${uploadedPaths.length !== 1 ? 's' : ''}`}`,
+      body: `${senderName}: ${messageBody || `${uploadedPaths.length} attachment${uploadedPaths.length !== 1 ? 's' : ''}`}`,
       details: [
         ['Record', reference || title || `${recordType} #${recordId}`],
         ['Company', companyName || ''],
@@ -384,28 +423,67 @@ export default function WorkThread({
               className="w-full resize-none border border-gray-200 px-3 py-2 text-sm focus:border-red-400 focus:outline-none"
             />
 
-            <div className="grid gap-3 md:grid-cols-[1fr,220px]">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),220px]">
               <div className="border border-gray-200">
-                <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 text-xs font-medium text-gray-500">
-                  <Users size={14} /> Notify users
+                <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-medium text-gray-500">
+                    <Users size={14} /> Tag users
+                  </span>
+                  {selectedNotifyUsers.length > 0 && (
+                    <span className="text-xs text-gray-400">{selectedNotifyUsers.length} selected</span>
+                  )}
                 </div>
-                <div className="max-h-28 overflow-y-auto p-2">
+                <div className="space-y-2 p-2">
                   {notifyUsers.length === 0 ? (
                     <p className="px-1 py-2 text-xs text-gray-400">No active users available.</p>
-                  ) : notifyUsers.map(user => (
-                    <label key={user.id} className="flex items-center gap-2 px-1 py-1 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={notifyIds.includes(String(user.id))}
-                        onChange={event => setNotifyIds(prev => event.target.checked
-                          ? [...prev, String(user.id)]
-                          : prev.filter(id => id !== String(user.id))
-                        )}
-                        className="h-4 w-4 accent-red-600"
-                      />
-                      <span className="truncate">{user.first_name} {user.last_name}</span>
-                    </label>
-                  ))}
+                  ) : (
+                    <>
+                      {selectedNotifyUsers.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedNotifyUsers.map(user => (
+                            <span key={user.id} className="inline-flex max-w-full items-center gap-1 border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">
+                              <span className="truncate">@{formatUserName(user)}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeNotifyUser(user.id)}
+                                className="text-red-400 hover:text-red-700"
+                                title={`Remove ${formatUserName(user)}`}
+                              >
+                                <X size={12} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 border border-gray-200 px-2 py-1.5 focus-within:border-red-300">
+                        <Search size={14} className="shrink-0 text-gray-400" />
+                        <input
+                          type="search"
+                          value={notifySearch}
+                          onChange={event => setNotifySearch(event.target.value)}
+                          placeholder="Search user name..."
+                          className="min-w-0 flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                        />
+                      </div>
+
+                      <div className="max-h-32 overflow-y-auto">
+                        {filteredNotifyUsers.length === 0 ? (
+                          <p className="px-2 py-2 text-xs text-gray-400">No matching users.</p>
+                        ) : filteredNotifyUsers.map(user => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => addNotifyUser(user.id)}
+                            className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                          >
+                            <span className="min-w-0 truncate">{formatUserName(user)}</span>
+                            <span className="shrink-0 text-xs text-gray-400">Tag</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
