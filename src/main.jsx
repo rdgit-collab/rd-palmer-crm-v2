@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './index.css'
+import { registerPwaServiceWorker } from './lib/pwa'
 
 const PRELOAD_RELOAD_KEY = 'rdp:preload-reload'
 window.addEventListener('vite:preloadError', (event) => {
@@ -30,3 +31,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </QueryClientProvider>
   </React.StrictMode>
 )
+
+registerPwaServiceWorker()

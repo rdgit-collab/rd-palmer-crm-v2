@@ -11,6 +11,7 @@
  * @param {string} opts.reference - Short record reference shown in the bell
  * @param {number|string} opts.actorUserId - Legacy integer user id of the sender/creator
  * @param {Array<{label:string,value:string}>} opts.details - Detail rows for bell/email
+ * @param {boolean} opts.sendEmail - Set false when only in-app and phone push should be sent
  */
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, ch => ({
@@ -40,6 +41,7 @@ export async function notifyUser(supabase, {
   reference = '',
   actorUserId = null,
   details = [],
+  sendEmail = true,
 }) {
   if (!userId) return
 
@@ -66,7 +68,23 @@ export async function notifyUser(supabase, {
     console.warn('Notification insert failed:', notificationError.message)
   }
 
-  // 2. Try to send email (fails silently if Edge Function / API key not configured)
+  // 2. Try to send browser push (fails silently if Edge Function / VAPID keys are not configured)
+  if (import.meta.env.VITE_WEB_PUSH_PUBLIC_KEY) {
+    supabase.functions.invoke('send-web-push-notification', {
+      body: {
+        userId,
+        title,
+        body,
+        link,
+        companyName,
+        reference,
+      },
+    }).catch(() => {})
+  }
+
+  // 3. Try to send email (fails silently if Edge Function / API key not configured)
+  if (!sendEmail) return
+
   try {
     const { data: userRow } = await supabase
       .from('users')

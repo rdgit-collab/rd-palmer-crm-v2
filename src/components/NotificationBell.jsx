@@ -4,6 +4,7 @@ import { Bell } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { displayText } from '../lib/displayText'
+import PhoneNotificationControl from './PhoneNotificationControl'
 
 function timeAgo(ts) {
   if (!ts) return ''
@@ -192,6 +193,8 @@ export default function NotificationBell() {
               </button>
             )})}
           </div>
+
+          <PhoneNotificationControl />
         </div>
       )}
     </div>

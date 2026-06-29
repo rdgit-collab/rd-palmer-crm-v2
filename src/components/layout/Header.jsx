@@ -1,6 +1,7 @@
 import { Menu } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import NotificationBell from '../NotificationBell'
+import PwaInstallButton from '../PwaInstallButton'
 import { roleLabel } from '../../lib/roles'
 
 export default function Header({ onMenuClick }) {
@@ -15,6 +16,8 @@ export default function Header({ onMenuClick }) {
       </button>
 
       <div className="flex items-center gap-3 ml-auto">
+        <PwaInstallButton />
+
         {/* Notification Bell */}
         <NotificationBell />
 
