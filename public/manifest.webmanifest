@@ -1,0 +1,20 @@
+{
+  "name": "RD Palmer CRM",
+  "short_name": "RD CRM",
+  "description": "RD Palmer customer, sales, service, training, and booking workspace.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#CC0000",
+  "orientation": "any",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

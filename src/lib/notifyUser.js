@@ -66,7 +66,21 @@ export async function notifyUser(supabase, {
     console.warn('Notification insert failed:', notificationError.message)
   }
 
-  // 2. Try to send email (fails silently if Edge Function / API key not configured)
+  // 2. Try to send browser push (fails silently if Edge Function / VAPID keys are not configured)
+  if (import.meta.env.VITE_WEB_PUSH_PUBLIC_KEY) {
+    supabase.functions.invoke('send-web-push-notification', {
+      body: {
+        userId,
+        title,
+        body,
+        link,
+        companyName,
+        reference,
+      },
+    }).catch(() => {})
+  }
+
+  // 3. Try to send email (fails silently if Edge Function / API key not configured)
   try {
     const { data: userRow } = await supabase
       .from('users')
