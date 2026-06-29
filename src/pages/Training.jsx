@@ -262,6 +262,8 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
   const [tab, setTab] = useState('attendees')
   const [editing, setEditing] = useState(false)
   const [addingAtt, setAddingAtt] = useState(false)
+  const [deleteReg, setDeleteReg] = useState(null)
+  const [deletingReg, setDeletingReg] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const load = useCallback(async () => {
@@ -315,6 +317,28 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
   const removeDoc = async (doc) => {
     await supabase.storage.from('crm-uploads').remove([doc.file_path]).catch(() => {})
     await supabase.from('training_attendance_docs').delete().eq('id', doc.id)
+    load()
+  }
+  const removeRegistration = async () => {
+    if (!deleteReg?.id) return
+    setDeletingReg(true)
+    const { error } = await supabase.from('training_registrations').delete().eq('id', deleteReg.id)
+    if (error) {
+      setDeletingReg(false)
+      alert(error.message)
+      return
+    }
+    logActivity({
+      module: 'training',
+      action: 'delete',
+      recordTable: 'training_registrations',
+      recordId: deleteReg.id,
+      recordLabel: deleteReg.participant_name || '',
+      summary: `Deleted training participant ${deleteReg.participant_name || deleteReg.email || deleteReg.id} from ${session.title}`,
+      metadata: { session_id: sessionId, registration_id: deleteReg.id },
+    })
+    setDeleteReg(null)
+    setDeletingReg(false)
     load()
   }
   const copyLink = () => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1200) }
@@ -406,10 +430,11 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
                   <th className="px-4 py-3 font-semibold">Invited by</th>
                   <th className="px-4 py-3 font-semibold">HRD</th>
                   <th className="px-4 py-3 font-semibold min-w-[360px]">Customer status</th>
+                  {canManageTraining && <th className="px-4 py-3 font-semibold text-right">Action</th>}
                 </tr>
               </thead>
               <tbody>
-                {regs.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No registrations yet. Share the signup link above.</td></tr>}
+                {regs.length === 0 && <tr><td colSpan={canManageTraining ? 7 : 6} className="px-4 py-10 text-center text-gray-400">No registrations yet. Share the signup link above.</td></tr>}
                 {regs.map(r => (
                   <tr key={r.id} className="border-t border-gray-100">
                     <td className="px-4 py-3">
@@ -429,6 +454,17 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
                     </td>
                     <td className="px-4 py-3">{r.hrd_claim ? <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold">HRD</span> : <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">No</span>}</td>
                     <td className="px-4 py-3"><StatusTracks reg={r} onToggle={toggleStatus} readOnly={!canManageTraining} /></td>
+                    {canManageTraining && (
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setDeleteReg(r)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-100 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 size={13} /> Delete
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -490,6 +526,22 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
 
       {canManageTraining && editing && <SessionModal session={{ ...session, trainerIds: trainers.map(t => t.user_id) }} profile={profile} activeUsers={activeUsers} onClose={saved => { setEditing(false); if (saved) load() }} />}
       {canManageTraining && addingAtt && <AddAttendeeModal sessionId={sessionId} onClose={saved => { setAddingAtt(false); if (saved) load() }} />}
+      {canManageTraining && deleteReg && (
+        <Modal
+          title="Delete participant?"
+          subtitle="This removes the signup record from this training session."
+          onClose={() => setDeleteReg(null)}
+          footer={<>
+            <button onClick={() => setDeleteReg(null)} disabled={deletingReg} className="border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium text-gray-700 disabled:opacity-50">Cancel</button>
+            <button onClick={removeRegistration} disabled={deletingReg} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">{deletingReg ? 'Deleting...' : 'Delete participant'}</button>
+          </>}
+        >
+          <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <div className="font-semibold">{deleteReg.participant_name || 'Unnamed participant'}</div>
+            <div className="mt-1 text-red-700">{deleteReg.company || 'No company'}{deleteReg.email ? ` · ${deleteReg.email}` : ''}</div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
