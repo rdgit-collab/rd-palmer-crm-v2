@@ -451,6 +451,11 @@ export default function Calibration() {
       setSaving(false)
       return
     }
+    if (!form.serial_number.trim()) {
+      setError('Please enter or select Serial Number before saving calibration.')
+      setSaving(false)
+      return
+    }
     if (!form.conduct_by) {
       setError('Please select Conducted By before saving calibration.')
       setSaving(false)
@@ -755,11 +760,12 @@ export default function Calibration() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number <span className="text-red-500">*</span></label>
             {ticketSerialOptions.length > 0 ? (
               <select
                 value={form.serial_number}
                 onChange={e => setForm(f => ({ ...f, serial_number: e.target.value }))}
+                required
                 className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400"
               >
                 <option value="">Please Select</option>
@@ -774,6 +780,7 @@ export default function Calibration() {
                 <input type="text" list="calibration-serial-options" value={form.serial_number}
                   onFocus={e => { e.target.select(); loadSerialOptions(form.serial_number) }}
                   onChange={e => { setForm(f => ({...f, serial_number: e.target.value})); loadSerialOptions(e.target.value) }}
+                  required
                   placeholder="Search serial number" className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
                 <datalist id="calibration-serial-options">
                   {serialOptions.map(item => <option key={item.id} value={item.serial_number}>{[item.sku, item.customername].filter(Boolean).join(' - ')}</option>)}
