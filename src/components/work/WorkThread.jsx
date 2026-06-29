@@ -381,29 +381,42 @@ export default function WorkThread({
                 {messages.map(message => {
                   const author = userName(message.created_by_old_user_id)
                   const attachments = Array.isArray(message.attachment_paths) ? message.attachment_paths : []
+                  const isOwnMessage = String(message.created_by_old_user_id || '') === String(currentOldUserId || '')
                   return (
-                    <div key={message.id} className="bg-white border border-gray-200 px-3 py-2">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[10px] font-semibold text-white">
-                          {initialsFor(author) || '?'}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900">{author}</p>
-                          <p className="text-xs text-gray-400">{formatThreadTime(message.created_at)}</p>
+                    <div key={message.id} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[92%] border px-3 py-2 sm:max-w-[82%] ${
+                        isOwnMessage
+                          ? 'border-[#CC0000] bg-[#CC0000] text-white'
+                          : 'border-gray-200 bg-white text-gray-700'
+                      }`}>
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
+                            isOwnMessage ? 'bg-white text-[#CC0000]' : 'bg-gray-900 text-white'
+                          }`}>
+                            {initialsFor(author) || '?'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className={`truncate text-sm font-medium ${isOwnMessage ? 'text-white' : 'text-gray-900'}`}>{author}</p>
+                            <p className={`text-xs ${isOwnMessage ? 'text-red-100' : 'text-gray-400'}`}>{formatThreadTime(message.created_at)}</p>
+                          </div>
                         </div>
+                        {message.body && (
+                          <p className={`mt-2 whitespace-pre-wrap text-sm ${isOwnMessage ? 'text-white' : 'text-gray-700'}`}>{message.body}</p>
+                        )}
+                        {attachments.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {attachments.map(path => (
+                              <div key={path} className="text-sm">
+                                <SignedFileLink
+                                  path={path}
+                                  label={fileNameFromPath(path)}
+                                  className={isOwnMessage ? 'text-white underline hover:text-red-100' : 'text-red-600 hover:underline'}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {message.body && (
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">{message.body}</p>
-                      )}
-                      {attachments.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          {attachments.map(path => (
-                            <div key={path} className="text-sm">
-                              <SignedFileLink path={path} label={fileNameFromPath(path)} className="text-red-600 hover:underline" />
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )
                 })}
