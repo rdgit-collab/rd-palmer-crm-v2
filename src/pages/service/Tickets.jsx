@@ -1181,8 +1181,14 @@ export default function Tickets() {
   const saveQuickAction = async (e) => {
     e.preventDefault()
     if (!detail?.id || !quickAction) return
-    setQuickSaving(true)
     setQuickError('')
+
+    if ((quickAction === 'task' || quickAction === 'onsite') && !quickForm.assigned_to) {
+      setQuickError(`Please select Assigned To before adding ${quickAction === 'task' ? 'a task' : 'an On-Site record'}.`)
+      return
+    }
+
+    setQuickSaving(true)
 
     let table = ''
     let payload = {}
@@ -2084,8 +2090,8 @@ export default function Tickets() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To</label>
-                    <select value={quickForm.assigned_to || ''} onChange={e => setQuick('assigned_to', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To <span className="text-red-500">*</span></label>
+                    <select value={quickForm.assigned_to || ''} onChange={e => setQuick('assigned_to', e.target.value)} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
                       <option value="">Please Select</option>
                       {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
                     </select>
@@ -2131,8 +2137,8 @@ export default function Tickets() {
                     <input type="date" value={quickForm.date || ''} onChange={e => setQuick('date', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To</label>
-                    <select value={quickForm.assigned_to || ''} onChange={e => setQuick('assigned_to', e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Assigned To <span className="text-red-500">*</span></label>
+                    <select value={quickForm.assigned_to || ''} onChange={e => setQuick('assigned_to', e.target.value)} required className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
                       <option value="">Please Select</option>
                       {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
                     </select>
