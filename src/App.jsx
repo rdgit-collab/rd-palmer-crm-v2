@@ -12,6 +12,7 @@ import {
 } from './lib/roles'
 
 const Login = lazy(() => import('./pages/Login'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const DashboardModule = lazy(() => import('./pages/Dashboard'))
 const SalesDashboardPage = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.SalesDashboardPage })))
 const ServiceDashboardPage = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.ServiceDashboardPage })))
@@ -89,6 +90,7 @@ function AppRoutes() {
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/training/signup/:slug" element={<TrainingSignup />} />
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<DashboardModule />} />
