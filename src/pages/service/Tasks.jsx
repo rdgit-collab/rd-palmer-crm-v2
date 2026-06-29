@@ -12,7 +12,7 @@ import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import TicketSearchSelect from '../../components/TicketSearchSelect'
-import WorkThread from '../../components/work/WorkThread'
+import WorkThreadDrawer from '../../components/work/WorkThreadDrawer'
 import { Plus, Search, Edit2, Trash2, CheckCircle, RotateCcw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -1043,13 +1043,12 @@ export default function Tasks() {
             <p className="font-medium text-gray-500 mb-1">Action Taken</p>
             <p className="text-gray-800 whitespace-pre-wrap">{displayText(detail.action_taken)}</p>
           </div>
-          <WorkThread
+          <WorkThreadDrawer
             recordType="task"
             recordId={detail.id}
             title={detail.servicetype || `Task #${detail.id}`}
             reference={`${getTicketLabel(detail.ticket_id)} / Task #${detail.id}`}
             companyName={ticketLabels[String(detail.ticket_id)]?.company_name || ''}
-            link="/tasks"
           />
         </div>
         {completeId && (

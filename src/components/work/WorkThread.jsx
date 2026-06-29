@@ -33,6 +33,7 @@ export default function WorkThread({
   companyName = '',
   link,
   className = '',
+  showHeader = true,
 }) {
   const { profile } = useAuth()
   const [thread, setThread] = useState(null)
@@ -318,14 +319,16 @@ export default function WorkThread({
   }
 
   return (
-    <div className={`border-t border-gray-100 pt-5 ${className}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discussion</p>
-          <p className="mt-1 text-sm text-gray-500">Record-linked messages stay with this work item.</p>
+    <div className={`${showHeader ? 'border-t border-gray-100 pt-5' : ''} ${className}`}>
+      {showHeader && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discussion</p>
+            <p className="mt-1 text-sm text-gray-500">Record-linked messages stay with this work item.</p>
+          </div>
+          <span className="text-xs text-gray-400">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
         </div>
-        <span className="text-xs text-gray-400">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
-      </div>
+      )}
 
       {loading ? (
         <div className="py-6 text-sm text-gray-400">Loading discussion...</div>
