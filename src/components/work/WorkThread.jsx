@@ -338,6 +338,7 @@ export default function WorkThread({
       title: 'New discussion message',
       reference: reference || title || 'Work discussion',
       companyName,
+      sendEmail: false,
       body: `${senderName}: ${messageBody || `${uploadedPaths.length} attachment${uploadedPaths.length !== 1 ? 's' : ''}`}`,
       details: [
         ['Record', reference || title || `${recordType} #${recordId}`],
