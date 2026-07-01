@@ -477,7 +477,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
     onChange(idx, { ...item, qty: q, amount: q * (parseFloat(item.rate) || 0) })
   }
   const handleRateChange = (rate) => {
-    const r = Math.max(1, parseFloat(rate) || 1)
+    const r = parseFloat(rate) || 0
     const pct = parseFloat(item.markup) || 0
     const baseRate = pct ? r / (1 + pct / 100) : r
     onChange(idx, { ...item, base_rate: baseRate, rate: r, amount: (parseFloat(item.qty) || 0) * r })
@@ -559,11 +559,11 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
           </div>
           <div>
             <label className={fieldLabelCls}>Rate</label>
-            <input type="number" min="1" step="1" className={inputCls} value={item.rate} onChange={e => handleRateChange(e.target.value)} />
+            <input type="number" step="1" className={inputCls} value={item.rate} onChange={e => handleRateChange(e.target.value)} />
           </div>
           <div>
             <label className={fieldLabelCls}>Markup %</label>
-            <input type="number" min="0" step="0.01" className={inputCls} value={item.markup || ''} onChange={e => handleMarkupChange(e.target.value)} placeholder="%" />
+            <input type="number" min="0" step="1" className={inputCls} value={item.markup || ''} onChange={e => handleMarkupChange(e.target.value)} placeholder="%" />
           </div>
           <div>
             <label className={fieldLabelCls}>Tax</label>
