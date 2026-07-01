@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
@@ -12,6 +13,8 @@ import {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const newestFirst = (a, b) => new Date(b.created_at || b.date || b.updated_at || 0) - new Date(a.created_at || a.date || a.updated_at || 0)
 
 
 // ─── Customer Form (Add / Edit) ────────────────────────────────────────────────
@@ -409,19 +412,47 @@ function CustomerDetail({ customerId, onBack, onEdit }) {
   const [customer, setCustomer] = useState(null)
   const [contacts, setContacts] = useState([])
   const [activities, setActivities] = useState([])
+  const [quotations, setQuotations] = useState([])
+  const [invoices, setInvoices] = useState([])
+  const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const [{ data: c }, { data: con }, { data: act }] = await Promise.all([
+      const [
+        { data: c },
+        { data: con },
+        { data: customerLeads },
+        { data: quoteRows },
+        { data: invoiceRows },
+        { data: ticketRows },
+      ] = await Promise.all([
         supabase.from('customer').select('*').eq('id', customerId).single(),
         supabase.from('contact').select('*').eq('company_id', customerId).order('created_at', { ascending: false }),
-        supabase.from('activity').select('*').eq('company_id', customerId).order('created_at', { ascending: false }),
+        supabase.from('sales_lead').select('id, company_name, status, created_at').eq('company_id', customerId),
+        supabase.from('quotation').select('id, number, date, expiry_date, currency, total, isconvert, payment_term, created_at').eq('companyid', customerId).order('created_at', { ascending: false }),
+        supabase.from('invoice').select('id, invoice_number, date, due_date, terms, quote_ref_number, currency, total, created_at').eq('companyid', customerId).order('created_at', { ascending: false }),
+        supabase.from('ticket').select('id, ticket_id, date, due_date, status, priority, created_at').eq('company_id', customerId).order('created_at', { ascending: false }),
       ])
+      const leadIds = (customerLeads || []).map(lead => lead.id).filter(Boolean)
+      const activityQueries = [
+        supabase.from('activity').select('*').eq('company_id', String(customerId)).order('created_at', { ascending: false }),
+      ]
+      if (leadIds.length > 0) {
+        activityQueries.push(supabase.from('activity').select('*').in('lead_id', leadIds).order('created_at', { ascending: false }))
+      }
+      const activityResults = await Promise.all(activityQueries)
+      const activityMap = new Map()
+      activityResults.forEach(({ data }) => {
+        ;(data || []).forEach(activity => activityMap.set(String(activity.id), activity))
+      })
       setCustomer(c)
       setContacts(con || [])
-      setActivities(act || [])
+      setActivities(Array.from(activityMap.values()).sort(newestFirst))
+      setQuotations(quoteRows || [])
+      setInvoices(invoiceRows || [])
+      setTickets(ticketRows || [])
       setLoading(false)
     }
     load()
@@ -526,7 +557,7 @@ function CustomerDetail({ customerId, onBack, onEdit }) {
       </div>
 
       {/* Activity History */}
-      <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-white rounded-lg border border-gray-200 mb-4">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Activity History</h2>
         </div>
@@ -545,7 +576,7 @@ function CustomerDetail({ customerId, onBack, onEdit }) {
               <tbody className="divide-y divide-gray-100">
                 {activities.map(a => (
                   <tr key={a.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{fmt(a.created_at)}</td>
+                    <td className="px-4 py-3 text-gray-900 whitespace-nowrap">{fmt(a.date || a.created_at)}</td>
                     <td className="px-4 py-3 text-gray-600">{a.type || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{a.priority || '—'}</td>
                     <td className="px-4 py-3">
@@ -559,6 +590,117 @@ function CustomerDetail({ customerId, onBack, onEdit }) {
           </div>
         )}
       </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="bg-white rounded-lg border border-gray-200">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Quotation History</h2>
+          </div>
+          {quotations.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-gray-400">No quotations linked to this customer.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    {['Date', 'Quotation', 'Payment Term', 'Total', 'Status'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {quotations.map(q => (
+                    <tr key={q.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmt(q.date)}</td>
+                      <td className="px-4 py-3 text-[#CC0000] font-medium">{q.number || `#${q.id}`}</td>
+                      <td className="px-4 py-3 text-gray-600">{q.payment_term || '—'}</td>
+                      <td className="px-4 py-3 text-gray-900 font-medium whitespace-nowrap">{q.currency || 'MYR'} {fmtMoney(q.total)}</td>
+                      <td className="px-4 py-3">
+                        {q.isconvert === 1
+                          ? <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">Converted</span>
+                          : <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">Pending</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Invoice History</h2>
+          </div>
+          {invoices.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-gray-400">No invoices linked to this customer.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    {['Date', 'Invoice', 'Payment Term', 'Total', 'Status'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {invoices.map(inv => {
+                    const isOverdue = inv.due_date && new Date(inv.due_date) < new Date()
+                    return (
+                      <tr key={inv.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmt(inv.date)}</td>
+                        <td className="px-4 py-3 text-[#CC0000] font-medium">{inv.invoice_number || `#${inv.id}`}</td>
+                        <td className="px-4 py-3 text-gray-600">{inv.terms || '—'}</td>
+                        <td className="px-4 py-3 text-gray-900 font-medium whitespace-nowrap">{inv.currency || 'MYR'} {fmtMoney(inv.total)}</td>
+                        <td className="px-4 py-3">
+                          {isOverdue
+                            ? <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">Overdue</span>
+                            : <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">Active</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 xl:col-span-2">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Ticket History</h2>
+          </div>
+          {tickets.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-gray-400">No tickets linked to this customer.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    {['Date', 'Ticket', 'Priority', 'Due Date', 'Status'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {tickets.map(t => (
+                    <tr key={t.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmt(t.date || t.created_at)}</td>
+                      <td className="px-4 py-3 text-[#CC0000] font-medium">TID{t.ticket_id || t.id}</td>
+                      <td className="px-4 py-3 text-gray-600">{t.priority || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmt(t.due_date)}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{t.status || 'Open'}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -567,6 +709,7 @@ function CustomerDetail({ customerId, onBack, onEdit }) {
 const PAGE_SIZE = 30
 
 export default function Customers() {
+  const navigate = useNavigate()
   const [view, setView] = useState('list')   // 'list' | 'form' | 'detail'
   const [selectedId, setSelectedId] = useState(null)
   const [editCustomer, setEditCustomer] = useState(null)
@@ -679,10 +822,10 @@ export default function Customers() {
           <p className="text-sm text-gray-500 mt-0.5">{total} customer{total !== 1 ? 's' : ''} total</p>
         </div>
         <button
-          onClick={() => { setEditCustomer(null); setView('form') }}
+          onClick={() => navigate('/leads', { state: { openForm: true } })}
           className="flex w-full items-center justify-center gap-2 px-4 py-2 bg-[#CC0000] text-white rounded text-sm hover:bg-red-700 sm:w-auto"
         >
-          <Plus size={16} /> Add Customer
+          <Plus size={16} /> Add New Lead
         </button>
       </div>
 
@@ -729,7 +872,7 @@ export default function Customers() {
               ) : customers.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-gray-400 text-sm">
-                    {search ? 'No customers match your search.' : 'No customers yet. Click "Add Customer" to get started.'}
+                    {search ? 'No customers match your search.' : 'No customers yet. Click "Add New Lead" to get started.'}
                   </td>
                 </tr>
               ) : (

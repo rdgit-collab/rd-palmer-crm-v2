@@ -1326,7 +1326,11 @@ export default function Leads() {
   useEffect(() => { setUsers(legacyUsersQuery.data || []) }, [legacyUsersQuery.data])
 
   useEffect(() => {
-    if (location.state?.leadId) {
+    if (location.state?.openForm) {
+      setEditLead(null)
+      setSelectedId(null)
+      setView('form')
+    } else if (location.state?.leadId) {
       setSelectedId(location.state.leadId)
       setView('detail')
     }

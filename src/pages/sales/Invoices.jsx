@@ -473,11 +473,11 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   }, [itemSearch, selectedItem, showItemOptions])
 
   const handleQtyChange = (qty) => {
-    const q = parseFloat(qty) || 0
+    const q = Math.max(1, parseFloat(qty) || 1)
     onChange(idx, { ...item, qty: q, amount: q * (parseFloat(item.rate) || 0) })
   }
   const handleRateChange = (rate) => {
-    const r = parseFloat(rate) || 0
+    const r = Math.max(1, parseFloat(rate) || 1)
     const pct = parseFloat(item.markup) || 0
     const baseRate = pct ? r / (1 + pct / 100) : r
     onChange(idx, { ...item, base_rate: baseRate, rate: r, amount: (parseFloat(item.qty) || 0) * r })
@@ -492,80 +492,95 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
     onChange(idx, { ...item, taxid: tax?.id || '', taxlbl: tax?.name || '', taxrate: tax ? parseFloat(tax.name.match(/[\d.]+/)?.[0] || 0) : 0 })
   }
 
-  const tdCls = 'px-2 py-1.5'
   const inputCls = 'w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-400'
+  const fieldLabelCls = 'mb-1 block text-[11px] font-medium uppercase tracking-wide text-gray-400'
   const filteredCatalogueItems = itemResults
 
   return (
-    <tr className="border-b border-gray-100">
-      <td className={`${tdCls} text-center text-gray-400 text-xs w-8`}>{idx + 1}</td>
-      <td className={`${tdCls} min-w-[180px]`}>
-        <div className="relative">
-          <input
-            ref={itemSearchRef}
-            className={inputCls}
-            placeholder="Search SKU or item name..."
-            value={itemSearch}
-            onChange={e => handleItemSearch(e.target.value)}
-            onFocus={() => {
-              setShowItemOptions(true)
-              updateItemDropdownPosition()
-            }}
-            onBlur={() => setTimeout(() => setShowItemOptions(false), 120)}
-          />
-          {showItemOptions && (itemLoading || filteredCatalogueItems.length > 0) && (
-            <div
-              className="fixed z-[1000] max-h-56 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
-              style={itemDropdownStyle}
-            >
-              {itemLoading && <div className="px-3 py-2 text-xs text-gray-400">Searching items...</div>}
-              {filteredCatalogueItems.map(c => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => applyCatalogueItem(c)}
-                >
-                  <span className="font-medium">{c.sku || '-'}</span>
-                  <span className="text-gray-400"> - </span>
-                  <span>{c.name || '-'}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        {item.itemid === '' && (
-          <input className={`${inputCls} mt-1`} placeholder="Or type item name"
-            value={item.item || ''} onChange={e => onChange(idx, { ...item, item: e.target.value })} />
-        )}
-      </td>
-      <td className={`${tdCls} min-w-[420px]`}>
-        <textarea className={`${inputCls} resize-y h-12 min-h-12`} placeholder="Description"
-          value={item.description || ''} onChange={e => onChange(idx, { ...item, description: e.target.value })} />
-      </td>
-      <td className={`${tdCls} w-20`}>
-        <input type="number" min="0" step="0.01" className={inputCls} value={item.qty} onChange={e => handleQtyChange(e.target.value)} />
-      </td>
-      <td className={`${tdCls} w-28`}>
-        <input type="number" min="0" step="0.01" className={inputCls} value={item.rate} onChange={e => handleRateChange(e.target.value)} />
-      </td>
-      <td className={`${tdCls} w-24`}>
-        <input type="number" min="0" step="0.01" className={inputCls} value={item.markup || ''} onChange={e => handleMarkupChange(e.target.value)} placeholder="%" />
-      </td>
-      <td className={`${tdCls} w-32`}>
-        <select className={inputCls} value={item.taxid || ''} onChange={handleTaxSelect}>
-          <option value="">No Tax</option>
-          {taxes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-      </td>
-      <td className={`${tdCls} w-28 text-right text-xs font-medium text-gray-800`}>{fmtMoney(item.amount)}</td>
-      <td className={`${tdCls} w-8 text-center`}>
-        <button type="button" onClick={() => onRemove(idx)} className="text-gray-300 hover:text-red-500 transition-colors">
+    <div className="p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-gray-400">Line {idx + 1}</span>
+        <button type="button" onClick={() => onRemove(idx)} className="text-gray-300 hover:text-red-500 transition-colors" title="Remove line item">
           <X size={14} />
         </button>
-      </td>
-    </tr>
+      </div>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+        <div className="lg:col-span-4">
+          <label className={fieldLabelCls}>Item</label>
+          <div className="relative">
+            <input
+              ref={itemSearchRef}
+              className={inputCls}
+              placeholder="Search SKU or item name..."
+              value={itemSearch}
+              onChange={e => handleItemSearch(e.target.value)}
+              onFocus={() => {
+                setShowItemOptions(true)
+                updateItemDropdownPosition()
+              }}
+              onBlur={() => setTimeout(() => setShowItemOptions(false), 120)}
+            />
+            {showItemOptions && (itemLoading || filteredCatalogueItems.length > 0) && (
+              <div
+                className="fixed z-[1000] max-h-56 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
+                style={itemDropdownStyle}
+              >
+                {itemLoading && <div className="px-3 py-2 text-xs text-gray-400">Searching items...</div>}
+                {filteredCatalogueItems.map(c => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => applyCatalogueItem(c)}
+                  >
+                    <span className="font-medium">{c.sku || '-'}</span>
+                    <span className="text-gray-400"> - </span>
+                    <span>{c.name || '-'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {item.itemid === '' && (
+            <input className={`${inputCls} mt-1`} placeholder="Or type item name"
+              value={item.item || ''} onChange={e => onChange(idx, { ...item, item: e.target.value })} />
+          )}
+        </div>
+        <div className="lg:col-span-8">
+          <label className={fieldLabelCls}>Description</label>
+          <textarea className={`${inputCls} min-h-20 resize-y`} placeholder="Description"
+            value={item.description || ''} onChange={e => onChange(idx, { ...item, description: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 lg:col-span-12">
+          <div>
+            <label className={fieldLabelCls}>Qty</label>
+            <input type="number" min="1" step="1" className={inputCls} value={item.qty} onChange={e => handleQtyChange(e.target.value)} />
+          </div>
+          <div>
+            <label className={fieldLabelCls}>Rate</label>
+            <input type="number" min="1" step="1" className={inputCls} value={item.rate} onChange={e => handleRateChange(e.target.value)} />
+          </div>
+          <div>
+            <label className={fieldLabelCls}>Markup %</label>
+            <input type="number" min="0" step="0.01" className={inputCls} value={item.markup || ''} onChange={e => handleMarkupChange(e.target.value)} placeholder="%" />
+          </div>
+          <div>
+            <label className={fieldLabelCls}>Tax</label>
+            <select className={inputCls} value={item.taxid || ''} onChange={handleTaxSelect}>
+              <option value="">No Tax</option>
+              {taxes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={fieldLabelCls}>Amount</label>
+            <div className="rounded border border-gray-100 bg-gray-50 px-2 py-1.5 text-right text-xs font-medium text-gray-800">
+              {fmtMoney(item.amount)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -959,29 +974,12 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
               <Plus size={13} /> Add Row
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-8">#</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400">Item</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400">Description</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-20">Qty</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-28">Rate</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-24">Markup %</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 w-32">Tax</th>
-                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-400 w-28">Amount</th>
-                  <th className="w-8"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {lineItems.map((item, idx) => (
-                  <LineItemRow key={idx} item={item} idx={idx}
-                    catalogueItems={catalogueItems} taxes={taxes}
-                    onChange={updateLine} onRemove={removeLine} />
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-gray-100">
+            {lineItems.map((item, idx) => (
+              <LineItemRow key={idx} item={item} idx={idx}
+                catalogueItems={catalogueItems} taxes={taxes}
+                onChange={updateLine} onRemove={removeLine} />
+            ))}
           </div>
 
           {/* Totals */}
@@ -1352,7 +1350,15 @@ export default function Invoices() {
       })
       if (error) throw error
       const result = Array.isArray(data) ? data[0] : data
-      setInvoices(Array.isArray(result?.rows) ? result.rows : [])
+      const invoiceRows = Array.isArray(result?.rows) ? result.rows : []
+      if (invoiceRows.length === 0) {
+        setInvoices([])
+      } else {
+        const ids = invoiceRows.map(row => row.id).filter(Boolean)
+        const { data: termRows } = await supabase.from('invoice').select('id, terms').in('id', ids)
+        const termsById = new Map((termRows || []).map(row => [String(row.id), row.terms || '']))
+        setInvoices(invoiceRows.map(row => ({ ...row, terms: row.terms || termsById.get(String(row.id)) || '' })))
+      }
       setTotal(Number(result?.total_count || 0))
     } catch (error) {
       setInvoices([])
@@ -1466,7 +1472,7 @@ export default function Invoices() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Customer</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Sales</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Due Date</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Payment Term</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">First Item</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Quot. Ref.</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Total</th>
@@ -1497,9 +1503,7 @@ export default function Invoices() {
                       <td className="px-4 py-3 text-gray-800 text-xs">{inv.name || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{inv.sales_person || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{fmt(inv.date)}</td>
-                      <td className="px-4 py-3 text-xs">
-                        <span className={isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'}>{fmt(inv.due_date)}</span>
-                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">{inv.terms || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate">{inv.first_item || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{inv.quote_ref_number || '—'}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900 text-xs">
