@@ -132,7 +132,14 @@ export async function downloadHtmlPdf(html, filename) {
     doc.write(html)
     doc.close()
 
-    applyPdfLayout(doc)
+    // Modern sales documents (quotations/invoices) ship explicit A4 `.pdf-page`
+    // sections with their own self-contained CSS that already matches the
+    // reference layout. The legacy `applyPdfLayout` overrides target a different
+    // `.sheet` template and would shrink the company header/meta rows, resize
+    // table text and force bold headers — making the downloaded PDF diverge from
+    // the on-screen preview. Only apply it for the legacy `.sheet` layout.
+    const usesExplicitPages = doc.querySelectorAll('.pdf-page').length > 0
+    if (!usesExplicitPages) applyPdfLayout(doc)
 
     await new Promise(resolve => {
       if (iframe.contentWindow?.document?.readyState === 'complete') resolve()
@@ -149,6 +156,24 @@ export async function downloadHtmlPdf(html, filename) {
     }))
 
     const sheet = doc.querySelector('.sheet') || doc.body
+    const explicitPages = Array.from(doc.querySelectorAll('.pdf-page'))
+    if (explicitPages.length) {
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+      for (let index = 0; index < explicitPages.length; index += 1) {
+        const page = explicitPages[index]
+        const canvas = await html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          windowWidth: renderWidth,
+        })
+        if (index > 0) pdf.addPage()
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.98), 'JPEG', 0, 0, 210, 297)
+      }
+      pdf.save(filename)
+      return
+    }
+
     const canvas = await html2canvas(sheet, {
       scale: 2,
       useCORS: true,

@@ -240,146 +240,278 @@ function paymentInvoiceLabel(type, quotationNumber) {
   return `${label} for quotation ${quotationNumber || ''}`.trim()
 }
 
+const SALES_PRINT_LINES_PER_PAGE = 34
+const SALES_PRINT_DESC_CHARS = 64
+const SALES_PRINT_TITLE_CHARS = 54
+
+function wrapPrintableLine(value = '', maxChars = SALES_PRINT_DESC_CHARS) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!text) return [{ text: '', title: false }]
+  const words = text.split(' ')
+  const lines = []
+  let current = ''
+  words.forEach(word => {
+    if (!current) {
+      current = word
+    } else if ((current.length + word.length + 1) <= maxChars) {
+      current += ` ${word}`
+    } else {
+      lines.push({ text: current, title: false })
+      current = word
+    }
+  })
+  if (current) lines.push({ text: current, title: false })
+  return lines
+}
+
+function printableLineObjects(value = '') {
+  const text = cleanSalesText(value)
+  if (!text) return []
+  return text.split('\n').flatMap(line => wrapPrintableLine(line, SALES_PRINT_DESC_CHARS))
+}
+
+function salesDocumentItemCode(item) {
+  return String(item?.sku || '').trim()
+}
+
+function salesDocumentDescriptionTitle(item) {
+  return String(item?.item || item?.name || '').trim() || salesDocumentSkuTitle(item)
+}
+
+function paginateSalesDocumentItems(items, getRate, getAmount) {
+  const pages = [[]]
+  let usedLines = 0
+  const nextPage = () => {
+    if (pages[pages.length - 1].length) pages.push([])
+    usedLines = 0
+  }
+
+  items.forEach((item, idx) => {
+    const titleLines = wrapPrintableLine(salesDocumentDescriptionTitle(item), SALES_PRINT_TITLE_CHARS)
+      .map(line => ({ ...line, title: true }))
+    const lines = [...titleLines, ...printableLineObjects(item.description || '')]
+    if (!lines.length) lines.push({ text: '-', title: false })
+
+    let cursor = 0
+    let firstFragment = true
+    while (cursor < lines.length) {
+      if (usedLines >= SALES_PRINT_LINES_PER_PAGE - 2) nextPage()
+      const available = Math.max(1, SALES_PRINT_LINES_PER_PAGE - usedLines)
+      const take = Math.min(lines.length - cursor, available)
+      const fragmentLines = lines.slice(cursor, cursor + take)
+
+      pages[pages.length - 1].push({
+        item,
+        number: idx + 1,
+        code: salesDocumentItemCode(item),
+        qty: item.qty || '',
+        rate: getRate(item),
+        amount: getAmount(item),
+        lines: fragmentLines,
+        firstFragment,
+      })
+
+      usedLines += Math.max(2, fragmentLines.length + 1)
+      cursor += take
+      firstFragment = false
+      if (cursor < lines.length) nextPage()
+    }
+  })
+
+  return pages.filter(page => page.length)
+}
+
+function renderSalesPrintRows(rows) {
+  return rows.map(row => `
+    <tr>
+      <td class="no-col">${row.firstFragment ? escapeHtml(row.number) : ''}</td>
+      <td class="code-col">${row.firstFragment ? escapeHtml(row.code) : ''}</td>
+      <td class="description-col">
+        ${row.lines.map(line => `<div class="${line.title ? 'line-title' : ''}">${line.text ? escapeHtml(line.text) : '&nbsp;'}</div>`).join('')}
+      </td>
+      <td class="qty-col">${row.firstFragment ? escapeHtml(row.qty) : ''}</td>
+      <td class="price-col">${row.firstFragment ? fmtMoney(row.rate) : ''}</td>
+      <td class="amount-col">${row.firstFragment ? fmtMoney(row.amount) : ''}</td>
+    </tr>
+  `).join('')
+}
+
+function salesPrintPageLineCount(rows = []) {
+  return rows.reduce((total, row) => total + Math.max(2, row.lines.length + 1), 0)
+}
+
 function quotationHtml(quotation, items, contactName, customer, contactMobile = '', salesContactNumber = '') {
   const billTo = addressLines(customer)
   const notes = sanitizeHtml(quotation.notes)
   const terms = printableText(quotation.terms, { dropConfirmation: true, dropSignature: true })
-  const itemRows = items.map((item, idx) => `
-    <tr>
-      <td>${idx + 1}</td>
-      <td><strong>${escapeHtml(salesDocumentSkuTitle(item))}</strong><div class="desc">${printableText(item.description || '')}</div></td>
-      <td>${escapeHtml(item.qty || '')}</td>
-      <td>${fmtMoney(item.rate)}</td>
-      <td>${escapeHtml(item.taxlbl || '-')}</td>
-      <td>${fmtMoney(item.amount)}</td>
-    </tr>
-  `).join('')
+  const itemPages = paginateSalesDocumentItems(items, item => item.rate, item => item.amount)
+  // Keep the total + terms + signature on the same page as the last items when
+  // there is room, instead of always spilling onto a near-empty extra page.
+  // Reserve enough lines for the summary block (total row, terms/notes text,
+  // confirmation line and signature), sized from the actual terms length.
+  const breakdownRows = (Number(quotation.discount || 0) > 0 || Number(quotation.shiping_charge || 0) > 0 || Number(quotation.adjustment || 0) !== 0)
+    ? 1 + (Number(quotation.discount || 0) > 0 ? 1 : 0) + (Number(quotation.shiping_charge || 0) > 0 ? 1 : 0) + (Number(quotation.adjustment || 0) !== 0 ? 1 : 0)
+    : 0
+  const summaryReserveLines = 9 + breakdownRows
+    + printableLineObjects(htmlToText(notes)).length
+    + printableLineObjects(htmlToText(terms)).length
+  const lastItemRows = itemPages[itemPages.length - 1] || []
+  const summaryFitsOnLastPage = itemPages.length > 0
+    && (salesPrintPageLineCount(lastItemRows) + summaryReserveLines) <= SALES_PRINT_LINES_PER_PAGE
+  const pages = itemPages.length === 0
+    ? [{ rows: [], summary: true }]
+    : summaryFitsOnLastPage
+      ? itemPages.map((rows, index) => ({ rows, summary: index === itemPages.length - 1 }))
+      : [...itemPages.map(rows => ({ rows, summary: false })), { rows: [], summary: true }]
+  const totalPages = pages.length
+
+  const renderHeader = (pageNumber) => `
+    <div class="letterhead">
+      <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
+      <div class="company">
+        <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> <span>(Co. Reg. 200301008311)</span><br>
+        No. 63, Jalan Seri Utara 1, Sri Utara Kipark, 68100 Kuala Lumpur.<br>
+        Tel: +603 6250 2071 <span class="red">|</span> Email: info@rd-palmer.com <span class="red">|</span> www.rd-palmer.com
+      </div>
+    </div>
+    <div class="document-head">
+      <div class="recipient">
+        <div class="label">Quote to:</div>
+        <div class="recipient-lines">${billTo.map(escapeHtml).join('<br>') || escapeHtml(quotation.name || '-')}</div>
+        <div class="attention-row">
+          <span>Attn : ${escapeHtml(contactName || '')}</span>
+          <span>${contactMobile ? `Tel: ${escapeHtml(contactMobile)}` : ''}</span>
+        </div>
+      </div>
+      <div class="document-meta">
+        <div class="document-title">QUOTATION</div>
+        <div class="meta-row"><span>Quote No</span><span>:</span><strong>${escapeHtml(quotation.number || '-')}</strong></div>
+        <div class="meta-row"><span>Date</span><span>:</span><span>${fmt(quotation.date)}</span></div>
+        <div class="meta-row"><span>Payment Term</span><span>:</span><span>${escapeHtml(quotation.payment_term || '-')}</span></div>
+        <div class="meta-row"><span>Salesperson</span><span>:</span><span>${escapeHtml(quotation.sales_person || '----')}</span></div>
+        ${salesContactNumber ? `<div class="meta-row"><span>Sales Contact</span><span>:</span><span>${escapeHtml(salesContactNumber)}</span></div>` : ''}
+        <div class="meta-row"><span>Page</span><span>:</span><span>${pageNumber} of ${totalPages}</span></div>
+      </div>
+    </div>
+    <div class="opening-note">Thank you for your inquiry. We are pleased to submit our quote as follows:</div>
+  `
+
+  const subtotalVal = Number(quotation.subtotal ?? quotation.total ?? 0)
+  const discountVal = Number(quotation.discount || 0)
+  const shippingVal = Number(quotation.shiping_charge || 0)
+  const adjustmentVal = Number(quotation.adjustment || 0)
+  const hasAdjustments = discountVal > 0 || shippingVal > 0 || adjustmentVal !== 0
+  const discountLabel = quotation.discouttype === '%'
+    ? `Discount (${quotation.discountvalue || 0}%)`
+    : 'Discount'
+
+  const renderSummary = () => `
+    <div class="totals-block">
+      ${hasAdjustments ? `
+        <div class="totals-row"><span class="t-label">Subtotal</span><span class="t-value">${fmtMoney(subtotalVal)}</span></div>
+        ${discountVal > 0 ? `<div class="totals-row"><span class="t-label">${escapeHtml(discountLabel)}</span><span class="t-value">&minus; ${fmtMoney(discountVal)}</span></div>` : ''}
+        ${shippingVal > 0 ? `<div class="totals-row"><span class="t-label">Shipping Charges</span><span class="t-value">+ ${fmtMoney(shippingVal)}</span></div>` : ''}
+        ${adjustmentVal !== 0 ? `<div class="totals-row"><span class="t-label">Adjustment</span><span class="t-value">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>` : ''}
+      ` : ''}
+      <div class="totals-row totals-grand"><span class="t-label">Total (RM)</span><span class="t-value">${fmtMoney(quotation.total)}</span></div>
+    </div>
+    <div class="terms-block">
+      ${notes ? `<div class="section">${notes}</div>` : ''}
+      ${terms ? `<div class="section">${terms}</div>` : ''}
+      <p>We confirm the order by accepting the terms &amp; conditions stated above.</p>
+    </div>
+    <div class="quote-signature">
+      <div class="signature-rule"></div>
+      <em>Signature &amp; Co. Stamp</em><br>
+      Name:<br>
+      Date:
+    </div>
+  `
+
+  const renderPage = (page, pageIndex) => `
+    <section class="pdf-page${page.summary && !page.rows.length ? ' summary-only' : ''}">
+      ${renderHeader(pageIndex + 1)}
+      <table class="report-table">
+        <colgroup>
+          <col class="no-col">
+          <col class="code-col">
+          <col class="description-col">
+          <col class="qty-col">
+          <col class="price-col">
+          <col class="amount-col">
+        </colgroup>
+        <thead><tr><th>#</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
+        <tbody>
+          ${renderSalesPrintRows(page.rows)}
+          ${page.summary ? '<tr class="blank-row"><td colspan="6"></td></tr>' : ''}
+        </tbody>
+      </table>
+      ${page.summary ? renderSummary() : ''}
+      <div class="page-footer">System generated document with no signature required.</div>
+    </section>
+  `
+
   return `<!doctype html>
   <html>
     <head>
       <title>${escapeHtml(quotation.number || 'Quotation')}</title>
       <style>
         @page { size: A4; margin: 0; }
-        body { font-family: Arial, sans-serif; color: #111; margin: 0; background: #f3f4f6; font-size: 11px; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-        .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 20mm 15mm; box-sizing: border-box; }
-        .top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; padding-top: 8px; margin-bottom: 20px; }
-        .brand-logo { display: block; width: 175px; height: auto; margin-top: 0; }
-        .company { text-align: right; line-height: 1.35; font-size: 11px; }
-        .company strong { font-size: 12px; }
-        .intro { display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: start; margin-bottom: 12px; }
-        .bill-title { font-weight: 700; margin-bottom: 4px; }
-        .bill-lines { line-height: 1.35; white-space: pre-line; }
-        .doc-title { text-align: right; font-size: 20px; font-weight: 700; margin: 8px 0 10px; }
-        .meta { margin-left: auto; width: 230px; }
-        .meta-row { display: grid; grid-template-columns: 90px 1fr; gap: 8px; line-height: 1.35; }
-        .meta-row .value { text-align: right; font-weight: 600; }
-        table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; margin: 18px 0 0; border: 1px solid #222; border-radius: 3px; overflow: hidden; }
-        th, td { padding: 7px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid #e5e5e5; }
-        th { background: #d4d4d4; color: #111; font-weight: 700; }
-        td:nth-child(1), th:nth-child(1) { width: 28px; text-align: center; }
-        td:nth-child(2), th:nth-child(2) { width: auto; }
-        td:nth-child(3), th:nth-child(3) { text-align: right; width: 42px; white-space: nowrap; }
-        td:nth-child(4), th:nth-child(4) { text-align: right; width: 74px; white-space: nowrap; }
-        td:nth-child(5), th:nth-child(5) { text-align: right; width: 50px; white-space: nowrap; }
-        td:nth-child(6), th:nth-child(6) { text-align: right; width: 86px; white-space: nowrap; }
-        tr:last-child td { border-bottom: 0; }
-        td:nth-child(2) { overflow-wrap: anywhere; hyphens: auto; }
-        .desc { margin-top: 5px; line-height: 1.42; }
-        tr, .totals, .section, .document-signature { break-inside: avoid; page-break-inside: avoid; }
-        .below-table { display: grid; grid-template-columns: 1fr 250px; gap: 28px; align-items: start; margin-top: 6px; }
-        .totals { width: 250px; margin-left: auto; border-top: 1px solid #aaa; padding-top: 8px; }
-        .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
-        .total { border-top: 1px solid #111; margin-top: 4px; font-weight: 700; font-size: 13px; }
-        .section { margin-top: 10px; font-size: 11px; line-height: 1.35; }
-        .section, .section * { font-family: Arial, sans-serif !important; font-size: 11px !important; line-height: 1.35 !important; }
-        .section h2 { font-size: 11px; color: #111; text-transform: uppercase; margin-bottom: 6px; }
-        .section h2, .section h2 * { font-size: 11px !important; font-weight: 700 !important; }
-        .section p, .section div { margin-top: 0; margin-bottom: 4px; }
-        .text-column { width: calc(100% - 278px); }
-        .text-column .section, .below-table .section { text-align: justify; text-align-last: left; hyphens: auto; overflow-wrap: break-word; }
-        .text-column .section h2, .below-table .section h2 { text-align: left; text-align-last: left; }
-        .below-table .section { margin-top: 4px; }
-        .document-signature { display: grid; grid-template-columns: 270px 270px; gap: 48px; margin-top: 28px; }
-        .signature-line { border-top: 1px dotted #111; padding-top: 10px; font-style: italic; min-height: 64px; line-height: 1.45; }
-        ul { padding-left: 18px; margin-top: 4px; }
+        body { margin: 0; background: #e5e7eb; color: #111; font-family: Arial, sans-serif; font-size: 11px; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        .print-document { padding: 18px 0; }
+        .pdf-page { width: 210mm; height: 297mm; margin: 0 auto 18px; padding: 18mm 10mm 12mm; box-sizing: border-box; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
+        .pdf-page:last-child { page-break-after: auto; margin-bottom: 0; }
+        .letterhead { display: grid; grid-template-columns: 62mm 1fr; align-items: start; column-gap: 10mm; min-height: 24mm; }
+        .brand-logo { width: 50mm; height: auto; display: block; margin-top: 1mm; }
+        .company { font-size: 12px; line-height: 1.38; }
+        .company strong { font-size: 14px; letter-spacing: .2px; }
+        .company span { font-size: 11px; font-weight: 400; }
+        .red { color: #d40000; font-weight: 700; }
+        .document-head { display: grid; grid-template-columns: 1.25fr .95fr; gap: 12mm; margin-top: 10mm; }
+        .label { font-weight: 700; margin-bottom: 3mm; }
+        .recipient-lines { margin-left: 8mm; line-height: 1.45; min-height: 16mm; }
+        .attention-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 4mm; }
+        .document-title { text-align: center; font-size: 21px; line-height: 1; font-weight: 700; margin-bottom: 5mm; }
+        .meta-row { display: grid; grid-template-columns: 31mm 4mm 1fr; gap: 2mm; line-height: 1.5; font-size: 12px; }
+        .opening-note { margin: 5mm 0 3mm 2mm; }
+        .report-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.38; }
+        .report-table thead th { border-top: 1.4px solid #111; border-bottom: 1.2px solid #111; padding: 2mm 1.5mm; font-weight: 400; text-align: left; }
+        .report-table td { padding: 1.35mm 1.5mm; vertical-align: top; }
+        .report-table .no-col { width: 8mm; text-align: center; }
+        .report-table .code-col { width: 30mm; }
+        .report-table .description-col { width: auto; }
+        .report-table .qty-col { width: 16mm; text-align: right; white-space: nowrap; }
+        .report-table .price-col { width: 27mm; text-align: right; white-space: nowrap; }
+        .report-table .amount-col { width: 29mm; text-align: right; white-space: nowrap; }
+        .line-title { text-transform: uppercase; }
+        .blank-row td { height: 5mm; border-bottom: 1.2px solid #111; }
+        .summary-only .blank-row td { height: 40mm; }
+        .totals-block { width: 92mm; margin: 3mm 0 0 auto; font-size: 12px; }
+        .totals-row { display: grid; grid-template-columns: 1fr 34mm; gap: 5mm; padding: 0.6mm 0; align-items: baseline; }
+        .totals-row .t-value { text-align: right; white-space: nowrap; }
+        .totals-grand { border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 1.6mm 0; margin-top: 1.2mm; font-weight: 700; }
+        .terms-block { margin: 5mm 2mm 8mm; font-size: 11px; line-height: 1.25; }
+        .terms-block .section { margin-bottom: 4mm; }
+        .terms-block p, .terms-block div { margin-top: 0; margin-bottom: 2mm; }
+        .terms-block strong, .terms-block b { font-weight: 700; }
+        .terms-block u { text-underline-offset: 2px; }
+        .quote-signature { margin: 14mm 2mm 0; width: 74mm; font-size: 12px; line-height: 1.6; }
+        .signature-rule { border-top: 1px solid #111; margin-bottom: 1mm; }
+        .page-footer { position: absolute; left: 10mm; right: 10mm; bottom: 8mm; text-align: center; font-size: 8px; color: #555; }
+        ul { margin: 1mm 0 2mm; padding-left: 6mm; }
         @media print {
           body { background: #fff; }
-          .sheet {
-            width: auto;
-            min-height: 0;
-            margin: 0;
-            padding: 15mm;
-            box-decoration-break: clone;
-            -webkit-box-decoration-break: clone;
-          }
+          .print-document { padding: 0; }
+          .pdf-page { margin: 0; box-shadow: none; }
         }
         @media screen and (max-width: 800px) {
           body { background: #fff; }
-          .sheet { width: 100%; min-height: 0; padding: 16px; }
-          .top, .intro, .below-table, .document-signature { grid-template-columns: 1fr; gap: 14px; }
-          .company, .doc-title { text-align: left; }
-          .meta, .totals, .text-column { width: 100%; margin-left: 0; }
-          table { font-size: 10px; }
-          th, td { padding: 6px 5px; }
-          td:nth-child(4), th:nth-child(4) { width: 58px; }
-          td:nth-child(6), th:nth-child(6) { width: 68px; }
+          .print-document { padding: 0; overflow-x: auto; }
+          .pdf-page { margin: 0; transform-origin: top left; }
         }
       </style>
     </head>
-    <body>
-      <div class="sheet">
-        <div class="top">
-          <img class="brand-logo" src="${salesDocumentLogo}" alt="RD-Palmer">
-          <div class="company">
-            <strong>RD-PALMER TECHNOLOGY (M) SDN BHD</strong> (200301008311)<br>
-            63, Jalan Seri Utara 1, Kipark Sri Utara, 68100 Kuala Lumpur<br>
-            Tel: +603 6250 2071 | E-mail: info@rd-palmer.com<br>
-            Website: www.rd-palmer.com
-          </div>
-        </div>
-        <div class="intro">
-          <div>
-            <div class="bill-title">Bill To</div>
-            <div class="bill-lines">${billTo.map(escapeHtml).join('<br>') || escapeHtml(quotation.name || '-')}</div>
-            <div style="margin-top:12px;">Attn: ${escapeHtml(contactName || '-')}</div>
-            ${contactMobile ? `<div>Mobile: ${escapeHtml(contactMobile)}</div>` : ''}
-          </div>
-          <div>
-            <div class="doc-title">Quotation</div>
-            <div class="meta">
-              <div class="meta-row"><span>Quote No.:</span><span class="value">${escapeHtml(quotation.number || '-')}</span></div>
-              <div class="meta-row"><span>Date:</span><span class="value">${fmt(quotation.date)}</span></div>
-              <div class="meta-row"><span>Sales Person:</span><span class="value">${escapeHtml(quotation.sales_person || '-')}</span></div>
-              ${salesContactNumber ? `<div class="meta-row"><span>Sales Contact:</span><span class="value">${escapeHtml(salesContactNumber)}</span></div>` : ''}
-              <div class="meta-row"><span>Payment Term:</span><span class="value">${escapeHtml(quotation.payment_term || '-')}</span></div>
-              <div class="meta-row"><span>Currency:</span><span class="value">${escapeHtml(quotation.currency || 'MYR')}</span></div>
-              <div class="meta-row"><span>Expiry Date:</span><span class="value">${fmt(quotation.expiry_date)}</span></div>
-            </div>
-          </div>
-        </div>
-        <table>
-          <thead><tr><th>#</th><th>Item & Description</th><th>Qty</th><th>Rate</th><th>Tax</th><th>Amount</th></tr></thead>
-          <tbody>${itemRows}</tbody>
-        </table>
-        <div class="below-table">
-          <div>${notes ? `<div class="section"><h2>Notes</h2>${notes}</div>` : ''}</div>
-          <div class="totals">
-            <div><span>Sub Total</span><span>${fmtMoney(quotation.subtotal)}</span></div>
-            <div><span>Discount</span><span>${fmtMoney(quotation.discount)}</span></div>
-            <div><span>Shipping charge</span><span>${fmtMoney(quotation.shiping_charge)}</span></div>
-            <div><span>Adjustment</span><span>${fmtMoney(quotation.adjustment)}</span></div>
-            <div class="total"><span>Total</span><span>${escapeHtml(quotation.currency || 'MYR')} ${fmtMoney(quotation.total)}</span></div>
-          </div>
-        </div>
-        <div class="text-column">
-          ${terms ? `<div class="section"><h2>Terms & Conditions</h2>${terms}</div>` : ''}
-        </div>
-        <div class="document-signature">
-          <div class="signature-line">(Signature)<br>Name:<br>Position:<br>Date:</div>
-          <div class="signature-line">(Co. Stamp)</div>
-        </div>
-      </div>
-    </body>
+    <body><main class="print-document">${pages.map(renderPage).join('')}</main></body>
   </html>`
 }
 
