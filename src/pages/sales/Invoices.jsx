@@ -231,6 +231,9 @@ function documentFileName(number, companyName, fallback = 'document') {
 const SALES_PRINT_LINES_PER_PAGE = 32
 const SALES_PRINT_DESC_CHARS = 64
 const SALES_PRINT_TITLE_CHARS = 54
+// The notes/policy block renders full page width in a smaller font, so it wraps
+// at far more characters per line than the narrow item description column.
+const SALES_PRINT_TERMS_CHARS = 118
 
 function wrapPrintableLine(value = '', maxChars = SALES_PRINT_DESC_CHARS) {
   const text = String(value || '').replace(/\s+/g, ' ').trim()
@@ -252,10 +255,10 @@ function wrapPrintableLine(value = '', maxChars = SALES_PRINT_DESC_CHARS) {
   return lines
 }
 
-function printableLineObjects(value = '') {
+function printableLineObjects(value = '', maxChars = SALES_PRINT_DESC_CHARS) {
   const text = cleanSalesText(value)
   if (!text) return []
-  return text.split('\n').flatMap(line => wrapPrintableLine(line, SALES_PRINT_DESC_CHARS))
+  return text.split('\n').flatMap(line => wrapPrintableLine(line, maxChars))
 }
 
 function salesDocumentItemCode(item) {
@@ -330,6 +333,9 @@ function salesPrintPageLineCount(rows = []) {
 
 function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', salesContactNumber = '') {
   const billTo = addressLines(customer)
+  const recipientHtml = (billTo.length ? billTo : [invoice.name || '-'])
+    .map((line, index) => index === 0 ? `<strong>${escapeHtml(line)}</strong>` : escapeHtml(line))
+    .join('<br>')
   const notes = sanitizeHtml(invoice.notes)
   const terms = printableText(invoice.term_condition, { dropConfirmation: true, dropSignature: true })
   const itemPages = paginateSalesDocumentItems(items, finalItemRate, finalItemAmount)
@@ -338,9 +344,16 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
   // lines for the total row and the terms/notes text, sized from their length.
   // Subtotal + Discount + Shipping Charges + Adjustment rows are always shown above the total.
   const breakdownRows = 4
-  const summaryReserveLines = 6 + breakdownRows
-    + printableLineObjects(htmlToText(notes)).length
-    + printableLineObjects(htmlToText(terms)).length
+  // Totals block: Subtotal + breakdown rows + grand-total band, in item-line units.
+  const totalsReserve = 6 + breakdownRows
+  // Notes/policy render full width in a smaller font: wrap at the real content
+  // width (not the narrow item column) and weight each line a touch under one
+  // item line. Wrapping at the item width over-counted ~2x and pushed the total
+  // onto a near-empty extra page even when the last item page had plenty of room.
+  const termsTextLines = printableLineObjects(htmlToText(notes), SALES_PRINT_TERMS_CHARS).length
+    + printableLineObjects(htmlToText(terms), SALES_PRINT_TERMS_CHARS).length
+  const termsReserve = termsTextLines ? Math.ceil(termsTextLines * 0.85) + 3 : 0
+  const summaryReserveLines = totalsReserve + termsReserve
   const lastItemRows = itemPages[itemPages.length - 1] || []
   // The last page can physically hold a few more lines than the item-break
   // budget (which is deliberately conservative), since the summary reserve
@@ -368,7 +381,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
     <div class="document-head">
       <div class="recipient">
         <div class="label">Invoice To:</div>
-        <div class="recipient-lines">${billTo.map(escapeHtml).join('<br>') || escapeHtml(invoice.name || '-')}</div>
+        <div class="recipient-lines">${recipientHtml}</div>
         <div class="attention-row">
           <span>Attn : ${escapeHtml(contactName || '')}</span>
           <span>${contactMobile ? `Tel : ${escapeHtml(contactMobile)}` : ''}</span>
@@ -378,8 +391,8 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         <div class="document-title">PROFORMA INVOICE</div>
         <div class="meta-row"><span>Invoice No</span><span>:</span><strong>${escapeHtml(invoice.invoice_number || '-')}</strong></div>
         <div class="meta-row"><span>Date</span><span>:</span><span>${fmt(invoice.date)}</span></div>
-        <div class="meta-row"><span>Our D/O No</span><span>:</span><span>${escapeHtml(invoice.order_number || '-')}</span></div>
-        <div class="meta-row"><span>Your Ref</span><span>:</span><span>${escapeHtml(invoice.reference || invoice.ref || '-')}</span></div>
+        <div class="meta-row"><span>PO/Order No</span><span>:</span><span>${escapeHtml(invoice.order_number || '-')}</span></div>
+        <div class="meta-row"><span>Your Ref</span><span>:</span><span>${escapeHtml(invoice.quote_ref_number || '-')}</span></div>
         <div class="meta-row"><span>Terms</span><span>:</span><span>${escapeHtml(invoice.terms || '-')}</span></div>
         <div class="meta-row"><span>Salesperson</span><span>:</span><span>${escapeHtml(invoice.sales_person || '-')}</span></div>
         ${salesContactNumber ? `<div class="meta-row"><span>Sales Contact</span><span>:</span><span>${escapeHtml(salesContactNumber)}</span></div>` : ''}
@@ -451,13 +464,13 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         .company { font-size: 12px; line-height: 1.38; }
         .company strong { font-size: 14px; letter-spacing: .1px; }
         .company span { font-size: 11px; font-weight: 400; }
-        .document-head { display: grid; grid-template-columns: 1.2fr .95fr; gap: 12mm; margin-top: 10mm; }
+        .document-head { display: grid; grid-template-columns: 1.42fr .72fr; gap: 10mm; margin-top: 10mm; }
         .label { margin-bottom: 4mm; }
         .recipient-lines { line-height: 1.45; min-height: 20mm; }
         .recipient-lines strong, .recipient-lines b { font-weight: 700; }
-        .attention-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 1mm; }
+        .attention-row { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 12mm; margin-top: 1mm; }
         .document-title { text-align: center; font-size: 22px; line-height: 1; font-weight: 700; margin-bottom: 6mm; }
-        .meta-row { display: grid; grid-template-columns: 30mm 4mm 1fr; gap: 2mm; line-height: 1.5; font-size: 12px; }
+        .meta-row { display: grid; grid-template-columns: 27mm 4mm 1fr; gap: 2mm; line-height: 1.5; font-size: 12px; }
         .report-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 6mm; font-size: 12px; line-height: 1.33; }
         .report-table thead th { border-top: 1.5px solid #111; border-bottom: 1.1px solid #111; padding: 2mm 1.5mm; font-weight: 400; text-align: left; }
         .report-table td { padding: 1.15mm 1.5mm; vertical-align: top; }
@@ -907,6 +920,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     e.preventDefault()
     if (!form.companyid) { setError('Please select a customer'); return }
     if (!form.invoice_number.trim()) { setError('Invoice number is required'); return }
+    if (!form.terms) { setError('Please select a payment term'); return }
     if (lineItems.every(i => !i.item.trim())) { setError('Add at least one line item'); return }
     setSaving(true); setError('')
 
@@ -1062,8 +1076,8 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
             </div>
 
             <div>
-              <label className={labelCls}>Payment Terms</label>
-              <select className={inputCls} value={form.terms} onChange={e => setF('terms', e.target.value)}>
+              <label className={labelCls}>Payment Terms <span className="text-red-500">*</span></label>
+              <select className={inputCls} value={form.terms} onChange={e => setF('terms', e.target.value)} required>
                 <option value="">Please Select</option>
                 {paymentTerms.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
               </select>
@@ -1625,12 +1639,23 @@ export default function Invoices() {
                 invoices.map(inv => {
                   const isOverdue = inv.due_date && new Date(inv.due_date) < new Date()
                   return (
-                    <tr key={inv.id} className="hover:bg-gray-50">
+                    <tr key={inv.id}
+                      onClick={() => { setSelectedId(inv.id); setView('detail') }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setSelectedId(inv.id)
+                          setView('detail')
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`View invoice ${inv.invoice_number || ''}`}
+                      className="hover:bg-gray-50 focus:bg-gray-50 focus:outline-none cursor-pointer">
                       <td className="px-4 py-3">
-                        <button onClick={() => { setSelectedId(inv.id); setView('detail') }}
-                          className="flex items-center gap-2 text-[#CC0000] hover:text-red-700 font-medium text-sm">
+                        <span className="flex items-center gap-2 text-[#CC0000] font-medium text-sm">
                           <FileText size={13} />{inv.invoice_number}
-                        </button>
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-gray-800 text-xs">{inv.name || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 text-xs">{inv.sales_person || '—'}</td>
@@ -1647,7 +1672,7 @@ export default function Invoices() {
                           : <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">Active</span>
                         }
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => { setSelectedId(inv.id); setView('detail') }}
                             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="View">

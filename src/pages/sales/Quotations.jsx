@@ -243,6 +243,9 @@ function paymentInvoiceLabel(type, quotationNumber) {
 const SALES_PRINT_LINES_PER_PAGE = 32
 const SALES_PRINT_DESC_CHARS = 64
 const SALES_PRINT_TITLE_CHARS = 54
+// The notes/terms block renders full page width in a smaller font, so it wraps
+// at far more characters per line than the narrow item description column.
+const SALES_PRINT_TERMS_CHARS = 118
 
 function wrapPrintableLine(value = '', maxChars = SALES_PRINT_DESC_CHARS) {
   const text = String(value || '').replace(/\s+/g, ' ').trim()
@@ -264,10 +267,10 @@ function wrapPrintableLine(value = '', maxChars = SALES_PRINT_DESC_CHARS) {
   return lines
 }
 
-function printableLineObjects(value = '') {
+function printableLineObjects(value = '', maxChars = SALES_PRINT_DESC_CHARS) {
   const text = cleanSalesText(value)
   if (!text) return []
-  return text.split('\n').flatMap(line => wrapPrintableLine(line, SALES_PRINT_DESC_CHARS))
+  return text.split('\n').flatMap(line => wrapPrintableLine(line, maxChars))
 }
 
 function salesDocumentItemCode(item) {
@@ -342,6 +345,9 @@ function salesPrintPageLineCount(rows = []) {
 
 function quotationHtml(quotation, items, contactName, customer, contactMobile = '', salesContactNumber = '') {
   const billTo = addressLines(customer)
+  const recipientHtml = (billTo.length ? billTo : [quotation.name || '-'])
+    .map((line, index) => index === 0 ? `<strong>${escapeHtml(line)}</strong>` : escapeHtml(line))
+    .join('<br>')
   const notes = sanitizeHtml(quotation.notes)
   const terms = printableText(quotation.terms, { dropConfirmation: true, dropSignature: true })
   const itemPages = paginateSalesDocumentItems(items, item => item.rate, item => item.amount)
@@ -351,9 +357,16 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
   // confirmation line and signature), sized from the actual terms length.
   // Subtotal + Discount + Shipping Charges + Adjustment rows are always shown above the total.
   const breakdownRows = 4
-  const summaryReserveLines = 9 + breakdownRows
-    + printableLineObjects(htmlToText(notes)).length
-    + printableLineObjects(htmlToText(terms)).length
+  // Totals + confirmation line + signature block, in item-line units.
+  const totalsReserve = 9 + breakdownRows
+  // Notes/terms render full width in a smaller font: wrap at the real content
+  // width (not the narrow item column) and weight each line a touch under one
+  // item line. Wrapping at the item width over-counted ~2x and pushed the total
+  // + signature onto a near-empty extra page even when the last item page had room.
+  const termsTextLines = printableLineObjects(htmlToText(notes), SALES_PRINT_TERMS_CHARS).length
+    + printableLineObjects(htmlToText(terms), SALES_PRINT_TERMS_CHARS).length
+  const termsReserve = termsTextLines ? Math.ceil(termsTextLines * 0.85) + 3 : 0
+  const summaryReserveLines = totalsReserve + termsReserve
   const lastItemRows = itemPages[itemPages.length - 1] || []
   // The last page can physically hold a few more lines than the item-break
   // budget (which is deliberately conservative), since the summary reserve
@@ -380,7 +393,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
     <div class="document-head">
       <div class="recipient">
         <div class="label">Quote to:</div>
-        <div class="recipient-lines">${billTo.map(escapeHtml).join('<br>') || escapeHtml(quotation.name || '-')}</div>
+        <div class="recipient-lines">${recipientHtml}</div>
         <div class="attention-row">
           <span>Attn : ${escapeHtml(contactName || '')}</span>
           <span>${contactMobile ? `Tel: ${escapeHtml(contactMobile)}` : ''}</span>
@@ -957,6 +970,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     e.preventDefault()
     if (!form.companyid) { setError('Please select a customer'); return }
     if (!form.number.trim()) { setError('Quotation number is required'); return }
+    if (!form.payment_term) { setError('Please select a payment term'); return }
     if (lineItems.every(i => !i.item.trim())) { setError('Add at least one line item'); return }
     setSaving(true); setError('')
 
@@ -1104,8 +1118,8 @@ function QuotationForm({ quotation, onSave, onCancel }) {
 
             {/* Payment Term */}
             <div>
-              <label className={labelCls}>Payment Terms</label>
-              <select className={inputCls} value={form.payment_term} onChange={e => setF('payment_term', e.target.value)}>
+              <label className={labelCls}>Payment Terms <span className="text-red-500">*</span></label>
+              <select className={inputCls} value={form.payment_term} onChange={e => setF('payment_term', e.target.value)} required>
                 <option value="">Please Select</option>
                 {paymentTerms.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
               </select>
