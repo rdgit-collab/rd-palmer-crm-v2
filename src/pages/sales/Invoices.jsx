@@ -228,7 +228,7 @@ function documentFileName(number, companyName, fallback = 'document') {
   return [number, companyName].map(value => String(value || '').trim()).filter(Boolean).join(' - ') || fallback
 }
 
-const SALES_PRINT_LINES_PER_PAGE = 34
+const SALES_PRINT_LINES_PER_PAGE = 32
 const SALES_PRINT_DESC_CHARS = 64
 const SALES_PRINT_TITLE_CHARS = 54
 
@@ -375,7 +375,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         </div>
       </div>
       <div class="document-meta">
-        <div class="document-title">INVOICE</div>
+        <div class="document-title">PROFORMA INVOICE</div>
         <div class="meta-row"><span>Invoice No</span><span>:</span><strong>${escapeHtml(invoice.invoice_number || '-')}</strong></div>
         <div class="meta-row"><span>Date</span><span>:</span><span>${fmt(invoice.date)}</span></div>
         <div class="meta-row"><span>Our D/O No</span><span>:</span><span>${escapeHtml(invoice.order_number || '-')}</span></div>
@@ -402,11 +402,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
       <div class="inv-trow"><span>${escapeHtml(discountLabel)}</span><span class="v">&minus; ${fmtMoney(discountVal)}</span></div>
       <div class="inv-trow"><span>Shipping Charges</span><span class="v">+ ${fmtMoney(shippingVal)}</span></div>
       <div class="inv-trow"><span>Adjustment</span><span class="v">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
-    </div>
-    <div class="invoice-total-row">
-      <span>${escapeHtml(invoice.currency || 'RINGGIT MALAYSIA')} : ${fmtMoney(invoice.total)}</span>
-      <strong>Total (RM)</strong>
-      <strong class="invoice-total-box">${fmtMoney(invoice.total)}</strong>
+      <div class="inv-trow inv-grand"><span>Total (RM)</span><span class="v">${fmtMoney(invoice.total)}</span></div>
     </div>
     <div class="terms-block">
       ${notes ? `<div class="section">${notes}</div>` : ''}
@@ -457,7 +453,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         .company span { font-size: 11px; font-weight: 400; }
         .document-head { display: grid; grid-template-columns: 1.2fr .95fr; gap: 12mm; margin-top: 10mm; }
         .label { margin-bottom: 4mm; }
-        .recipient-lines { margin-left: 8mm; line-height: 1.45; min-height: 20mm; }
+        .recipient-lines { line-height: 1.45; min-height: 20mm; }
         .recipient-lines strong, .recipient-lines b { font-weight: 700; }
         .attention-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 1mm; }
         .document-title { text-align: center; font-size: 22px; line-height: 1; font-weight: 700; margin-bottom: 6mm; }
@@ -466,7 +462,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         .report-table thead th { border-top: 1.5px solid #111; border-bottom: 1.1px solid #111; padding: 2mm 1.5mm; font-weight: 400; text-align: left; }
         .report-table td { padding: 1.15mm 1.5mm; vertical-align: top; }
         .report-table .no-col { width: 9mm; text-align: center; }
-        .report-table .code-col { width: 31mm; }
+        .report-table .code-col { width: 31mm; overflow-wrap: anywhere; }
         .report-table .description-col { width: auto; }
         .report-table .qty-col { width: 16mm; text-align: right; white-space: nowrap; }
         .report-table .price-col { width: 28mm; text-align: right; white-space: nowrap; }
@@ -474,13 +470,12 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         .line-title { text-transform: none; }
         .blank-row td { height: 5mm; border-bottom: 1.4px solid #111; }
         .summary-only .blank-row td { height: 40mm; }
-        .inv-totals { width: 78mm; margin: 2mm 1mm 0 auto; font-size: 12px; }
-        .inv-trow { display: grid; grid-template-columns: 1fr 33mm; gap: 4mm; padding: 0.5mm 0; align-items: baseline; }
+        .inv-totals { width: 92mm; margin: 3mm 0 0 auto; font-size: 12px; }
+        .inv-trow { display: grid; grid-template-columns: 1fr 34mm; gap: 5mm; padding: 0.6mm 0; align-items: baseline; }
         .inv-trow > span:first-child { white-space: nowrap; }
-        .inv-trow .v { text-align: right; white-space: nowrap; padding-right: 2mm; }
-        .invoice-total-row { display: grid; grid-template-columns: 1fr 24mm 33mm; gap: 4mm; align-items: center; margin: 1.5mm 1mm 0; font-size: 12px; }
-        .invoice-total-row > span:first-child { text-transform: uppercase; }
-        .invoice-total-box { border: 1px solid #111; padding: 2.5mm 2mm; text-align: right; font-weight: 700; }
+        .inv-trow .v { text-align: right; white-space: nowrap; }
+        .inv-grand { border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 1.6mm 0; margin-top: 1.2mm; font-weight: 700; }
+        .inv-grand > span { font-weight: 700; }
         .terms-block { margin: 4mm 3mm 13mm; font-size: 11px; line-height: 1.22; }
         .terms-block .section { margin-bottom: 3mm; }
         .terms-block p, .terms-block div { margin-top: 0; margin-bottom: 1.5mm; }

@@ -240,7 +240,7 @@ function paymentInvoiceLabel(type, quotationNumber) {
   return `${label} for quotation ${quotationNumber || ''}`.trim()
 }
 
-const SALES_PRINT_LINES_PER_PAGE = 34
+const SALES_PRINT_LINES_PER_PAGE = 32
 const SALES_PRINT_DESC_CHARS = 64
 const SALES_PRINT_TITLE_CHARS = 54
 
@@ -469,7 +469,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
         .red { color: #d40000; font-weight: 700; }
         .document-head { display: grid; grid-template-columns: 1.25fr .95fr; gap: 12mm; margin-top: 10mm; }
         .label { font-weight: 700; margin-bottom: 3mm; }
-        .recipient-lines { margin-left: 8mm; line-height: 1.45; min-height: 16mm; }
+        .recipient-lines { line-height: 1.45; min-height: 16mm; }
         .attention-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 4mm; }
         .document-title { text-align: center; font-size: 21px; line-height: 1; font-weight: 700; margin-bottom: 5mm; }
         .meta-row { display: grid; grid-template-columns: 31mm 4mm 1fr; gap: 2mm; line-height: 1.5; font-size: 12px; }
@@ -478,7 +478,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
         .report-table thead th { border-top: 1.4px solid #111; border-bottom: 1.2px solid #111; padding: 2mm 1.5mm; font-weight: 400; text-align: left; }
         .report-table td { padding: 1.35mm 1.5mm; vertical-align: top; }
         .report-table .no-col { width: 8mm; text-align: center; }
-        .report-table .code-col { width: 30mm; }
+        .report-table .code-col { width: 30mm; overflow-wrap: anywhere; }
         .report-table .description-col { width: auto; }
         .report-table .qty-col { width: 16mm; text-align: right; white-space: nowrap; }
         .report-table .price-col { width: 27mm; text-align: right; white-space: nowrap; }
