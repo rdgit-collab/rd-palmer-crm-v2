@@ -349,15 +349,18 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
   // there is room, instead of always spilling onto a near-empty extra page.
   // Reserve enough lines for the summary block (total row, terms/notes text,
   // confirmation line and signature), sized from the actual terms length.
-  const breakdownRows = (Number(quotation.discount || 0) > 0 || Number(quotation.shiping_charge || 0) > 0 || Number(quotation.adjustment || 0) !== 0)
-    ? 1 + (Number(quotation.discount || 0) > 0 ? 1 : 0) + (Number(quotation.shiping_charge || 0) > 0 ? 1 : 0) + (Number(quotation.adjustment || 0) !== 0 ? 1 : 0)
-    : 0
+  // Subtotal + Discount + Shipping Charges + Adjustment rows are always shown above the total.
+  const breakdownRows = 4
   const summaryReserveLines = 9 + breakdownRows
     + printableLineObjects(htmlToText(notes)).length
     + printableLineObjects(htmlToText(terms)).length
   const lastItemRows = itemPages[itemPages.length - 1] || []
+  // The last page can physically hold a few more lines than the item-break
+  // budget (which is deliberately conservative), since the summary reserve
+  // over-estimates the small-font terms height.
+  const lastPageCapacity = SALES_PRINT_LINES_PER_PAGE + 5
   const summaryFitsOnLastPage = itemPages.length > 0
-    && (salesPrintPageLineCount(lastItemRows) + summaryReserveLines) <= SALES_PRINT_LINES_PER_PAGE
+    && (salesPrintPageLineCount(lastItemRows) + summaryReserveLines) <= lastPageCapacity
   const pages = itemPages.length === 0
     ? [{ rows: [], summary: true }]
     : summaryFitsOnLastPage
@@ -400,19 +403,16 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
   const discountVal = Number(quotation.discount || 0)
   const shippingVal = Number(quotation.shiping_charge || 0)
   const adjustmentVal = Number(quotation.adjustment || 0)
-  const hasAdjustments = discountVal > 0 || shippingVal > 0 || adjustmentVal !== 0
-  const discountLabel = quotation.discouttype === '%'
-    ? `Discount (${quotation.discountvalue || 0}%)`
+  const discountLabel = quotation.discouttype === '%' && Number(quotation.discountvalue || 0) > 0
+    ? `Discount (${quotation.discountvalue}%)`
     : 'Discount'
 
   const renderSummary = () => `
     <div class="totals-block">
-      ${hasAdjustments ? `
-        <div class="totals-row"><span class="t-label">Subtotal</span><span class="t-value">${fmtMoney(subtotalVal)}</span></div>
-        ${discountVal > 0 ? `<div class="totals-row"><span class="t-label">${escapeHtml(discountLabel)}</span><span class="t-value">&minus; ${fmtMoney(discountVal)}</span></div>` : ''}
-        ${shippingVal > 0 ? `<div class="totals-row"><span class="t-label">Shipping Charges</span><span class="t-value">+ ${fmtMoney(shippingVal)}</span></div>` : ''}
-        ${adjustmentVal !== 0 ? `<div class="totals-row"><span class="t-label">Adjustment</span><span class="t-value">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>` : ''}
-      ` : ''}
+      <div class="totals-row"><span class="t-label">Subtotal</span><span class="t-value">${fmtMoney(subtotalVal)}</span></div>
+      <div class="totals-row"><span class="t-label">${escapeHtml(discountLabel)}</span><span class="t-value">&minus; ${fmtMoney(discountVal)}</span></div>
+      <div class="totals-row"><span class="t-label">Shipping Charges</span><span class="t-value">+ ${fmtMoney(shippingVal)}</span></div>
+      <div class="totals-row"><span class="t-label">Adjustment</span><span class="t-value">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
       <div class="totals-row totals-grand"><span class="t-label">Total (RM)</span><span class="t-value">${fmtMoney(quotation.total)}</span></div>
     </div>
     <div class="terms-block">

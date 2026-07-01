@@ -336,15 +336,18 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
   // Keep the total + terms on the same page as the last items when there is
   // room, instead of always spilling onto a near-empty extra page. Reserve
   // lines for the total row and the terms/notes text, sized from their length.
-  const breakdownRows = (Number(invoice.discount || 0) > 0 || Number(invoice.shiping_charge || 0) > 0 || Number(invoice.adjustment || 0) !== 0)
-    ? 1 + (Number(invoice.discount || 0) > 0 ? 1 : 0) + (Number(invoice.shiping_charge || 0) > 0 ? 1 : 0) + (Number(invoice.adjustment || 0) !== 0 ? 1 : 0)
-    : 0
+  // Subtotal + Discount + Shipping Charges + Adjustment rows are always shown above the total.
+  const breakdownRows = 4
   const summaryReserveLines = 6 + breakdownRows
     + printableLineObjects(htmlToText(notes)).length
     + printableLineObjects(htmlToText(terms)).length
   const lastItemRows = itemPages[itemPages.length - 1] || []
+  // The last page can physically hold a few more lines than the item-break
+  // budget (which is deliberately conservative), since the summary reserve
+  // over-estimates the small-font terms height.
+  const lastPageCapacity = SALES_PRINT_LINES_PER_PAGE + 5
   const summaryFitsOnLastPage = itemPages.length > 0
-    && (salesPrintPageLineCount(lastItemRows) + summaryReserveLines) <= SALES_PRINT_LINES_PER_PAGE
+    && (salesPrintPageLineCount(lastItemRows) + summaryReserveLines) <= lastPageCapacity
   const pages = itemPages.length === 0
     ? [{ rows: [], summary: true }]
     : summaryFitsOnLastPage
@@ -389,18 +392,17 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
   const discountVal = Number(invoice.discount || 0)
   const shippingVal = Number(invoice.shiping_charge || 0)
   const adjustmentVal = Number(invoice.adjustment || 0)
-  const hasAdjustments = discountVal > 0 || shippingVal > 0 || adjustmentVal !== 0
-  const discountLabel = invoice.discouttype === '%'
-    ? `Discount (${invoice.discountvalue || 0}%)`
+  const discountLabel = invoice.discouttype === '%' && Number(invoice.discountvalue || 0) > 0
+    ? `Discount (${invoice.discountvalue}%)`
     : 'Discount'
 
   const renderSummary = () => `
-    ${hasAdjustments ? `<div class="inv-totals">
+    <div class="inv-totals">
       <div class="inv-trow"><span>Subtotal</span><span class="v">${fmtMoney(subtotalVal)}</span></div>
-      ${discountVal > 0 ? `<div class="inv-trow"><span>${escapeHtml(discountLabel)}</span><span class="v">&minus; ${fmtMoney(discountVal)}</span></div>` : ''}
-      ${shippingVal > 0 ? `<div class="inv-trow"><span>Shipping Charges</span><span class="v">+ ${fmtMoney(shippingVal)}</span></div>` : ''}
-      ${adjustmentVal !== 0 ? `<div class="inv-trow"><span>Adjustment</span><span class="v">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>` : ''}
-    </div>` : ''}
+      <div class="inv-trow"><span>${escapeHtml(discountLabel)}</span><span class="v">&minus; ${fmtMoney(discountVal)}</span></div>
+      <div class="inv-trow"><span>Shipping Charges</span><span class="v">+ ${fmtMoney(shippingVal)}</span></div>
+      <div class="inv-trow"><span>Adjustment</span><span class="v">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
+    </div>
     <div class="invoice-total-row">
       <span>${escapeHtml(invoice.currency || 'RINGGIT MALAYSIA')} : ${fmtMoney(invoice.total)}</span>
       <strong>Total (RM)</strong>
