@@ -1311,7 +1311,8 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       return
     }
     const label = paymentInvoiceLabel(milestoneLabel, quotation.number)
-    const description = `${label}${quotation.name ? `\nCustomer: ${quotation.name}` : ''}${quotation.total ? `\nQuotation total: ${quotation.currency || 'MYR'} ${fmtMoney(quotation.total)}` : ''}${remainingTotal ? `\nRemaining before this invoice: ${quotation.currency || 'MYR'} ${fmtMoney(remainingTotal)}` : ''}`
+    const balanceAfterInvoice = Math.max(0, roundMoney(remainingTotal - amount))
+    const description = `${label}${quotation.name ? `\nCustomer: ${quotation.name}` : ''}${quotation.total ? `\nQuotation total: ${quotation.currency || 'MYR'} ${fmtMoney(quotation.total)}` : ''}\nBalance after this invoice: ${quotation.currency || 'MYR'} ${fmtMoney(balanceAfterInvoice)}`
     const invoiceItems = shouldCopyQuotationItems
       ? items.map(item => ({
         user_id: item.user_id || quotation.user_id || getLegacyUserId(profile),
