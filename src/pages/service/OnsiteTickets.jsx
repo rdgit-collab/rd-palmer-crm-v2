@@ -107,6 +107,9 @@ export default function OnsiteTickets() {
   const [total, setTotal]         = useState(0)
   const [page, setPage]           = useState(1)
   const [search, setSearch]       = useState('')
+  // Debounced copy of `search` used by the fetch, so typing doesn't fire a
+  // server query per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading]     = useState(false)
   const [form, setForm]           = useState(emptyForm)
   const [editId, setEditId]       = useState(null)
@@ -131,15 +134,24 @@ export default function OnsiteTickets() {
   const formDataLoadedRef = useRef(false)
   const origAssignedTo = useRef('')
   const origFile = useRef('')
+  const fetchSeq = useRef(0)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const fetchRows = useCallback(async () => {
+    // Only the latest request may update state (out-of-order guard).
+    const seq = ++fetchSeq.current
     setLoading(true)
     let q = supabase.from('onsiteticket').select(ONSITE_LIST_COLUMNS, { count: 'estimated' })
       .eq('is_completed', tab === 'open' ? 0 : 1).order('id', { ascending: false })
-    if (search) q = q.or(`product.ilike.%${search}%,location.ilike.%${search}%`)
+    if (debouncedSearch) q = q.or(`product.ilike.%${debouncedSearch}%,location.ilike.%${debouncedSearch}%`)
     if (scope === 'mine') q = q.eq('assigned_to', getLegacyUserId(profile))
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
+    if (seq !== fetchSeq.current) return
     if (!err) {
       const pageRows = data || []
       setRows(pageRows)
@@ -150,6 +162,7 @@ export default function OnsiteTickets() {
           .from('ticket')
           .select('id, ticket_id, company_name')
           .in('id', ticketIds)
+        if (seq !== fetchSeq.current) return
         if (!ticketErr) {
           setTicketLabels(Object.fromEntries((ticketRows || []).map(t => [String(t.id), t])))
         }
@@ -158,7 +171,7 @@ export default function OnsiteTickets() {
       }
     }
     setLoading(false)
-  }, [search, page, tab, scope, profile])
+  }, [debouncedSearch, page, tab, scope, profile])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 

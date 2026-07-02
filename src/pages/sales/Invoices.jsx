@@ -9,6 +9,7 @@ import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLo
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
+import PdfPreviewModal from '../../components/PdfPreviewModal'
 import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
@@ -510,19 +511,6 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
     </head>
     <body><main class="print-document">${pages.map(renderPage).join('')}</main></body>
   </html>`
-}
-
-function openPrintable(html, autoPrint = false) {
-  const win = window.open('', '_blank')
-  if (!win) {
-    alert('Please allow popups for this site to open the document.')
-    return
-  }
-  win.document.write(html)
-  win.document.close()
-  if (autoPrint) {
-    win.onload = () => { win.focus(); win.print() }
-  }
 }
 
 // ─── Auto-generate next invoice number ────────────────────────────────────────
@@ -1253,6 +1241,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const [salesContactNumber, setSalesContactNumber] = useState('')
   const [loading, setLoading] = useState(true)
   const [pdfDownloading, setPdfDownloading] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState(null)
 
   useEffect(() => {
     const load = async () => {
@@ -1261,23 +1250,24 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
         supabase.from('invoice').select('*').eq('id', invoiceId).single(),
         supabase.from('invoice_item').select('*').eq('invoiceid', invoiceId).order('id'),
       ])
-      let contactRow = null
-      if (isNumericId(inv?.contact_person)) {
-        const { data } = await supabase.from('contact').select('*').eq('id', parseInt(inv.contact_person)).maybeSingle()
-        contactRow = data || null
-      }
-      let customerRow = null
-      if (inv?.companyid) {
-        const { data } = await supabase.from('customer').select('*').eq('id', inv.companyid).maybeSingle()
-        customerRow = data || null
-      }
-      const salesPhone = await resolveSalesContactNumber(inv?.sales_person)
+      // These lookups only depend on the invoice/items above — run in parallel
+      // instead of serially to cut the detail-open latency.
       const itemIds = [...new Set((ii || []).map(item => item.itemid).filter(Boolean))]
-      let skuByItemId = {}
-      if (itemIds.length > 0) {
-        const { data: goodsRows } = await supabase.from('goodsservices').select('id, sku').in('id', itemIds)
-        skuByItemId = Object.fromEntries((goodsRows || []).map(row => [String(row.id), row.sku || '']))
-      }
+      const [contactResult, customerResult, salesPhone, goodsResult] = await Promise.all([
+        isNumericId(inv?.contact_person)
+          ? supabase.from('contact').select('*').eq('id', parseInt(inv.contact_person)).maybeSingle()
+          : Promise.resolve({ data: null }),
+        inv?.companyid
+          ? supabase.from('customer').select('*').eq('id', inv.companyid).maybeSingle()
+          : Promise.resolve({ data: null }),
+        resolveSalesContactNumber(inv?.sales_person),
+        itemIds.length > 0
+          ? supabase.from('goodsservices').select('id, sku').in('id', itemIds)
+          : Promise.resolve({ data: [] }),
+      ])
+      const contactRow = contactResult.data || null
+      const customerRow = customerResult.data || null
+      const skuByItemId = Object.fromEntries((goodsResult.data || []).map(row => [String(row.id), row.sku || '']))
       setInvoice(inv)
       setItems((ii || []).map(item => ({ ...item, sku: skuByItemId[String(item.itemid)] || item.sku || '' })))
       setContact(contactRow)
@@ -1294,7 +1284,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const isOverdue = invoice.due_date && new Date(invoice.due_date) < new Date()
   const contactName = resolvedContactName(invoice.contact_person, contact)
   const printableHtml = () => invoiceHtml(invoice, items, contactName, customer, contactPhone(contact), salesContactNumber)
-  const openPreview = () => openPrintable(printableHtml())
+  const openPreview = () => setPreviewHtml(printableHtml())
   const downloadPdf = async () => {
     if (pdfDownloading) return
     setPdfDownloading(true)
@@ -1464,6 +1454,14 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
             )}
           </div>
         </div>
+      )}
+
+      {previewHtml && (
+        <PdfPreviewModal
+          html={previewHtml}
+          title={`Preview — ${invoice.invoice_number || 'Invoice'}`}
+          onClose={() => setPreviewHtml(null)}
+        />
       )}
     </div>
   )

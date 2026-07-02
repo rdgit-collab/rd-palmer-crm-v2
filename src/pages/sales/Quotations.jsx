@@ -9,6 +9,7 @@ import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLo
 import salesDocumentLogo from '../../assets/sales-document-logo.png'
 import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
+import PdfPreviewModal from '../../components/PdfPreviewModal'
 import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
@@ -526,19 +527,6 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
     </head>
     <body><main class="print-document">${pages.map(renderPage).join('')}</main></body>
   </html>`
-}
-
-function openPrintable(html, autoPrint = false) {
-  const win = window.open('', '_blank')
-  if (!win) {
-    alert('Please allow popups for this site to open the document.')
-    return
-  }
-  win.document.write(html)
-  win.document.close()
-  if (autoPrint) {
-    win.onload = () => { win.focus(); win.print() }
-  }
 }
 
 // ─── Generate next quotation number ───────────────────────────────────────────
@@ -1336,6 +1324,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
   const [paymentAmount, setPaymentAmount] = useState('')
   const [convertError, setConvertError] = useState('')
   const [pdfDownloading, setPdfDownloading] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState(null)
 
   useEffect(() => {
     const load = async () => {
@@ -1344,32 +1333,32 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
         supabase.from('quotation').select('*').eq('id', quotationId).single(),
         supabase.from('quotation_item').select('*').eq('qid', quotationId).order('id'),
       ])
-      let contactRow = null
-      if (isNumericId(q?.contact_person)) {
-        const { data } = await supabase.from('contact').select('*').eq('id', parseInt(q.contact_person)).maybeSingle()
-        contactRow = data || null
-      }
-      let customerRow = null
-      if (q?.companyid) {
-        const { data } = await supabase.from('customer').select('*').eq('id', q.companyid).maybeSingle()
-        customerRow = data || null
-      }
-      const salesPhone = await resolveSalesContactNumber(q?.sales_person)
+      // These lookups only depend on the quotation/items above — run in
+      // parallel instead of serially to cut the detail-open latency.
       const itemIds = [...new Set((qi || []).map(item => item.itemid).filter(Boolean))]
-      let skuByItemId = {}
-      if (itemIds.length > 0) {
-        const { data: goodsRows } = await supabase.from('goodsservices').select('id, sku').in('id', itemIds)
-        skuByItemId = Object.fromEntries((goodsRows || []).map(row => [String(row.id), row.sku || '']))
-      }
-      let invoices = []
-      if (q?.number) {
-        const { data } = await supabase
-          .from('invoice')
-          .select('id, invoice_number, date, total, currency, quote_ref_number')
-          .eq('quote_ref_number', q.number)
-          .order('id', { ascending: true })
-        invoices = data || []
-      }
+      const [contactResult, customerResult, salesPhone, goodsResult, invoiceResult] = await Promise.all([
+        isNumericId(q?.contact_person)
+          ? supabase.from('contact').select('*').eq('id', parseInt(q.contact_person)).maybeSingle()
+          : Promise.resolve({ data: null }),
+        q?.companyid
+          ? supabase.from('customer').select('*').eq('id', q.companyid).maybeSingle()
+          : Promise.resolve({ data: null }),
+        resolveSalesContactNumber(q?.sales_person),
+        itemIds.length > 0
+          ? supabase.from('goodsservices').select('id, sku').in('id', itemIds)
+          : Promise.resolve({ data: [] }),
+        q?.number
+          ? supabase
+              .from('invoice')
+              .select('id, invoice_number, date, total, currency, quote_ref_number')
+              .eq('quote_ref_number', q.number)
+              .order('id', { ascending: true })
+          : Promise.resolve({ data: [] }),
+      ])
+      const contactRow = contactResult.data || null
+      const customerRow = customerResult.data || null
+      const skuByItemId = Object.fromEntries((goodsResult.data || []).map(row => [String(row.id), row.sku || '']))
+      const invoices = invoiceResult.data || []
       setQuotation(q)
       setItems((qi || []).map(item => ({ ...item, sku: skuByItemId[String(item.itemid)] || item.sku || '' })))
       setLinkedInvoices(invoices)
@@ -1521,7 +1510,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
   const isPartiallyInvoiced = !isConverted && invoicedTotal > 0
   const contactName = resolvedContactName(quotation.contact_person, contact)
   const printableHtml = () => quotationHtml(quotation, items, contactName, customer, contactPhone(contact), salesContactNumber)
-  const openPreview = () => openPrintable(printableHtml())
+  const openPreview = () => setPreviewHtml(printableHtml())
   const downloadPdf = async () => {
     if (pdfDownloading) return
     setPdfDownloading(true)
@@ -1869,6 +1858,14 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
             </div>
           </div>
         </div>
+      )}
+
+      {previewHtml && (
+        <PdfPreviewModal
+          html={previewHtml}
+          title={`Preview — ${quotation.number || 'Quotation'}`}
+          onClose={() => setPreviewHtml(null)}
+        />
       )}
     </div>
   )

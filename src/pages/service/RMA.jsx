@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
@@ -25,6 +25,9 @@ export default function RMA() {
   const [total, setTotal]       = useState(0)
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
+  // Debounced copy of `search` used by the fetch, so typing doesn't fire a
+  // server query per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading]   = useState(false)
   const [form, setForm]         = useState(emptyForm)
   const [editId, setEditId]     = useState(null)
@@ -35,13 +38,21 @@ export default function RMA() {
   const [ticketLabels, setTicketLabels] = useState({})
   const [vendors, setVendors]   = useState([])
   const [modes, setModes]       = useState([])
+  const fetchSeq = useRef(0)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const fetchRows = useCallback(async () => {
+    // Only the latest request may update state (out-of-order guard).
+    const seq = ++fetchSeq.current
     setLoading(true)
     let q = supabase.from('rma').select(RMA_LIST_COLUMNS, { count: 'estimated' }).order('id', { ascending: false })
     q = tab === 'open' ? q.is('date_return', null) : q.not('date_return', 'is', null)
-    if (search) {
-      const term = search.trim()
+    if (debouncedSearch) {
+      const term = debouncedSearch.trim()
       const tid = term.replace(/^TID/i, '')
       const ticketFilters = [`company_name.ilike.%${term}%`]
       if (/^\d+$/.test(tid)) ticketFilters.push(`ticket_id.eq.${parseInt(tid)}`)
@@ -50,6 +61,7 @@ export default function RMA() {
         .select('id')
         .or(ticketFilters.join(','))
         .limit(500)
+      if (seq !== fetchSeq.current) return
       const ticketIds = (matchedTickets || []).map(t => t.id)
       const filters = [`rma_number.ilike.%${term}%`, `vendor.ilike.%${term}%`]
       if (ticketIds.length > 0) filters.push(`ticket_id.in.(${ticketIds.join(',')})`)
@@ -57,6 +69,7 @@ export default function RMA() {
     }
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     const { data, count, error: err } = await q
+    if (seq !== fetchSeq.current) return
     if (!err) {
       const pageRows = data || []
       setRows(pageRows)
@@ -67,6 +80,7 @@ export default function RMA() {
           .from('ticket')
           .select('id, ticket_id, company_name')
           .in('id', ticketIds)
+        if (seq !== fetchSeq.current) return
         if (!ticketErr) {
           setTicketLabels(prev => ({
             ...prev,
@@ -76,7 +90,7 @@ export default function RMA() {
       }
     }
     setLoading(false)
-  }, [search, page, tab])
+  }, [debouncedSearch, page, tab])
 
   useEffect(() => { fetchRows() }, [fetchRows])
 

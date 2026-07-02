@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
-import { fetchAllRows } from '../../lib/fetchAllRows'
+import { fetchAllRows, fetchRowsByIds } from '../../lib/fetchAllRows'
 import { logActivity } from '../../lib/activityLog'
 import { formatDate } from '../../lib/dateFormat'
 import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
@@ -162,6 +162,7 @@ export default function Calibration() {
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
   const [tickets, setTickets]       = useState([])
+  const [formTickets, setFormTickets] = useState([])
   const [customers, setCustomers]   = useState([])
   const [users, setUsers]           = useState([])
   const [allUsers, setAllUsers]     = useState([])
@@ -181,6 +182,15 @@ export default function Calibration() {
     try {
       const data = await fetchAllRows('calibration', '*', 'id', { ascending: false })
       setRows(data || [])
+      // Resolve labels only for the tickets these calibrations reference (and
+      // those tickets' customers) instead of downloading the entire ticket and
+      // customer tables, which kept growing with the database.
+      const ticketIds = [...new Set((data || []).map(row => row.ticket_id).filter(Boolean))]
+      const tickR = await fetchRowsByIds('ticket', 'id, ticket_id, company_id, company_name', ticketIds).catch(() => [])
+      setTickets(tickR)
+      const companyIds = [...new Set(tickR.map(t => t.company_id).filter(Boolean))]
+      const customerR = await fetchRowsByIds('customer', 'id, company_name, address1, address2, city, state, zipcode, country', companyIds).catch(() => [])
+      setCustomers(customerR)
     } catch {
       setRows([])
     }
@@ -191,16 +201,12 @@ export default function Calibration() {
 
   useEffect(() => {
     const run = async () => {
-      const [tickR, customerR, activeUsers, legacyUsers, checklistR, termsR] = await Promise.all([
-        fetchAllRows('ticket', 'id, ticket_id, company_id, company_name', 'id', { ascending: false }),
-        fetchAllRows('customer', 'id, company_name, address1, address2, city, state, zipcode, country', 'company_name', { ascending: true }).catch(() => []),
+      const [activeUsers, legacyUsers, checklistR, termsR] = await Promise.all([
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
         supabase.from('checklist').select('id, name').order('name').limit(500),
         supabase.from('termcondition').select('id, name').order('id').limit(200),
       ])
-      setTickets(tickR || [])
-      setCustomers(customerR || [])
       setUsers(activeUsers || [])
       setAllUsers(legacyUsers || [])
       if (!checklistR.error) setChecklistOptions(checklistR.data || [])
@@ -208,6 +214,20 @@ export default function Calibration() {
     }
     run()
   }, [])
+
+  // The create/edit form needs the full ticket dropdown; load it only when the
+  // form is actually opened (once per visit), not on every page load.
+  const formTicketsLoadedRef = useRef(false)
+  const ensureFormTickets = async () => {
+    if (formTicketsLoadedRef.current) return
+    formTicketsLoadedRef.current = true
+    try {
+      const all = await fetchAllRows('ticket', 'id, ticket_id, company_id, company_name', 'id', { ascending: false })
+      setFormTickets(all || [])
+    } catch {
+      formTicketsLoadedRef.current = false
+    }
+  }
 
   const getTicketLabel = (tid) => {
     const t = tickets.find(t => String(t.id) === String(tid))
@@ -384,6 +404,7 @@ export default function Calibration() {
     setError('')
     setView('form')
     setTicketSerialOptions([])
+    ensureFormTickets()
     loadSerialOptions()
     try {
       const certificateNumber = await generateCertificateNumber()
@@ -406,6 +427,7 @@ export default function Calibration() {
     setEditId(r.id)
     setError('')
     setView('form')
+    ensureFormTickets()
     loadTicketSerialOptions(r.ticket_id, r.serial_number || '')
     if (!r.ticket_id) loadSerialOptions(r.serial_number || '')
   }
@@ -755,8 +777,8 @@ export default function Calibration() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Ticket</label>
             <select value={form.ticket_id} onChange={e => handleTicketChange(e.target.value)} className="w-full border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-red-400">
-              <option value="">Please Select</option>
-              {tickets.map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} - {t.company_name}</option>)}
+              <option value="">{formTickets.length ? 'Please Select' : 'Loading tickets...'}</option>
+              {(formTickets.length ? formTickets : tickets).map(t => <option key={t.id} value={t.id}>TID{t.ticket_id} - {t.company_name}</option>)}
             </select>
           </div>
           <div>

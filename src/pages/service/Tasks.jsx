@@ -283,6 +283,9 @@ export default function Tasks() {
   const [total, setTotal]         = useState(0)
   const [page, setPage]           = useState(1)
   const [search, setSearch]       = useState('')
+  // Debounced copy of `search` used by the fetch, so typing doesn't fire a
+  // server query per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [assignedFilter, setAssignedFilter] = useState('')
   const [serviceTypeFilter, setServiceTypeFilter] = useState('')
   const [loading, setLoading]     = useState(false)
@@ -303,10 +306,15 @@ export default function Tasks() {
   const [users, setUsers]             = useState([])
   const [allUsers, setAllUsers]       = useState([])
   const [spares, setSpares]           = useState([])
-  const [dropdownLoading, setDropdownLoading] = useState(true)
+  const [dropdownLoading, setDropdownLoading] = useState(false)
   const origAssignedTo                = useRef(null)
   const origFile                      = useRef('')
   const fetchRequestId                = useRef(0)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
@@ -315,7 +323,7 @@ export default function Tasks() {
     setLoading(true)
     const { data, error: err } = await supabase.rpc('search_tasks', {
       p_tab: tab,
-      p_search: search.trim(),
+      p_search: debouncedSearch.trim(),
       p_scope: scope,
       p_current_user_id: getLegacyUserId(profile),
       p_assigned_filter: assignedFilter ? parseInt(assignedFilter) : null,
@@ -344,7 +352,7 @@ export default function Tasks() {
       setError(err.message)
     }
     setLoading(false)
-  }, [search, page, tab, scope, profile, assignedFilter, serviceTypeFilter])
+  }, [debouncedSearch, page, tab, scope, profile, assignedFilter, serviceTypeFilter])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
@@ -388,17 +396,31 @@ export default function Tasks() {
   // ── Fetch dropdowns ───────────────────────────────────────────────
   useEffect(() => {
     const run = async () => {
-      setDropdownLoading(true)
-      const [stR, usrR, allUsrR, catalogueR, taskSpareR] = await Promise.all([
+      const [stR, usrR, allUsrR] = await Promise.all([
         supabase.from('service_type').select('id, type').order('type'),
         fetchAssignableUsers(supabase),
         fetchLegacyUsers(supabase),
-        fetchAllRows('goodsservices', 'id, sku, name, description', 'sku', { eq: { is_archived: false } }),
-        supabase.from('task').select('spare').not('spare', 'is', null).neq('spare', '').limit(1000),
       ])
       if (!stR.error)   setServiceTypes(stR.data || [])
       setUsers(usrR || [])
       setAllUsers(allUsrR || [])
+    }
+    run().catch(() => {})
+  }, [])
+
+  // The spare picker's options (full goods catalogue + previously used task
+  // spares) are only needed inside the form — load them on first form open
+  // instead of on every page visit.
+  const sparesLoadedRef = useRef(false)
+  const ensureSpares = async () => {
+    if (sparesLoadedRef.current) return
+    sparesLoadedRef.current = true
+    setDropdownLoading(true)
+    try {
+      const [catalogueR, taskSpareR] = await Promise.all([
+        fetchAllRows('goodsservices', 'id, sku, name, description', 'sku', { eq: { is_archived: false } }),
+        supabase.from('task').select('spare').not('spare', 'is', null).neq('spare', '').limit(1000),
+      ])
       const catalogue = (catalogueR || []).map(item => ({
         id: `catalogue-${item.id}`,
         sku: item.sku || item.name || '',
@@ -413,13 +435,16 @@ export default function Tasks() {
         .filter(name => !catalogueValues.has(String(name)))
         .map((name, idx) => ({ id: `task-spare-${idx}-${name}`, sku: name, name, description: 'Previously used task spare' }))
       setSpares([...catalogue, ...legacyTaskSpares])
+    } catch {
+      sparesLoadedRef.current = false
+    } finally {
       setDropdownLoading(false)
     }
-    run().catch(() => setDropdownLoading(false))
-  }, [])
+  }
 
   // ── Open add ─────────────────────────────────────────────────────
   const openAdd = async () => {
+    ensureSpares()
     setForm({ ...emptyForm, startdate: new Date().toISOString().split('T')[0] })
     setUploadFiles([])
     setFileInputKey(key => key + 1)
@@ -431,6 +456,7 @@ export default function Tasks() {
 
   // ── Open edit ─────────────────────────────────────────────────────
   const openEdit = async (t) => {
+    ensureSpares()
     setForm({
       ticket_id:   String(t.ticket_id   || ''),
       servicetype: t.servicetype        || '',

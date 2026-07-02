@@ -42,6 +42,15 @@ const DEFAULT_TICKET_REPORT_TERMS = `1. Work performed is based on information a
 3. Any further repair, replacement, or calibration work may require separate approval.`
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
+
+// Persist the list filters + scroll position so opening a ticket and coming
+// back (in-component or via a full remount) restores where the user left off.
+const TICKETS_FILTER_KEY = 'tickets:list-filters'
+const TICKETS_SCROLL_KEY = 'tickets:list-scroll'
+const readPersistedFilters = () => {
+  try { return JSON.parse(sessionStorage.getItem(TICKETS_FILTER_KEY) || '{}') || {} } catch { return {} }
+}
+const getListScrollEl = () => document.querySelector('.crm-content')
 const stripHtml = (value = '') => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const escapeHtml = (value = '') =>
   String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
@@ -469,21 +478,25 @@ const emptyProduct = { sku: '', item_description: '', serial_number: '', serial_
 export default function Tickets() {
   const { profile } = useAuth()
   const location = useLocation()
+  const persisted = useRef(readPersistedFilters()).current
   const [view, setView]             = useState('list')
-  const [tab, setTab]               = useState('open')
+  const [tab, setTab]               = useState(persisted.tab || 'open')
   const [tickets, setTickets]       = useState([])
   const [ticketContacts, setTicketContacts] = useState({})
   const [latestTicketTasks, setLatestTicketTasks] = useState({})
   const [total, setTotal]           = useState(0)
-  const [page, setPage]             = useState(1)
-  const [search, setSearch]         = useState('')
-  const [searchType, setSearchType] = useState('general')
-  const [priorityFilter, setPF]     = useState('')
-  const [assignedFilter, setAssignedFilter] = useState('')
-  const [monthFilter, setMonthFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [page, setPage]             = useState(persisted.page || 1)
+  const [search, setSearch]         = useState(persisted.search || '')
+  // Debounced copy of `search` used by the fetch, so typing doesn't fire a
+  // server query per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(persisted.search || '')
+  const [searchType, setSearchType] = useState(persisted.searchType || 'general')
+  const [priorityFilter, setPF]     = useState(persisted.priorityFilter || '')
+  const [assignedFilter, setAssignedFilter] = useState(persisted.assignedFilter || '')
+  const [monthFilter, setMonthFilter] = useState(persisted.monthFilter || '')
+  const [statusFilter, setStatusFilter] = useState(persisted.statusFilter || '')
   const [ticketSerialMatches, setTicketSerialMatches] = useState({})
-  const [showMoreFilters, setShowMoreFilters] = useState(false)
+  const [showMoreFilters, setShowMoreFilters] = useState(persisted.showMoreFilters || false)
   const [loading, setLoading]       = useState(false)
   const [form, setForm]             = useState(emptyForm)
   const [editId, setEditId]         = useState(null)
@@ -539,13 +552,23 @@ export default function Tickets() {
   const serialSearchTimers = useRef({})
   const quickSerialSearchId = useRef(0)
   const formDataLoadedRef = useRef(false)
+  const fetchSeq = useRef(0)
   const ticketMonths = useMemo(() => monthOptions(18), [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
 
   // ── Fetch list ────────────────────────────────────────────────────
   const fetchTickets = useCallback(async () => {
+    // Guard against out-of-order responses: only the latest request may
+    // update state, so a slow earlier query can't overwrite newer results.
+    const seq = ++fetchSeq.current
+    const stale = () => seq !== fetchSeq.current
     setLoading(true)
     setError('')
-    const term = search.trim()
+    const term = debouncedSearch.trim()
     const serialMatchMap = {}
 
     if (term && searchType === 'serial') {
@@ -562,6 +585,7 @@ export default function Tickets() {
           .limit(1000),
       ])
 
+      if (stale()) return
       const serialSearchError = productResult.error || ticketSerialResult.error
       if (serialSearchError) {
         setError(serialSearchError.message)
@@ -638,6 +662,7 @@ export default function Tickets() {
     q = q.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
     const { data, count, error: err } = await q
+    if (stale()) return
     if (!err) {
       const rows = data || []
       setTickets(rows)
@@ -658,35 +683,31 @@ export default function Tickets() {
         .map(row => Number(row.contact_person))
         .filter(id => Number.isFinite(id) && id > 0)
       )]
-      if (contactIds.length) {
-        const { data: contactRows } = await supabase
-          .from('contact')
-          .select('id, first_name, last_name')
-          .in('id', contactIds)
-        setTicketContacts(Object.fromEntries((contactRows || []).map(contact => [String(contact.id), contact])))
-      } else {
-        setTicketContacts({})
-      }
-
       const ticketIds = rows.map(row => row.id).filter(Boolean)
-      if (ticketIds.length) {
-        const { data: taskRows, error: taskErr } = await supabase
-          .from('task')
-          .select('id, ticket_id, servicetype, assigned_to, created_at, startdate')
-          .in('ticket_id', ticketIds)
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .limit(1000)
-        if (!taskErr) {
-          const latestByTicket = {}
-          ;(taskRows || []).forEach(task => {
-            const key = String(task.ticket_id)
-            if (!latestByTicket[key]) latestByTicket[key] = task
-          })
-          setLatestTicketTasks(latestByTicket)
-        } else {
-          setLatestTicketTasks({})
-        }
+      // Both enrichment lookups are independent — run them in parallel.
+      const [contactResult, taskResult] = await Promise.all([
+        contactIds.length
+          ? supabase.from('contact').select('id, first_name, last_name').in('id', contactIds)
+          : Promise.resolve({ data: [] }),
+        ticketIds.length
+          ? supabase
+              .from('task')
+              .select('id, ticket_id, servicetype, assigned_to, created_at, startdate')
+              .in('ticket_id', ticketIds)
+              .order('created_at', { ascending: false })
+              .order('id', { ascending: false })
+              .limit(1000)
+          : Promise.resolve({ data: [] }),
+      ])
+      if (stale()) return
+      setTicketContacts(Object.fromEntries((contactResult.data || []).map(contact => [String(contact.id), contact])))
+      if (!taskResult.error) {
+        const latestByTicket = {}
+        ;(taskResult.data || []).forEach(task => {
+          const key = String(task.ticket_id)
+          if (!latestByTicket[key]) latestByTicket[key] = task
+        })
+        setLatestTicketTasks(latestByTicket)
       } else {
         setLatestTicketTasks({})
       }
@@ -696,9 +717,33 @@ export default function Tickets() {
       setLatestTicketTasks({})
     }
     setLoading(false)
-  }, [search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
+  }, [debouncedSearch, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
 
   useEffect(() => { fetchTickets() }, [fetchTickets])
+
+  // Remember the active filters so returning to the list keeps them.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(TICKETS_FILTER_KEY, JSON.stringify({
+        tab, page, search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, showMoreFilters,
+      }))
+    } catch { /* sessionStorage unavailable — ignore */ }
+  }, [tab, page, search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, showMoreFilters])
+
+  // Restore the list scroll position once the list is shown again and loaded.
+  useEffect(() => {
+    if (view !== 'list' || loading) return
+    let raw = null
+    try { raw = sessionStorage.getItem(TICKETS_SCROLL_KEY) } catch { raw = null }
+    if (raw == null) return
+    const top = Number(raw)
+    try { sessionStorage.removeItem(TICKETS_SCROLL_KEY) } catch { /* ignore */ }
+    if (!Number.isFinite(top)) return
+    const el = getListScrollEl()
+    if (!el) return
+    const id = requestAnimationFrame(() => { el.scrollTop = top })
+    return () => cancelAnimationFrame(id)
+  }, [view, loading, tickets])
 
   useEffect(() => {
     const ticketId = location.state?.ticketId
@@ -862,6 +907,11 @@ export default function Tickets() {
 
   // ── Open detail ───────────────────────────────────────────────────
   const openDetail = async (t) => {
+    // Capture the list scroll position before leaving so Back can restore it.
+    const scrollEl = getListScrollEl()
+    if (scrollEl) {
+      try { sessionStorage.setItem(TICKETS_SCROLL_KEY, String(scrollEl.scrollTop)) } catch { /* ignore */ }
+    }
     const [prodR, contactR, taskR, onsiteR, rmaR, calibrationR, remarkR] = await Promise.all([
       supabase.from('ticket_product').select('*').eq('ticket_id', t.id).order('id'),
       t.contact_person ? supabase.from('contact').select('*').eq('id', t.contact_person).maybeSingle() : Promise.resolve({ data: null }),
