@@ -43,14 +43,17 @@ const DEFAULT_TICKET_REPORT_TERMS = `1. Work performed is based on information a
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
-// Persist the list filters + scroll position so opening a ticket and coming
-// back (in-component or via a full remount) restores where the user left off.
+// Persist the list filters + last-viewed ticket so opening a ticket and coming
+// back (in-component or via a full remount) restores where the user left off:
+// the same filters, the row scrolled back into view, and that row highlighted.
 const TICKETS_FILTER_KEY = 'tickets:list-filters'
-const TICKETS_SCROLL_KEY = 'tickets:list-scroll'
+const TICKETS_VIEWED_KEY = 'tickets:last-viewed'
 const readPersistedFilters = () => {
   try { return JSON.parse(sessionStorage.getItem(TICKETS_FILTER_KEY) || '{}') || {} } catch { return {} }
 }
-const getListScrollEl = () => document.querySelector('.crm-content')
+const readPersistedViewedId = () => {
+  try { return sessionStorage.getItem(TICKETS_VIEWED_KEY) || '' } catch { return '' }
+}
 const stripHtml = (value = '') => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const escapeHtml = (value = '') =>
   String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
@@ -480,6 +483,9 @@ export default function Tickets() {
   const location = useLocation()
   const persisted = useRef(readPersistedFilters()).current
   const [view, setView]             = useState('list')
+  // Ticket last opened from the list — used to scroll it back into view and
+  // highlight it when the user returns.
+  const [lastViewedId, setLastViewedId] = useState(readPersistedViewedId())
   const [tab, setTab]               = useState(persisted.tab || 'open')
   const [tickets, setTickets]       = useState([])
   const [ticketContacts, setTicketContacts] = useState({})
@@ -730,20 +736,17 @@ export default function Tickets() {
     } catch { /* sessionStorage unavailable — ignore */ }
   }, [tab, page, search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, showMoreFilters])
 
-  // Restore the list scroll position once the list is shown again and loaded.
+  // When returning to the list, scroll the last-viewed ticket's row back into
+  // view. Using scrollIntoView (rather than a saved pixel offset) reliably
+  // targets whatever element actually scrolls, including the mobile/PWA shell.
   useEffect(() => {
-    if (view !== 'list' || loading) return
-    let raw = null
-    try { raw = sessionStorage.getItem(TICKETS_SCROLL_KEY) } catch { raw = null }
-    if (raw == null) return
-    const top = Number(raw)
-    try { sessionStorage.removeItem(TICKETS_SCROLL_KEY) } catch { /* ignore */ }
-    if (!Number.isFinite(top)) return
-    const el = getListScrollEl()
-    if (!el) return
-    const id = requestAnimationFrame(() => { el.scrollTop = top })
-    return () => cancelAnimationFrame(id)
-  }, [view, loading, tickets])
+    if (view !== 'list' || loading || !lastViewedId) return
+    const raf = requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-ticket-row="${lastViewedId}"]`)
+      if (row) row.scrollIntoView({ block: 'center' })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [view, loading, tickets, lastViewedId])
 
   useEffect(() => {
     const ticketId = location.state?.ticketId
@@ -907,11 +910,10 @@ export default function Tickets() {
 
   // ── Open detail ───────────────────────────────────────────────────
   const openDetail = async (t) => {
-    // Capture the list scroll position before leaving so Back can restore it.
-    const scrollEl = getListScrollEl()
-    if (scrollEl) {
-      try { sessionStorage.setItem(TICKETS_SCROLL_KEY, String(scrollEl.scrollTop)) } catch { /* ignore */ }
-    }
+    // Remember which ticket was opened so Back can scroll it into view and
+    // highlight it.
+    setLastViewedId(String(t.id))
+    try { sessionStorage.setItem(TICKETS_VIEWED_KEY, String(t.id)) } catch { /* ignore */ }
     const [prodR, contactR, taskR, onsiteR, rmaR, calibrationR, remarkR] = await Promise.all([
       supabase.from('ticket_product').select('*').eq('ticket_id', t.id).order('id'),
       t.contact_person ? supabase.from('contact').select('*').eq('id', t.contact_person).maybeSingle() : Promise.resolve({ data: null }),
@@ -1523,6 +1525,7 @@ export default function Tickets() {
                 return (
                   <tr
                     key={t.id}
+                    data-ticket-row={t.id}
                     onClick={() => openDetail(t)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
@@ -1533,7 +1536,11 @@ export default function Tickets() {
                     tabIndex={0}
                     role="button"
                     aria-label={`View TID${t.ticket_id}`}
-                    className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer focus:outline-none focus:bg-gray-50"
+                    className={`border-b border-gray-100 cursor-pointer focus:outline-none focus:bg-gray-50 ${
+                      String(t.id) === String(lastViewedId)
+                        ? 'bg-amber-50 ring-1 ring-inset ring-amber-300 hover:bg-amber-100'
+                        : 'hover:bg-gray-50'
+                    }`}
                   >
                     <td className="px-4 py-3 font-semibold text-red-600">TID{t.ticket_id}</td>
                     <td className="px-4 py-3 text-gray-600">{formatDate(t.date)}</td>
