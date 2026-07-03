@@ -43,6 +43,19 @@ const DEFAULT_TICKET_REPORT_TERMS = `1. Work performed is based on information a
 
 const splitCsv = (value) => String(value || '').split(',').map(v => v.trim()).filter(Boolean)
 
+// Returns the date `workingDays` business days after `fromDate`, skipping
+// Saturdays and Sundays. Used to default a new ticket's due date.
+const addWorkingDays = (fromDate, workingDays) => {
+  const date = new Date(fromDate)
+  let added = 0
+  while (added < workingDays) {
+    date.setDate(date.getDate() + 1)
+    const day = date.getDay() // 0 = Sunday, 6 = Saturday
+    if (day !== 0 && day !== 6) added += 1
+  }
+  return date.toISOString().split('T')[0]
+}
+
 // Persist the list filters + last-viewed ticket so opening a ticket and coming
 // back (in-component or via a full remount) restores where the user left off:
 // the same filters, the row scrolled back into view, and that row highlighted.
@@ -863,7 +876,8 @@ export default function Tickets() {
   const openAdd = async () => {
     await ensureFormData()
     const { display } = await getNextTID()
-    setForm({ ...emptyForm, ticket_number: display, date: new Date().toISOString().split('T')[0] })
+    const today = new Date().toISOString().split('T')[0]
+    setForm({ ...emptyForm, ticket_number: display, date: today, due_date: addWorkingDays(today, 3) })
     setProducts([{ ...emptyProduct }])
     setContacts([])
     setEditId(null)
