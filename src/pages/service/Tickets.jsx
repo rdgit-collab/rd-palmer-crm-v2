@@ -567,6 +567,9 @@ export default function Tickets() {
 
   // Track original assigned_to to detect changes during edit
   const origAssignedTo = useRef(null)
+  // Track whether the ticket was already completed when editing, so re-saving an
+  // already-completed ticket preserves its original completion timestamp.
+  const origIsCompleted = useRef(0)
   const serialSearchIds = useRef({})
   const serialSearchTimers = useRef({})
   const quickSerialSearchId = useRef(0)
@@ -917,6 +920,7 @@ export default function Tickets() {
       : [{ ...emptyProduct }]
     setProducts(productRows)
     origAssignedTo.current = String(t.assigned_to || '')
+    origIsCompleted.current = (t.is_completed == 1 || t.status === 'Completed') ? 1 : 0
     setEditId(t.id)
     setError('')
     setView('form')
@@ -979,6 +983,15 @@ export default function Tickets() {
       assigned_to:    form.assigned_to ? parseInt(form.assigned_to) : null,
       remark:         form.remark,
       user_id:        getLegacyUserId(profile),
+    }
+
+    // Completion timestamp: stamp now on a fresh completion, clear on reopen,
+    // and leave untouched when re-saving an already-completed ticket so the
+    // original completion time is preserved for turnaround reporting.
+    if (form.status === 'Completed') {
+      if (!editId || origIsCompleted.current !== 1) payload.completed_at = new Date().toISOString()
+    } else {
+      payload.completed_at = null
     }
 
     let ticketId = editId
@@ -1054,7 +1067,7 @@ export default function Tickets() {
 
   // ── Mark complete ─────────────────────────────────────────────────
   const markComplete = async (id) => {
-    await supabase.from('ticket').update({ is_completed: 1, status: 'Completed' }).eq('id', id)
+    await supabase.from('ticket').update({ is_completed: 1, status: 'Completed', completed_at: new Date().toISOString() }).eq('id', id)
     logActivity({
       module: 'tickets',
       action: 'complete',
@@ -1068,7 +1081,7 @@ export default function Tickets() {
 
   // ── Undo complete (reopen) ────────────────────────────────────────
   const reopenTicket = async (id) => {
-    await supabase.from('ticket').update({ is_completed: 0, status: 'Open' }).eq('id', id)
+    await supabase.from('ticket').update({ is_completed: 0, status: 'Open', completed_at: null }).eq('id', id)
     logActivity({
       module: 'tickets',
       action: 'reopen',

@@ -18,6 +18,16 @@ export async function fetchAllRows(tableName, columns = '*', orderField = 'id', 
         query = query.eq(column, value)
       })
     }
+    if (options.gte) {
+      Object.entries(options.gte).forEach(([column, value]) => {
+        query = query.gte(column, value)
+      })
+    }
+    if (options.lte) {
+      Object.entries(options.lte).forEach(([column, value]) => {
+        query = query.lte(column, value)
+      })
+    }
 
     const { data, error } = await query
 

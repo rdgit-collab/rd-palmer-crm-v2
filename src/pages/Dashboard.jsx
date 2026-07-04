@@ -7,6 +7,7 @@ import {
   Download,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import ServiceEfficiency from '../components/ServiceEfficiency'
 import { useAuth } from '../contexts/AuthContext'
 import { getLegacyUserId } from '../lib/legacyUsers'
 import { displayText } from '../lib/displayText'
@@ -625,6 +626,8 @@ function ServiceDashboard({ firstName }) {
           </div>
         )}
       </div>
+
+      <ServiceEfficiency month={staffMonth} monthLabel={selectedStaffMonthLabel} staffRows={staffRows} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border border-[#E0E0E0] rounded-xl p-5">
