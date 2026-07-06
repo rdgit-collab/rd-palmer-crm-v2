@@ -520,11 +520,12 @@ export default function Tasks() {
       assigned_to:  form.assigned_to ? parseInt(form.assigned_to) : null,
       is_completed: 0,
       is_archived:  0,
-      user_id:      getLegacyUserId(profile),
       file:         filePath,
     }
 
     if (editId) {
+      // Do not touch user_id on edit — it records the original creator and must
+      // stay as-is even when a different user edits the task.
       const { error: err } = await supabase.from('task').update(payload).eq('id', editId)
       if (err) {
         if (uploadedPaths.length) supabase.storage.from('crm-uploads').remove(uploadedPaths).catch(() => {})
@@ -533,7 +534,8 @@ export default function Tasks() {
         return
       }
     } else {
-      const { error: err } = await supabase.from('task').insert([payload])
+      // Stamp the creator only when the task is first created.
+      const { error: err } = await supabase.from('task').insert([{ ...payload, user_id: getLegacyUserId(profile) }])
       if (err) {
         if (uploadedPaths.length) supabase.storage.from('crm-uploads').remove(uploadedPaths).catch(() => {})
         setError(err.message)

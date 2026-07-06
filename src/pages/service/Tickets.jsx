@@ -512,6 +512,7 @@ export default function Tickets() {
   const [searchType, setSearchType] = useState(persisted.searchType || 'general')
   const [priorityFilter, setPF]     = useState(persisted.priorityFilter || '')
   const [assignedFilter, setAssignedFilter] = useState(persisted.assignedFilter || '')
+  const [creatorFilter, setCreatorFilter] = useState(persisted.creatorFilter || '')
   const [monthFilter, setMonthFilter] = useState(persisted.monthFilter || '')
   const [statusFilter, setStatusFilter] = useState(persisted.statusFilter || '')
   const [ticketSerialMatches, setTicketSerialMatches] = useState({})
@@ -672,6 +673,7 @@ export default function Tickets() {
     }
     if (priorityFilter) q = q.eq('priority', priorityFilter)
     if (assignedFilter) q = q.eq('assigned_to', parseInt(assignedFilter))
+    if (creatorFilter) q = q.eq('user_id', parseInt(creatorFilter))
     if (statusFilter === 'Overdue') {
       q = q.lt('due_date', new Date().toISOString().split('T')[0])
     } else if (statusFilter) {
@@ -739,7 +741,7 @@ export default function Tickets() {
       setLatestTicketTasks({})
     }
     setLoading(false)
-  }, [debouncedSearch, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, page, tab])
+  }, [debouncedSearch, searchType, priorityFilter, assignedFilter, creatorFilter, monthFilter, statusFilter, page, tab])
 
   useEffect(() => { fetchTickets() }, [fetchTickets])
 
@@ -747,10 +749,10 @@ export default function Tickets() {
   useEffect(() => {
     try {
       sessionStorage.setItem(TICKETS_FILTER_KEY, JSON.stringify({
-        tab, page, search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, showMoreFilters,
+        tab, page, search, searchType, priorityFilter, assignedFilter, creatorFilter, monthFilter, statusFilter, showMoreFilters,
       }))
     } catch { /* sessionStorage unavailable — ignore */ }
-  }, [tab, page, search, searchType, priorityFilter, assignedFilter, monthFilter, statusFilter, showMoreFilters])
+  }, [tab, page, search, searchType, priorityFilter, assignedFilter, creatorFilter, monthFilter, statusFilter, showMoreFilters])
 
   // When returning to the list, scroll the last-viewed ticket's row back into
   // view. Using scrollIntoView (rather than a saved pixel offset) reliably
@@ -1392,16 +1394,20 @@ export default function Tickets() {
     name: item.sku,
     description: stripHtml(item.description || ''),
   }))
+  const creatorUsers = allUsers.length ? allUsers : users
   const assignedFilterLabel = users.find(user => String(user.id) === String(assignedFilter))
+  const creatorFilterLabel = creatorUsers.find(user => String(user.id) === String(creatorFilter))
   const monthFilterLabel = ticketMonths.find(option => option.value === monthFilter)?.label
   const activeFilterChips = [
     assignedFilter && { key: 'assigned', label: `Assigned: ${[assignedFilterLabel?.first_name, assignedFilterLabel?.last_name].filter(Boolean).join(' ') || assignedFilter}` },
+    creatorFilter && { key: 'creator', label: `Created by: ${[creatorFilterLabel?.first_name, creatorFilterLabel?.last_name].filter(Boolean).join(' ') || creatorFilter}` },
     monthFilter && { key: 'month', label: `Month: ${monthFilterLabel || monthFilter}` },
     priorityFilter && { key: 'priority', label: `Priority: ${priorityFilter}` },
     statusFilter && { key: 'status', label: `Status: ${statusFilter}` },
   ].filter(Boolean)
   const clearAdvancedFilters = () => {
     setAssignedFilter('')
+    setCreatorFilter('')
     setMonthFilter('')
     setPF('')
     setStatusFilter('')
@@ -1488,6 +1494,14 @@ export default function Tickets() {
                 {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
               </select>
               <select
+                value={creatorFilter}
+                onChange={e => { setCreatorFilter(e.target.value); setPage(1) }}
+                className="border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+              >
+                <option value="">All Creators</option>
+                {creatorUsers.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+              </select>
+              <select
                 value={monthFilter}
                 onChange={e => { setMonthFilter(e.target.value); setPage(1) }}
                 className="border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-red-400"
@@ -1570,7 +1584,12 @@ export default function Tickets() {
                     }`}
                   >
                     <td className="px-4 py-3 font-semibold text-red-600">TID{t.ticket_id}</td>
-                    <td className="px-4 py-3 text-gray-600">{formatDate(t.date)}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <div>{formatDate(t.date)}</div>
+                      {t.user_id && (
+                        <div className="mt-0.5 text-xs text-gray-400">By {formatUserName(creatorUsers, t.user_id)}</div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
                       <div>{t.company_name || '—'}</div>
                       {serialMatch?.serials?.length > 0 && (
