@@ -8,9 +8,17 @@ import { formatDate } from '../../lib/dateFormat'
 import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
-import { Plus, Search, Edit2, Trash2, X, Printer } from 'lucide-react'
+import PdfPreviewModal from '../../components/PdfPreviewModal'
+import { Plus, Search, Edit2, Trash2, X, Printer, Eye } from 'lucide-react'
 
 const PAGE_SIZE = 30
+
+// Remember the calibration row last opened so returning to the list scrolls it
+// back into view and highlights it (mirrors the Tickets list behaviour).
+const CALIB_VIEWED_KEY = 'calibration:last-viewed'
+const readPersistedViewedId = () => {
+  try { return sessionStorage.getItem(CALIB_VIEWED_KEY) || '' } catch { return '' }
+}
 
 const SEARCH_FIELDS = [
   { value: 'certificate_number', label: 'Certificate No.', placeholder: 'Search certificate number...' },
@@ -158,6 +166,8 @@ export default function Calibration() {
   const [form, setForm]             = useState(emptyForm)
   const [editId, setEditId]         = useState(null)
   const [detail, setDetail]         = useState(null)
+  const [lastViewedId, setLastViewedId] = useState(readPersistedViewedId())
+  const [previewHtml, setPreviewHtml] = useState(null)
   const [deleteId, setDeleteId]     = useState(null)
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
@@ -433,10 +443,21 @@ export default function Calibration() {
   }
 
   const openDetail = async (r) => {
+    setLastViewedId(String(r.id))
+    try { sessionStorage.setItem(CALIB_VIEWED_KEY, String(r.id)) } catch { /* sessionStorage unavailable — ignore */ }
     setDetail(r)
     setDetailChecklist(await loadChecklistForCalibration(r.id))
     setView('detail')
   }
+
+  // On returning to the list, scroll the last-viewed row back into view.
+  useEffect(() => {
+    if (view !== 'list' || loading || !lastViewedId) return
+    requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-calib-row="${lastViewedId}"]`)
+      if (row) row.scrollIntoView({ block: 'center' })
+    })
+  }, [view, loading, lastViewedId, page])
 
   const updateChecklistRow = (index, patch) => {
     setChecklistRows(items => items.map((item, i) => i === index ? { ...item, ...patch } : item))
@@ -714,6 +735,7 @@ export default function Calibration() {
             : pagedRows.map(r => (
               <tr
                 key={r.id}
+                data-calib-row={r.id}
                 onClick={() => openDetail(r)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -724,7 +746,11 @@ export default function Calibration() {
                 tabIndex={0}
                 role="button"
                 aria-label={`View calibration ${r.certificate_number || ''}`}
-                className="border-b border-gray-100 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none cursor-pointer"
+                className={`border-b border-gray-100 focus:outline-none cursor-pointer ${
+                  String(r.id) === String(lastViewedId)
+                    ? 'bg-amber-50 ring-1 ring-inset ring-amber-300 hover:bg-amber-100'
+                    : 'hover:bg-gray-50 focus:bg-gray-50'
+                }`}
               >
                 <td className="px-4 py-3 font-semibold text-red-600">{r.certificate_number || '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{getTicketLabel(r.ticket_id)}</td>
@@ -912,6 +938,7 @@ export default function Calibration() {
           <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status || '-'}</span>
         </div>
         <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+          <button onClick={() => setPreviewHtml(calibrationReportHtml())} className="flex items-center justify-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50 whitespace-nowrap"><Eye size={14}/> Preview</button>
           <button onClick={printCalibrationReport} className="flex items-center justify-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50 whitespace-nowrap"><Printer size={14}/> Print Report</button>
           <button onClick={() => openEdit(detail)} className="flex items-center justify-center gap-1.5 border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50 whitespace-nowrap"><Edit2 size={14}/> Edit</button>
         </div>
@@ -923,7 +950,10 @@ export default function Calibration() {
           <div><span className="font-medium text-gray-500">Serial Number: </span>{detail.serial_number || '-'}</div>
           <div><span className="font-medium text-gray-500">Std. Number: </span>{detail.snumber || '-'}</div>
           <div><span className="font-medium text-gray-500">Conducted By: </span>{getUserName(detail.conduct_by)}</div>
-          <div><span className="font-medium text-gray-500">Status: </span><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status || '-'}</span></div>
+          <div>
+            <span className="font-medium text-gray-500">Status: </span><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status || '-'}</span>
+            <div className="mt-1 text-xs text-gray-400">Date: {formatDate(detail.created_at, '-')}</div>
+          </div>
           <div><span className="font-medium text-gray-500">Certificate / Document: </span>{detail.file ? <SignedFileLink path={detail.file} label="Open file" className="text-red-600 font-semibold hover:underline" /> : '-'}</div>
         </div>
 
@@ -955,6 +985,13 @@ export default function Calibration() {
         </div>
         {detail.remark && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Remark</p><p className="whitespace-pre-wrap">{detail.remark}</p></div>}
       </div>
+      {previewHtml && (
+        <PdfPreviewModal
+          html={previewHtml}
+          title={`Preview — ${detail.certificate_number || 'Calibration'}`}
+          onClose={() => setPreviewHtml(null)}
+        />
+      )}
     </div>
   )
 
