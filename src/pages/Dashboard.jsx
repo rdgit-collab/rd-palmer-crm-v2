@@ -11,7 +11,7 @@ import ServiceEfficiency from '../components/ServiceEfficiency'
 import { useAuth } from '../contexts/AuthContext'
 import { getLegacyUserId } from '../lib/legacyUsers'
 import { displayText } from '../lib/displayText'
-import { isSalesRole, isServiceRole } from '../lib/roles'
+import { isSalesRole, isSalesLikeRole, isServiceRole } from '../lib/roles'
 
 // ── Shared loading spinner ────────────────────────────────────────
 function DashboardSpinner({ label }) {
@@ -730,7 +730,7 @@ export default function Dashboard() {
   const { profile } = useAuth()
   const firstName = profile?.first_name || 'there'
 
-  if (isSalesRole(profile?.role_id)) return <SalesDashboard firstName={firstName} />
+  if (isSalesLikeRole(profile?.role_id)) return <SalesDashboard firstName={firstName} />
   if (isServiceRole(profile?.role_id)) return <ServiceDashboard firstName={firstName} />
   return <AdminDashboard firstName={firstName} />
 }
