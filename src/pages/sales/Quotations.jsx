@@ -213,12 +213,6 @@ function catalogueItemSku(item) {
   return String(item?.sku || item?.name || '').trim()
 }
 
-function salesDocumentSkuTitle(item) {
-  const sku = String(item?.sku || '').trim()
-  const name = String(item?.item || '').trim()
-  return sku || name
-}
-
 function addressLines(customer) {
   if (!customer) return []
   return [
@@ -250,7 +244,6 @@ function paymentInvoiceLabel(type, quotationNumber) {
 
 const SALES_PRINT_LINES_PER_PAGE = 32
 const SALES_PRINT_DESC_CHARS = 64
-const SALES_PRINT_TITLE_CHARS = 54
 // The notes/terms block renders full page width in a smaller font, so it wraps
 // at far more characters per line than the narrow item description column.
 const SALES_PRINT_TERMS_CHARS = 118
@@ -285,10 +278,6 @@ function salesDocumentItemCode(item) {
   return String(item?.sku || '').trim()
 }
 
-function salesDocumentDescriptionTitle(item) {
-  return String(item?.item || item?.name || '').trim() || salesDocumentSkuTitle(item)
-}
-
 function paginateSalesDocumentItems(items, getRate, getAmount) {
   const pages = [[]]
   let usedLines = 0
@@ -298,9 +287,9 @@ function paginateSalesDocumentItems(items, getRate, getAmount) {
   }
 
   items.forEach((item, idx) => {
-    const titleLines = wrapPrintableLine(salesDocumentDescriptionTitle(item), SALES_PRINT_TITLE_CHARS)
-      .map(line => ({ ...line, title: true }))
-    const lines = [...titleLines, ...printableLineObjects(item.description || '')]
+    // The printed Description column shows only the description text — the item
+    // name is intentionally omitted; the item is identified by SKU (Item Code).
+    const lines = printableLineObjects(item.description || '')
     if (!lines.length) lines.push({ text: '-', title: false })
 
     let cursor = 0
