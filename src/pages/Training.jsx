@@ -452,7 +452,14 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
                       <div className="font-medium text-gray-700">{r.invited_by_name_snapshot || '—'}</div>
                       {r.referral_code && <div className="text-[11px] text-gray-400 font-mono">{r.referral_code}</div>}
                     </td>
-                    <td className="px-4 py-3">{r.hrd_claim ? <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold">HRD</span> : <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">No</span>}</td>
+                    <td className="px-4 py-3">
+                      {r.hrd_claim ? (
+                        <div>
+                          <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold">HRD</span>
+                          <div className="text-[11px] text-gray-400 mt-1 break-all">{r.hr_email || 'No HR email'}</div>
+                        </div>
+                      ) : <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">No</span>}
+                    </td>
                     <td className="px-4 py-3"><StatusTracks reg={r} onToggle={toggleStatus} readOnly={!canManageTraining} /></td>
                     {canManageTraining && (
                       <td className="px-4 py-3 text-right">
@@ -749,13 +756,13 @@ function SessionModal({ session, profile, activeUsers = [], onClose }) {
 }
 
 function AddAttendeeModal({ sessionId, onClose }) {
-  const [f, setF] = useState({ participant_name: '', company: '', email: '', phone: '', nric: '', existing_user: false, hrd_claim: false })
+  const [f, setF] = useState({ participant_name: '', company: '', email: '', phone: '', nric: '', existing_user: false, hrd_claim: false, hr_email: '' })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }))
   const save = async () => {
     if (!f.participant_name.trim()) { alert('Name required'); return }
     setSaving(true)
-    const { error } = await supabase.from('training_registrations').insert({ session_id: sessionId, source: 'manual', ...f, participant_name: f.participant_name.trim() })
+    const { error } = await supabase.from('training_registrations').insert({ session_id: sessionId, source: 'manual', ...f, participant_name: f.participant_name.trim(), hr_email: f.hrd_claim ? f.hr_email.trim() : null })
     setSaving(false)
     if (error) { alert(error.message); return }
     onClose(true)
@@ -777,6 +784,7 @@ function AddAttendeeModal({ sessionId, onClose }) {
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.existing_user} onChange={e => set('existing_user', e.target.checked)} /> Existing EML user</label>
         <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.hrd_claim} onChange={e => set('hrd_claim', e.target.checked)} /> Claiming HRD</label>
       </div>
+      {f.hrd_claim && <Field label="Company HR email / person-in-charge for HRD grant"><input className={inputCls} value={f.hr_email} onChange={e => set('hr_email', e.target.value)} placeholder="hr@company.com" /></Field>}
     </Modal>
   )
 }
