@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Plus, ArrowRight, ArrowLeft, Copy, Check, X, Calendar, Clock, MapPin,
   Users, GraduationCap, FileText, Upload, Trash2, Link2, Info, CreditCard, Sparkles,
+  Eye, Mail, Phone, Building2, User,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -262,6 +263,7 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
   const [tab, setTab] = useState('attendees')
   const [editing, setEditing] = useState(false)
   const [addingAtt, setAddingAtt] = useState(false)
+  const [detailRegId, setDetailRegId] = useState(null)
   const [deleteReg, setDeleteReg] = useState(null)
   const [deletingReg, setDeletingReg] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -289,6 +291,8 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
 
   if (!session) return <div className="p-6 text-sm text-gray-400">Loading…</div>
   const url = signupUrl(session.slug, canManageTraining ? '' : referralCode)
+  // Resolve the open attendee from live state so status toggles reflect instantly.
+  const detailReg = detailRegId ? regs.find(x => x.id === detailRegId) : null
 
   const toggleStatus = async (reg, key) => {
     const next = reg[key] ? null : new Date().toISOString()
@@ -416,62 +420,65 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
         <>
           <div className="flex items-center mb-3">
             <p className="text-xs text-gray-400 flex items-center gap-1.5">
-              <Info size={13} /> {canManageTraining ? 'Click a milestone to toggle it — the date is recorded automatically.' : 'Participant registrations are view-only for Sales users.'}
+              <Info size={13} /> {canManageTraining ? 'Click View on any attendee to see full details and update payment / HRD status.' : 'Participant registrations are view-only for Sales users.'}
             </p>
             {canManageTraining && <button onClick={() => setAddingAtt(true)} className="ml-auto inline-flex items-center gap-1.5 border border-gray-200 hover:bg-gray-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700"><Plus size={13} /> Add attendee</button>}
           </div>
           <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
-            <table className="w-full text-sm min-w-[900px]">
+            <table className="w-full text-sm min-w-[720px]">
               <thead>
-                <tr className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-400">
+                <tr className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-400 border-b border-gray-200">
                   <th className="px-4 py-3 font-semibold">Participant</th>
-                  <th className="px-4 py-3 font-semibold">Company</th>
                   <th className="px-4 py-3 font-semibold">Contact</th>
-                  <th className="px-4 py-3 font-semibold">Invited by</th>
                   <th className="px-4 py-3 font-semibold">HRD</th>
-                  <th className="px-4 py-3 font-semibold min-w-[360px]">Customer status</th>
-                  {canManageTraining && <th className="px-4 py-3 font-semibold text-right">Action</th>}
+                  <th className="px-4 py-3 font-semibold">Progress</th>
+                  <th className="px-4 py-3 font-semibold text-right">Details</th>
                 </tr>
               </thead>
               <tbody>
-                {regs.length === 0 && <tr><td colSpan={canManageTraining ? 7 : 6} className="px-4 py-10 text-center text-gray-400">No registrations yet. Share the signup link above.</td></tr>}
+                {regs.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">No registrations yet. Share the signup link above.</td></tr>}
                 {regs.map(r => (
-                  <tr key={r.id} className="border-t border-gray-100">
+                  <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50/60 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 text-white flex items-center justify-center text-xs font-bold shrink-0">{initials(r.participant_name)}</div>
-                        <div>
-                          <div className="font-medium text-gray-900">{r.participant_name}</div>
-                          <div className="text-[11px] text-gray-400">{r.nric || '—'} · {r.existing_user ? 'Existing user' : 'New user'}</div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 truncate">{r.participant_name || '—'}</div>
+                          <div className="text-[11px] text-gray-400 truncate">{r.company || 'No company'}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">{r.company || '—'}<div className="text-[11px] text-gray-400">{r.industry || ''}</div></td>
-                    <td className="px-4 py-3">{r.email || '—'}<div className="text-xs text-gray-400">{r.phone || ''}</div></td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-gray-700">{r.invited_by_name_snapshot || '—'}</div>
-                      {r.referral_code && <div className="text-[11px] text-gray-400 font-mono">{r.referral_code}</div>}
+                      <div className="text-gray-700 truncate max-w-[220px]">{r.email || '—'}</div>
+                      <div className="text-[11px] text-gray-400">{r.phone || ''}</div>
                     </td>
                     <td className="px-4 py-3">
-                      {r.hrd_claim ? (
-                        <div>
-                          <span className="rounded bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-semibold">HRD</span>
-                          <div className="text-[11px] text-gray-400 mt-1 break-all">{r.hr_email || 'No HR email'}</div>
-                        </div>
-                      ) : <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">No</span>}
+                      {r.hrd_claim
+                        ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-semibold"><Sparkles size={11} /> HRD</span>
+                        : <span className="rounded-full bg-gray-100 text-gray-500 px-2 py-0.5 text-[11px]">No</span>}
                     </td>
-                    <td className="px-4 py-3"><StatusTracks reg={r} onToggle={toggleStatus} readOnly={!canManageTraining} /></td>
-                    {canManageTraining && (
-                      <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3"><StatusSummary reg={r} /></td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setDeleteReg(r)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-100 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                          onClick={() => setDetailRegId(r.id)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-white hover:border-gray-300"
                         >
-                          <Trash2 size={13} /> Delete
+                          <Eye size={13} /> View
                         </button>
-                      </td>
-                    )}
+                        {canManageTraining && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteReg(r)}
+                            title="Delete participant"
+                            className="inline-flex items-center justify-center rounded-lg border border-red-100 p-1.5 text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -531,6 +538,15 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
         </div>
       )}
 
+      {detailReg && (
+        <AttendeeDetailModal
+          reg={detailReg}
+          canManage={canManageTraining}
+          onToggle={toggleStatus}
+          onClose={() => setDetailRegId(null)}
+          onDelete={canManageTraining ? () => { setDeleteReg(detailReg); setDetailRegId(null) } : null}
+        />
+      )}
       {canManageTraining && editing && <SessionModal session={{ ...session, trainerIds: trainers.map(t => t.user_id) }} profile={profile} activeUsers={activeUsers} onClose={saved => { setEditing(false); if (saved) load() }} />}
       {canManageTraining && addingAtt && <AddAttendeeModal sessionId={sessionId} onClose={saved => { setAddingAtt(false); if (saved) load() }} />}
       {canManageTraining && deleteReg && (
@@ -598,6 +614,75 @@ function StatusTracks({ reg, onToggle, readOnly = false }) {
         )
       })}
     </div>
+  )
+}
+
+// Compact at-a-glance progress for the attendee table: one row per status group
+// with a filled pill per completed milestone and an n/total count.
+function StatusSummary({ reg }) {
+  return (
+    <div className="space-y-1.5">
+      {STATUS_GROUPS.map(g => {
+        const dim = g.tone === 'indigo' && !reg.hrd_claim
+        const green = g.tone === 'green'
+        const done = g.steps.filter(s => reg[s.key]).length
+        return (
+          <div key={g.label} className={`flex items-center gap-2 ${dim ? 'opacity-40' : ''}`}>
+            <span className="w-16 shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">{g.label}</span>
+            <div className="flex gap-1">
+              {g.steps.map(s => (
+                <span key={s.key} title={`${s.label}${reg[s.key] ? ` · ${fmtShort(reg[s.key])}` : ''}`}
+                  className={`h-2 w-5 rounded-full ${reg[s.key] ? (green ? 'bg-green-500' : 'bg-indigo-500') : 'bg-gray-200'}`} />
+              ))}
+            </div>
+            <span className="text-[10px] font-semibold text-gray-400">{done}/{g.steps.length}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Full attendee detail in a modal, opened from the table's View button. Managers
+// can toggle payment / HRD milestones here; viewers see them read-only.
+function AttendeeDetailModal({ reg, canManage, onToggle, onClose, onDelete }) {
+  const DetailRow = ({ icon: Icon, label, value, mono }) => (
+    <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0">
+      <Icon size={15} className="text-gray-400 mt-0.5 shrink-0" />
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</div>
+        <div className={`text-sm text-gray-800 break-words ${mono ? 'font-mono' : ''}`}>{value || '—'}</div>
+      </div>
+    </div>
+  )
+  return (
+    <Modal
+      title={reg.participant_name || 'Attendee'}
+      subtitle={reg.company || 'No company'}
+      onClose={onClose}
+      footer={<>
+        {onDelete && <button onClick={onDelete} className="mr-auto inline-flex items-center gap-1.5 border border-red-100 text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg text-sm font-medium"><Trash2 size={14} /> Delete</button>}
+        <button onClick={onClose} className="border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium text-gray-700">Close</button>
+      </>}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+        <DetailRow icon={User} label="Participant" value={`${reg.participant_name || '—'}${reg.existing_user ? ' · Existing user' : ' · New user'}`} />
+        <DetailRow icon={CreditCard} label="NRIC" value={reg.nric} />
+        <DetailRow icon={Building2} label="Company" value={reg.company} />
+        <DetailRow icon={Building2} label="Industry" value={reg.industry} />
+        <DetailRow icon={Mail} label="Email" value={reg.email} />
+        <DetailRow icon={Phone} label="Phone" value={reg.phone} />
+        <DetailRow icon={Users} label="Invited by" value={reg.invited_by_name_snapshot} />
+        <DetailRow icon={Link2} label="Referral code" value={reg.referral_code} mono />
+        <DetailRow icon={Sparkles} label="HRD claim" value={reg.hrd_claim ? 'Yes' : 'No'} />
+        {reg.hrd_claim && <DetailRow icon={Mail} label="HR email" value={reg.hr_email} />}
+      </div>
+      <div className="mt-5">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Customer status</div>
+        {canManage && <p className="text-[11px] text-gray-400 mb-2.5 flex items-center gap-1.5"><Info size={12} /> Click a milestone to toggle it — the date is recorded automatically.</p>}
+        <StatusTracks reg={reg} onToggle={onToggle} readOnly={!canManage} />
+      </div>
+    </Modal>
   )
 }
 
