@@ -107,6 +107,17 @@ export default function RolePermissionsPanel() {
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-cyan-500 inline-block" />
+          <h3 className="font-semibold text-gray-800 text-sm">Water Dep Role</h3>
+          <span className="text-xs text-gray-400 ml-1">- sales modules shared across the Water Dep team</span>
+        </div>
+        <div>
+          {SALES_MODULES.map(m => <ToggleRow key={m.module} roleId={5} module={m.module} label={m.label} />)}
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
           <h3 className="font-semibold text-gray-800 text-sm">Service Role</h3>
           <span className="text-xs text-gray-400 ml-1">- control what Service staff can access</span>

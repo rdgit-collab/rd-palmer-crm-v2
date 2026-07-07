@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { getLegacyUserId, getUserName } from '../../lib/legacyUsers'
+import { getLegacyUserId, getUserName, fetchRoleLegacyUserIds } from '../../lib/legacyUsers'
 import { notifyUser } from '../../lib/notifyUser'
 import { logActivity } from '../../lib/activityLog'
 import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
-import { hasAdminAccess, isSalesRole } from '../../lib/roles'
+import { hasAdminAccess, isSalesRole, isWaterRole, ROLE_WATER } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import {
   useAccountTypes,
@@ -128,6 +128,11 @@ function LeadDetail({ leadId, onBack, onEdit }) {
     let leadQuery = supabase.from('sales_lead').select('*').eq('id', leadId)
     if (isSalesRole(profile?.role_id)) {
       leadQuery = leadQuery.eq('assigned_to', getLegacyUserId(profile))
+    } else if (isWaterRole(profile?.role_id)) {
+      // Water Dep members may open any lead assigned to a teammate, not the whole
+      // company. Resolve the team's legacy ids and scope the lookup to them.
+      const teamIds = await fetchRoleLegacyUserIds(supabase, ROLE_WATER)
+      leadQuery = leadQuery.in('assigned_to', teamIds.length ? teamIds : [-1])
     }
     const [{ data: l }, { data: act }] = await Promise.all([
       leadQuery.maybeSingle(),
@@ -681,7 +686,13 @@ function LeadForm({ lead, onSave, onCancel }) {
   const { profile } = useAuth()
   const isEdit = !!lead
   const isSalesRestricted = isSalesRole(profile?.role_id)
+  const isWater = isWaterRole(profile?.role_id)
   const currentLegacyUserId = getLegacyUserId(profile)
+  const [waterTeamIds, setWaterTeamIds] = useState([])
+  useEffect(() => {
+    if (!isWater) return
+    fetchRoleLegacyUserIds(supabase, ROLE_WATER).then(setWaterTeamIds)
+  }, [isWater])
   const [leadSources, setLeadSources] = useState([])
   const [stages, setStages] = useState([])
   const [users, setUsers] = useState([])
@@ -1272,7 +1283,12 @@ function LeadForm({ lead, onSave, onCancel }) {
           <label className={labelCls}>Assigned To</label>
           <select className={inputCls} value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)} disabled={isSalesRestricted}>
             <option value="">Please Select</option>
-            {(isSalesRestricted ? users.filter(u => String(u.id) === String(currentLegacyUserId)) : users).map(u => (
+            {(isSalesRestricted
+              ? users.filter(u => String(u.id) === String(currentLegacyUserId))
+              : isWater
+              ? users.filter(u => waterTeamIds.map(String).includes(String(u.id)))
+              : users
+            ).map(u => (
               <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>
             ))}
           </select>
@@ -1316,6 +1332,14 @@ export default function Leads() {
   const stagesQuery = useStages()
   const leadSourcesQuery = useLeadSources()
   const legacyUsersQuery = useLegacyUsers()
+
+  // Water Dep: scope the lead list to the whole team instead of one owner.
+  const isWater = isWaterRole(profile?.role_id)
+  const [waterTeamIds, setWaterTeamIds] = useState(null)
+  useEffect(() => {
+    if (!isWater) { setWaterTeamIds(null); return }
+    fetchRoleLegacyUserIds(supabase, ROLE_WATER).then(setWaterTeamIds)
+  }, [isWater])
   const closedStageIds = useMemo(
     () => stages.filter(stage => isClosedStageName(stage.name)).map(stage => String(stage.id)),
     [stages]
@@ -1338,6 +1362,7 @@ export default function Leads() {
 
   const fetchLeads = useCallback(async () => {
     if (!profile) return
+    if (isWater && waterTeamIds === null) return
     setLoading(true)
     const isSalesRestricted = isSalesRole(profile?.role_id)
     const currentLegacyUserId = getLegacyUserId(profile)
@@ -1349,6 +1374,7 @@ export default function Leads() {
         p_assigned_filter: !isSalesRestricted && filterAssigned ? parseInt(filterAssigned) : null,
         p_current_user_id: currentLegacyUserId || null,
         p_restricted: isSalesRestricted,
+        p_team_ids: isWater ? (waterTeamIds || []) : null,
         p_closed_stage_ids: closedStageIds,
         p_limit: PAGE_SIZE,
         p_offset: page * PAGE_SIZE,
@@ -1363,7 +1389,7 @@ export default function Leads() {
     } finally {
       setLoading(false)
     }
-  }, [submittedSearch, filterStatus, filterAssigned, page, profile, tab, closedStageIds])
+  }, [submittedSearch, filterStatus, filterAssigned, page, profile, tab, closedStageIds, isWater, waterTeamIds])
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
   useEffect(() => { setPage(0) }, [submittedSearch, filterStatus, filterAssigned, tab])
@@ -1484,7 +1510,8 @@ export default function Leads() {
             value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)}
           >
             <option value="">All Assigned Users</option>
-            {users.map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
+            {(isWater ? users.filter(u => (waterTeamIds || []).map(String).includes(String(u.id))) : users)
+              .map(u => <option key={u.id} value={u.id}>{u.first_name} {u.last_name}</option>)}
           </select>
         )}
         {(search || submittedSearch || filterStatus || filterAssigned) && (

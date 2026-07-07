@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { hasAdminAccess, isSalesRole, isSuperAdminRole, roleLabel } from '../../lib/roles'
+import { hasAdminAccess, isSalesLikeRole, isSuperAdminRole, roleLabel } from '../../lib/roles'
 import sidebarLogo from '../../assets/sidebar-logo.png'
 import {
   LayoutDashboard, Building2, UserCircle, TrendingUp, FileText, Receipt,
@@ -74,7 +74,7 @@ export default function Sidebar({ open, onClose }) {
   // Pick the base item list for this role
   const baseItems = hasAdminAccess(profile?.role_id)
     ? adminItems
-    : isSalesRole(profile?.role_id)
+    : isSalesLikeRole(profile?.role_id)
     ? salesItems
     : serviceItems
 

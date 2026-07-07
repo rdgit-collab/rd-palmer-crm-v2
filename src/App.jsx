@@ -7,6 +7,7 @@ import {
   ROLE_ADMIN,
   ROLE_SALES,
   ROLE_SALES_MANAGER,
+  ROLE_WATER,
   ROLE_SERVICE,
   ROLE_SUPER_ADMIN,
 } from './lib/roles'
@@ -81,9 +82,9 @@ function AppRoutes() {
   const { user } = useAuth()
   const location = useLocation()
   const adminRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN]
-  const salesRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SALES, ROLE_SALES_MANAGER]
+  const salesRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_WATER]
   const serviceRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SERVICE]
-  const sharedWorkRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_SERVICE]
+  const sharedWorkRoles = [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_SALES, ROLE_SALES_MANAGER, ROLE_WATER, ROLE_SERVICE]
 
   return (
     <ErrorBoundary resetKey={location.pathname}>

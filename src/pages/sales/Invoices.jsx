@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { getLegacyUserId } from '../../lib/legacyUsers'
-import { isSalesRole } from '../../lib/roles'
+import { getLegacyUserId, fetchRoleLegacyUserIds } from '../../lib/legacyUsers'
+import { isSalesRole, isWaterRole, ROLE_WATER } from '../../lib/roles'
 import { logActivity } from '../../lib/activityLog'
 import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLookups'
@@ -1496,13 +1496,23 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
 
+  // Water Dep users share visibility across the whole team (see Quotations).
+  const isWater = isWaterRole(profile?.role_id)
+  const [waterTeamIds, setWaterTeamIds] = useState(null)
+  useEffect(() => {
+    if (!isWater) { setWaterTeamIds(null); return }
+    fetchRoleLegacyUserIds(supabase, ROLE_WATER).then(setWaterTeamIds)
+  }, [isWater])
+
   const fetchInvoices = useCallback(async () => {
+    if (isWater && waterTeamIds === null) return
     setLoading(true)
     try {
       const { data, error } = await supabase.rpc('search_invoices', {
         p_search: submittedSearch.trim(),
         p_current_user_id: getLegacyUserId(profile) || null,
         p_restricted: isSalesRole(profile?.role_id),
+        p_team_ids: isWater ? (waterTeamIds || []) : null,
         p_limit: PAGE_SIZE,
         p_offset: page * PAGE_SIZE,
       })
@@ -1524,7 +1534,7 @@ export default function Invoices() {
     } finally {
       setLoading(false)
     }
-  }, [submittedSearch, page, profile])
+  }, [submittedSearch, page, profile, isWater, waterTeamIds])
 
   useEffect(() => { fetchInvoices() }, [fetchInvoices])
   useEffect(() => { setPage(0) }, [submittedSearch])

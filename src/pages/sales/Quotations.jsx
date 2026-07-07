@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { getLegacyUserId } from '../../lib/legacyUsers'
-import { isSalesRole } from '../../lib/roles'
+import { getLegacyUserId, fetchRoleLegacyUserIds } from '../../lib/legacyUsers'
+import { isSalesRole, isWaterRole, ROLE_WATER } from '../../lib/roles'
 import { logActivity } from '../../lib/activityLog'
 import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
 import { useAssignableUsers, usePaymentTerms, useTaxes } from '../../hooks/useLookups'
@@ -1899,13 +1899,26 @@ export default function Quotations() {
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState(null)
 
+  // Water Dep users share visibility across the whole team: the list is scoped to
+  // every Water Dep member's documents instead of just the current user's.
+  const isWater = isWaterRole(profile?.role_id)
+  const [waterTeamIds, setWaterTeamIds] = useState(null)
+  useEffect(() => {
+    if (!isWater) { setWaterTeamIds(null); return }
+    fetchRoleLegacyUserIds(supabase, ROLE_WATER).then(setWaterTeamIds)
+  }, [isWater])
+
   const fetchQuotations = useCallback(async () => {
+    // Wait for the Water Dep team list before querying so we never briefly show
+    // an unfiltered (all-users) page.
+    if (isWater && waterTeamIds === null) return
     setLoading(true)
     try {
       const { data, error } = await supabase.rpc('search_quotations', {
         p_search: submittedSearch.trim(),
         p_current_user_id: getLegacyUserId(profile) || null,
         p_restricted: isSalesRole(profile?.role_id),
+        p_team_ids: isWater ? (waterTeamIds || []) : null,
         p_limit: PAGE_SIZE,
         p_offset: page * PAGE_SIZE,
       })
@@ -1919,7 +1932,7 @@ export default function Quotations() {
     } finally {
       setLoading(false)
     }
-  }, [submittedSearch, page, profile])
+  }, [submittedSearch, page, profile, isWater, waterTeamIds])
 
   useEffect(() => { fetchQuotations() }, [fetchQuotations])
   useEffect(() => { setPage(0) }, [submittedSearch])

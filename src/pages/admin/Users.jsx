@@ -8,6 +8,7 @@ import {
   ROLE_SALES,
   ROLE_SERVICE,
   ROLE_SALES_MANAGER,
+  ROLE_WATER,
   ROLE_SUPER_ADMIN,
   isSuperAdminRole,
   roleColor,
@@ -23,6 +24,7 @@ const ROLES = [
   { id: ROLE_SALES, label: 'Sales' },
   { id: ROLE_SERVICE, label: 'Service' },
   { id: ROLE_SALES_MANAGER, label: 'Sales Manager' },
+  { id: ROLE_WATER, label: 'Water Dep' },
   { id: ROLE_SUPER_ADMIN, label: 'Super Admin' },
 ]
 
@@ -31,6 +33,7 @@ const ROLE_SORT_RANK = {
   [ROLE_ADMIN]: 2,
   [ROLE_SALES]: 3,
   [ROLE_SALES_MANAGER]: 3,
+  [ROLE_WATER]: 3,
   [ROLE_SERVICE]: 4,
 }
 

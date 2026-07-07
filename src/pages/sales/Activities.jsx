@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { getLegacyUserId, getUserName as formatUserName } from '../../lib/legacyUsers'
-import { hasAdminAccess, isSalesManagerRole, isSalesRole } from '../../lib/roles'
+import { getLegacyUserId, getUserName as formatUserName, fetchRoleLegacyUserIds } from '../../lib/legacyUsers'
+import { hasAdminAccess, isSalesManagerRole, isSalesRole, isWaterRole, ROLE_WATER } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
@@ -80,6 +80,7 @@ export default function Activities() {
   const navigate = useNavigate()
   const isSalesRestricted = isSalesRole(profile?.role_id)
   const isSalesManager = isSalesManagerRole(profile?.role_id)
+  const isWater = isWaterRole(profile?.role_id)
   const canDeleteActivities = hasAdminAccess(profile?.role_id)
   const currentLegacyUserId = getLegacyUserId(profile)
   const visibleTabs = useMemo(() => (
@@ -109,6 +110,7 @@ export default function Activities() {
   const [customers, setCustomers]   = useState([])
   const [users, setUsers]           = useState([])
   const [assignableUsers, setAssignableUsers] = useState([])
+  const [waterTeamIds, setWaterTeamIds] = useState(null)
   const [activityTypes, setActivityTypes] = useState([])
   const [priorities, setPriorities] = useState([])
   const [activityStatuses, setActivityStatuses] = useState([])
@@ -159,12 +161,20 @@ export default function Activities() {
     setAssignableUsers(activeUsers || [])
   }, [assignableUsersQuery.data, legacyUsersQuery.data])
 
+  // Water Dep: resolve the team's legacy ids so the list, dropdowns and filters
+  // can be scoped to the whole team rather than one user.
+  useEffect(() => {
+    if (!isWater) { setWaterTeamIds(null); return }
+    fetchRoleLegacyUserIds(supabase, ROLE_WATER).then(setWaterTeamIds)
+  }, [isWater])
+
   useEffect(() => { setActivityTypes(activityTypesQuery.data || []) }, [activityTypesQuery.data])
   useEffect(() => { setPriorities(prioritiesQuery.data || []) }, [prioritiesQuery.data])
   useEffect(() => { setActivityStatuses(activityStatusesQuery.data || []) }, [activityStatusesQuery.data])
   useEffect(() => { setStages(stagesQuery.data || []) }, [stagesQuery.data])
 
   const fetchRows = useCallback(async () => {
+    if (isWater && waterTeamIds === null) return
     setLoading(true)
     setError('')
     try {
@@ -175,6 +185,7 @@ export default function Activities() {
         p_assigned_filter: assignedFilter || '',
         p_current_user_id: currentLegacyUserId || null,
         p_restricted: shouldRestrictToOwnActivities(tab),
+        p_team_ids: isWater ? (waterTeamIds || []) : null,
         p_limit: PAGE_SIZE,
         p_offset: (page - 1) * PAGE_SIZE,
         p_today: todayString(),
@@ -199,7 +210,7 @@ export default function Activities() {
     } finally {
       setLoading(false)
     }
-  }, [assignedFilter, currentLegacyUserId, mergeCustomers, mergeLeads, page, shouldRestrictToOwnActivities, submittedSearch, tab, typeFilter])
+  }, [assignedFilter, currentLegacyUserId, mergeCustomers, mergeLeads, page, shouldRestrictToOwnActivities, submittedSearch, tab, typeFilter, isWater, waterTeamIds])
 
   useEffect(() => { fetchRows() }, [fetchRows])
   const runSearch = () => {
@@ -220,11 +231,16 @@ export default function Activities() {
   const getUserName = (id) => formatUserName(users, id)
   const currentUserOption = users.find(u => String(u.id) === String(currentLegacyUserId))
     || assignableUsers.find(u => String(u.id) === String(currentLegacyUserId))
+  const inWaterTeam = (id) => (waterTeamIds || []).map(String).includes(String(id))
   const formAssignableUsers = isSalesRestricted
     ? (currentUserOption ? [currentUserOption] : [])
+    : isWater
+    ? assignableUsers.filter(u => inWaterTeam(u.id))
     : assignableUsers
   const filterUsers = isSalesRestricted
     ? (currentUserOption ? [currentUserOption] : [])
+    : isWater
+    ? users.filter(u => inWaterTeam(u.id))
     : users
   const completeStatusName = activityStatuses.find(status => String(status.name || '').toLowerCase().includes('complete'))?.name || ''
 

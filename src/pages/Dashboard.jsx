@@ -533,11 +533,10 @@ function ServiceDashboard({ firstName }) {
   const exportStaffRows = () => {
     downloadCsv(
       `staff-workload-performance-${staffMonth}.csv`,
-      ['Month', 'Staff', 'Role', 'Tickets', 'Tasks', 'Onsite', 'Pending', 'Completed', 'Overdue'],
+      ['Month', 'Staff', 'Tickets', 'Tasks', 'Onsite', 'Pending', 'Completed', 'Overdue'],
       staffRows.map(row => [
         selectedStaffMonthLabel,
         row.name || '',
-        row.role || '',
         row.openTickets,
         row.openTasks,
         row.openOnsites,
@@ -599,7 +598,6 @@ function ServiceDashboard({ firstName }) {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Staff</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Role</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Tickets</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Tasks</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Onsite</th>
@@ -612,7 +610,6 @@ function ServiceDashboard({ firstName }) {
                 {staffRows.map(row => (
                   <tr key={row.id} className="border-b border-gray-100 last:border-0">
                     <td className="px-3 py-2 font-medium text-gray-900">{displayText(row.name)}</td>
-                    <td className="px-3 py-2 text-gray-500">{displayText(row.role)}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openTickets}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openTasks}</td>
                     <td className="px-3 py-2 text-right text-gray-600">{row.openOnsites}</td>

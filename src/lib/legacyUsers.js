@@ -15,6 +15,21 @@ export async function fetchAssignableUsers(supabase) {
   }))
 }
 
+// Legacy (old CRM) user ids for every active user in a given role. Used to scope
+// a team's shared visibility — e.g. Water Dep members see each other's records.
+export async function fetchRoleLegacyUserIds(supabase, roleId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('old_user_id')
+    .eq('role_id', roleId)
+    .neq('status', 'Inactive')
+    .not('old_user_id', 'is', null)
+
+  if (error) return []
+
+  return (data || []).map((user) => user.old_user_id)
+}
+
 export async function fetchLegacyUsers(supabase) {
   const { data, error } = await supabase
     .from('legacy_users')
