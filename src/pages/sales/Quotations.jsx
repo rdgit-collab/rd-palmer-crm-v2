@@ -552,6 +552,20 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   const [itemDropdownStyle, setItemDropdownStyle] = useState({})
   const itemSearchRef = useRef(null)
 
+  // Rate is edited as a raw string so partial/negative input (e.g. "-", "-1")
+  // survives keystrokes — native number inputs report "-" as "" and snap the
+  // value back to 0. Re-sync only when rate is changed programmatically
+  // (catalogue pick, markup, reset), tracked via lastEmittedRate.
+  const [rateInput, setRateInput] = useState(item.rate === 0 || item.rate == null || item.rate === '' ? '' : String(item.rate))
+  const lastEmittedRate = useRef(Number(item.rate) || 0)
+  useEffect(() => {
+    const external = Number(item.rate) || 0
+    if (external !== lastEmittedRate.current) {
+      lastEmittedRate.current = external
+      setRateInput(external === 0 ? '' : String(item.rate))
+    }
+  }, [item.rate])
+
   useEffect(() => {
     setItemSearch(selectedItem ? catalogueItemLabel(selectedItem) : '')
   }, [selectedItem?.id, selectedItem?.sku, selectedItem?.name])
@@ -640,8 +654,11 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
     onChange(idx, { ...item, qty: q, amount: q * (parseFloat(item.rate) || 0) })
   }
 
-  const handleRateChange = (rate) => {
-    const r = parseFloat(rate) || 0
+  const handleRateChange = (raw) => {
+    setRateInput(raw)
+    const parsed = parseFloat(raw)
+    const r = Number.isFinite(parsed) ? parsed : 0
+    lastEmittedRate.current = r
     const pct = parseFloat(item.markup) || 0
     const baseRate = pct ? r / (1 + pct / 100) : r
     onChange(idx, { ...item, base_rate: baseRate, rate: r, amount: (parseFloat(item.qty) || 0) * r })
@@ -732,7 +749,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
           </div>
           <div>
             <label className={fieldLabelCls}>Rate</label>
-            <input type="number" step="1" className={inputCls} value={item.rate}
+            <input type="text" inputMode="decimal" className={inputCls} value={rateInput}
               onChange={e => handleRateChange(e.target.value)} />
           </div>
           <div>
