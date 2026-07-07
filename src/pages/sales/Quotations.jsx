@@ -454,7 +454,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
           <col class="price-col">
           <col class="amount-col">
         </colgroup>
-        <thead><tr><th>#</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
+        <thead><tr><th class="no-col">#</th><th class="code-col">Item Code</th><th class="description-col">Description</th><th class="qty-col">Qty</th><th class="price-col">Unit Price</th><th class="amount-col">Amount</th></tr></thead>
         <tbody>
           ${renderSalesPrintRows(page.rows)}
           ${page.summary ? '<tr class="blank-row"><td colspan="6"></td></tr>' : ''}

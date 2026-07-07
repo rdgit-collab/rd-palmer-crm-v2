@@ -436,7 +436,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
           <col class="price-col">
           <col class="amount-col">
         </colgroup>
-        <thead><tr><th>No</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Price/Unit</th><th>Amount</th></tr></thead>
+        <thead><tr><th class="no-col">No</th><th class="code-col">Item Code</th><th class="description-col">Description</th><th class="qty-col">Qty</th><th class="price-col">Price/Unit</th><th class="amount-col">Amount</th></tr></thead>
         <tbody>
           ${renderSalesPrintRows(page.rows)}
           ${page.summary ? '<tr class="blank-row"><td colspan="6"></td></tr>' : ''}
