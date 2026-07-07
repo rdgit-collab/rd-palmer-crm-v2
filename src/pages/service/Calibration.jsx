@@ -9,6 +9,7 @@ import { searchSerialNumberOptions } from '../../lib/serialNumberSearch'
 import SignedFileLink from '../../components/SignedFileLink'
 import PaginationControls from '../../components/PaginationControls'
 import PdfPreviewModal from '../../components/PdfPreviewModal'
+import WorkThreadDrawer from '../../components/work/WorkThreadDrawer'
 import { Plus, Search, Edit2, Trash2, X, Printer, Eye } from 'lucide-react'
 
 const PAGE_SIZE = 30
@@ -952,7 +953,7 @@ export default function Calibration() {
           <div><span className="font-medium text-gray-500">Conducted By: </span>{getUserName(detail.conduct_by)}</div>
           <div>
             <span className="font-medium text-gray-500">Status: </span><span className={`inline-block px-2 py-0.5 text-xs font-medium rounded ${statusColor(detail.status)}`}>{detail.status || '-'}</span>
-            <div className="mt-1 text-xs text-gray-400">Date: {formatDate(detail.created_at, '-')}</div>
+            <div className="mt-1"><span className="font-medium text-gray-500">Date: </span>{formatDate(detail.created_at, '-')}</div>
           </div>
           <div><span className="font-medium text-gray-500">Certificate / Document: </span>{detail.file ? <SignedFileLink path={detail.file} label="Open file" className="text-red-600 font-semibold hover:underline" /> : '-'}</div>
         </div>
@@ -984,6 +985,14 @@ export default function Calibration() {
           <p className="whitespace-pre-wrap text-gray-700">{getTermName(detail.termid)}</p>
         </div>
         {detail.remark && <div className="border-t border-gray-100 pt-4"><p className="font-medium text-gray-500 mb-1">Remark</p><p className="whitespace-pre-wrap">{detail.remark}</p></div>}
+
+        <WorkThreadDrawer
+          recordType="calibration"
+          recordId={detail.id}
+          title={detail.certificate_number || `Calibration #${detail.id}`}
+          reference={detail.certificate_number || `Calibration #${detail.id}`}
+          companyName={ticketInfoById.get(String(detail.ticket_id))?.companyName || ''}
+        />
       </div>
       {previewHtml && (
         <PdfPreviewModal
