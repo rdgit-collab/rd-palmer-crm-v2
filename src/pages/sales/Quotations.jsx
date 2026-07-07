@@ -206,6 +206,13 @@ function catalogueItemLabel(item) {
   return [item?.sku, item?.name].filter(Boolean).join(' - ') || ''
 }
 
+// What the item search box shows once an item is picked: SKU only (falls back to
+// name if the item has no SKU). The dropdown still uses catalogueItemLabel so
+// users can search by both SKU and name.
+function catalogueItemSku(item) {
+  return String(item?.sku || item?.name || '').trim()
+}
+
 function salesDocumentSkuTitle(item) {
   const sku = String(item?.sku || '').trim()
   const name = String(item?.item || '').trim()
@@ -545,7 +552,7 @@ async function getNextInvoiceNumber() {
 // ─── Line Item Row ─────────────────────────────────────────────────────────────
 function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   const selectedItem = catalogueItems.find(c => String(c.id) === String(item.itemid || ''))
-  const [itemSearch, setItemSearch] = useState(selectedItem ? catalogueItemLabel(selectedItem) : '')
+  const [itemSearch, setItemSearch] = useState(selectedItem ? catalogueItemSku(selectedItem) : '')
   const [itemResults, setItemResults] = useState([])
   const [itemLoading, setItemLoading] = useState(false)
   const [showItemOptions, setShowItemOptions] = useState(false)
@@ -567,7 +574,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   }, [item.rate])
 
   useEffect(() => {
-    setItemSearch(selectedItem ? catalogueItemLabel(selectedItem) : '')
+    setItemSearch(selectedItem ? catalogueItemSku(selectedItem) : '')
   }, [selectedItem?.id, selectedItem?.sku, selectedItem?.name])
 
   const updateItemDropdownPosition = useCallback(() => {
@@ -604,7 +611,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
       rate,
       amount: qty * rate,
     })
-    setItemSearch(catalogueItemLabel(selected))
+    setItemSearch(catalogueItemSku(selected))
     setShowItemOptions(false)
   }
 
@@ -620,7 +627,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
 
   useEffect(() => {
     const term = itemSearch.trim()
-    if (!showItemOptions || term.length < 2 || selectedItem && term === catalogueItemLabel(selectedItem)) {
+    if (!showItemOptions || term.length < 2 || selectedItem && term === catalogueItemSku(selectedItem)) {
       setItemResults([])
       setItemLoading(false)
       return undefined
