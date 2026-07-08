@@ -494,7 +494,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         .report-table .qty-col { width: 16mm; text-align: right; white-space: nowrap; }
         .report-table .price-col { width: 28mm; text-align: right; white-space: nowrap; }
         .report-table .amount-col { width: 29mm; text-align: right; white-space: nowrap; }
-        .line-title { text-transform: none; }
+        .line-title { text-transform: none; font-weight: bold; }
         .blank-row td { height: 5mm; border-bottom: 1.4px solid #111; }
         .summary-only .blank-row td { height: 40mm; }
         .inv-totals { width: 92mm; margin: 3mm 0 0 auto; font-size: 12px; }

@@ -509,7 +509,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
         .report-table .qty-col { width: 16mm; text-align: right; white-space: nowrap; }
         .report-table .price-col { width: 27mm; text-align: right; white-space: nowrap; }
         .report-table .amount-col { width: 29mm; text-align: right; white-space: nowrap; }
-        .line-title { text-transform: uppercase; }
+        .line-title { text-transform: uppercase; font-weight: bold; }
         .blank-row td { height: 5mm; border-bottom: 1.2px solid #111; }
         .summary-only .blank-row td { height: 40mm; }
         .totals-block { width: 92mm; margin: 3mm 0 0 auto; font-size: 12px; }
