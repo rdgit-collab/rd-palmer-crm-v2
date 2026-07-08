@@ -19,6 +19,8 @@ import {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Printed money cell: leave blank when the value is zero instead of showing 0.00.
+const fmtMoneyBlankZero = (n) => (Number(n || 0) === 0 ? '' : fmtMoney(n))
 const markedRate = (baseRate, markup) => {
   const base = parseFloat(baseRate) || 0
   const pct = parseFloat(markup) || 0
@@ -233,6 +235,7 @@ function documentFileName(number, companyName, fallback = 'document') {
 
 const SALES_PRINT_LINES_PER_PAGE = 32
 const SALES_PRINT_DESC_CHARS = 64
+const SALES_PRINT_TITLE_CHARS = 54
 // The notes/policy block renders full page width in a smaller font, so it wraps
 // at far more characters per line than the narrow item description column.
 const SALES_PRINT_TERMS_CHARS = 118
@@ -267,6 +270,15 @@ function salesDocumentItemCode(item) {
   return String(item?.sku || '').trim()
 }
 
+// A manually-typed line item (no catalogue link, so no Item Code/SKU) shows the
+// typed name as a title above the description. Catalogue items are omitted here
+// — they're already identified by their SKU in the Item Code column.
+function salesDocumentDescriptionTitle(item) {
+  const hasCatalogueItem = item?.itemid !== null && item?.itemid !== undefined && String(item.itemid).trim() !== ''
+  if (hasCatalogueItem) return ''
+  return String(item?.item || '').trim()
+}
+
 function paginateSalesDocumentItems(items, getRate, getAmount) {
   const pages = [[]]
   let usedLines = 0
@@ -276,9 +288,13 @@ function paginateSalesDocumentItems(items, getRate, getAmount) {
   }
 
   items.forEach((item, idx) => {
-    // The printed Description column shows only the description text — the item
-    // name is intentionally omitted; the item is identified by SKU (Item Code).
-    const lines = printableLineObjects(item.description || '')
+    // Catalogue items show only the description (they're identified by SKU in
+    // the Item Code column); manually-typed items lead with the typed name.
+    const titleText = salesDocumentDescriptionTitle(item)
+    const titleLines = titleText
+      ? wrapPrintableLine(titleText, SALES_PRINT_TITLE_CHARS).map(line => ({ ...line, title: true }))
+      : []
+    const lines = [...titleLines, ...printableLineObjects(item.description || '')]
     if (!lines.length) lines.push({ text: '-', title: false })
 
     let cursor = 0
@@ -319,8 +335,8 @@ function renderSalesPrintRows(rows) {
         ${row.lines.map(line => `<div class="${line.title ? 'line-title' : ''}">${line.text ? escapeHtml(line.text) : '&nbsp;'}</div>`).join('')}
       </td>
       <td class="qty-col">${row.firstFragment ? escapeHtml(row.qty) : ''}</td>
-      <td class="price-col">${row.firstFragment ? fmtMoney(row.rate) : ''}</td>
-      <td class="amount-col">${row.firstFragment ? fmtMoney(row.amount) : ''}</td>
+      <td class="price-col">${row.firstFragment ? fmtMoneyBlankZero(row.rate) : ''}</td>
+      <td class="amount-col">${row.firstFragment ? fmtMoneyBlankZero(row.amount) : ''}</td>
     </tr>
   `).join('')
 }
