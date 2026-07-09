@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Paperclip, Search, Send, Users, X } from 'lucide-react'
+import { Check, Paperclip, Search, Send, Users, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { notifyUser } from '../../lib/notifyUser'
-import { fetchAssignableUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
+import { fetchAssignableUsers, fetchLegacyUsers, getLegacyUserId, getUserName } from '../../lib/legacyUsers'
 import { displayText } from '../../lib/displayText'
 import SignedFileLink from '../SignedFileLink'
 import {
@@ -29,6 +29,31 @@ function formatUserName(user) {
   return `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Unnamed user'
 }
 
+function userSortValue(user) {
+  return formatUserName(user).toLowerCase()
+}
+
+function mergeDiscussionUsers(...groups) {
+  const usersById = new Map()
+
+  groups.flat().forEach(user => {
+    if (!user?.id) return
+    const key = String(user.id)
+    const existing = usersById.get(key)
+    const nextName = formatUserName(user)
+    const existingName = existing ? formatUserName(existing) : ''
+
+    if (!existing || (existingName === 'Unnamed user' && nextName !== 'Unnamed user')) {
+      usersById.set(key, user)
+    }
+  })
+
+  return Array.from(usersById.values()).sort((a, b) =>
+    userSortValue(a).localeCompare(userSortValue(b), undefined, { sensitivity: 'base' }) ||
+    String(a.id).localeCompare(String(b.id))
+  )
+}
+
 export default function WorkThread({
   recordType,
   recordId,
@@ -43,6 +68,7 @@ export default function WorkThread({
   const [thread, setThread] = useState(null)
   const [messages, setMessages] = useState([])
   const [users, setUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(true)
   const [draft, setDraft] = useState('')
   const [notifyIds, setNotifyIds] = useState([])
   const [notifySearch, setNotifySearch] = useState('')
@@ -78,7 +104,6 @@ export default function WorkThread({
         const haystack = `${formatUserName(user)} ${user.id}`.toLowerCase()
         return haystack.includes(term)
       })
-      .slice(0, 8)
   }, [notifyIds, notifySearch, notifyUsers])
 
   const addNotifyUser = (userId) => {
@@ -213,7 +238,19 @@ export default function WorkThread({
   }, [companyName, currentOldUserId, loadMessages, markRead, profile?.id, recordId, recordType, reference, title])
 
   useEffect(() => {
-    fetchAssignableUsers(supabase).then(setUsers)
+    let cancelled = false
+    setUsersLoading(true)
+
+    Promise.all([
+      fetchLegacyUsers(supabase),
+      fetchAssignableUsers(supabase),
+    ]).then(([legacyUsers, assignableUsers]) => {
+      if (!cancelled) setUsers(mergeDiscussionUsers(legacyUsers, assignableUsers))
+    }).finally(() => {
+      if (!cancelled) setUsersLoading(false)
+    })
+
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -438,24 +475,26 @@ export default function WorkThread({
             />
 
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr),220px]">
-              <div className="border border-gray-200">
-                <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
-                  <span className="inline-flex items-center gap-2 text-xs font-medium text-gray-500">
+              <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+                <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2.5">
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <Users size={14} /> Tag users
                   </span>
-                  {selectedNotifyUsers.length > 0 && (
-                    <span className="text-xs text-gray-400">{selectedNotifyUsers.length} selected</span>
-                  )}
+                  <span className="text-xs text-gray-400">
+                    {usersLoading ? 'Loading...' : `${notifyUsers.length} available`}
+                  </span>
                 </div>
-                <div className="space-y-2 p-2">
-                  {notifyUsers.length === 0 ? (
-                    <p className="px-1 py-2 text-xs text-gray-400">No active users available.</p>
+                <div className="space-y-3 p-3">
+                  {usersLoading ? (
+                    <p className="px-1 py-3 text-sm text-gray-400">Loading user list...</p>
+                  ) : notifyUsers.length === 0 ? (
+                    <p className="px-1 py-3 text-sm text-gray-400">No users available.</p>
                   ) : (
                     <>
                       {selectedNotifyUsers.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                           {selectedNotifyUsers.map(user => (
-                            <span key={user.id} className="inline-flex max-w-full items-center gap-1 border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">
+                            <span key={user.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-red-100 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
                               <span className="truncate">@{formatUserName(user)}</span>
                               <button
                                 type="button"
@@ -470,7 +509,7 @@ export default function WorkThread({
                         </div>
                       )}
 
-                      <div className="flex items-center gap-2 border border-gray-200 px-2 py-1.5 focus-within:border-red-300">
+                      <div className="flex items-center gap-2 rounded-md border border-gray-200 px-2.5 py-2 focus-within:border-red-300 focus-within:ring-2 focus-within:ring-red-50">
                         <Search size={14} className="shrink-0 text-gray-400" />
                         <input
                           type="search"
@@ -481,18 +520,26 @@ export default function WorkThread({
                         />
                       </div>
 
-                      <div className="max-h-32 overflow-y-auto">
+                      <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-100">
                         {filteredNotifyUsers.length === 0 ? (
-                          <p className="px-2 py-2 text-xs text-gray-400">No matching users.</p>
+                          <p className="px-3 py-3 text-sm text-gray-400">No matching users.</p>
                         ) : filteredNotifyUsers.map(user => (
                           <button
                             key={user.id}
                             type="button"
                             onClick={() => addNotifyUser(user.id)}
-                            className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-red-50/40"
                           >
-                            <span className="min-w-0 truncate">{formatUserName(user)}</span>
-                            <span className="shrink-0 text-xs text-gray-400">Tag</span>
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] font-semibold text-white">
+                              {initialsFor(formatUserName(user)) || '?'}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-gray-900">{formatUserName(user)}</span>
+                              <span className="block text-xs text-gray-400">User ID {user.id}</span>
+                            </span>
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-400">
+                              <Check size={13} />
+                            </span>
                           </button>
                         ))}
                       </div>
