@@ -1417,7 +1417,8 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       // These lookups only depend on the quotation/items above — run in
       // parallel instead of serially to cut the detail-open latency.
       const itemIds = [...new Set((qi || []).map(item => item.itemid).filter(Boolean))]
-      const [contactResult, customerResult, salesPhone, goodsResult, invoiceResult] = await Promise.all([
+      const taxIds = [...new Set((qi || []).map(item => item.taxid).filter(Boolean))]
+      const [contactResult, customerResult, salesPhone, goodsResult, taxResult, invoiceResult] = await Promise.all([
         isNumericId(q?.contact_person)
           ? supabase.from('contact').select('*').eq('id', parseInt(q.contact_person)).maybeSingle()
           : Promise.resolve({ data: null }),
@@ -1427,6 +1428,9 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
         resolveSalesContactNumber(q?.sales_person),
         itemIds.length > 0
           ? supabase.from('goodsservices').select('id, sku').in('id', itemIds)
+          : Promise.resolve({ data: [] }),
+        taxIds.length > 0
+          ? supabase.from('tax').select('id, name').in('id', taxIds)
           : Promise.resolve({ data: [] }),
         q?.number
           ? supabase
@@ -1439,9 +1443,14 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       const contactRow = contactResult.data || null
       const customerRow = customerResult.data || null
       const skuByItemId = Object.fromEntries((goodsResult.data || []).map(row => [String(row.id), row.sku || '']))
+      const taxNameById = Object.fromEntries((taxResult.data || []).map(row => [String(row.id), row.name || '']))
       const invoices = invoiceResult.data || []
       setQuotation(q)
-      setItems((qi || []).map(item => ({ ...item, sku: skuByItemId[String(item.itemid)] || item.sku || '' })))
+      setItems((qi || []).map(item => ({
+        ...item,
+        sku: skuByItemId[String(item.itemid)] || item.sku || '',
+        taxlbl: item.taxlbl || taxNameById[String(item.taxid)] || '',
+      })))
       setLinkedInvoices(invoices)
       setContact(contactRow)
       setCustomer(customerRow)
