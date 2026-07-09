@@ -239,6 +239,34 @@ function roundMoney(value) {
   return Math.round(moneyValue(value) * 100) / 100
 }
 
+function taxRateFromLabel(label = '') {
+  const rate = parseFloat(String(label || '').match(/[\d.]+/)?.[0] || 0)
+  return Number.isFinite(rate) ? rate : 0
+}
+
+function lineTaxAmount(item) {
+  const savedTax = parseFloat(item?.tax)
+  if (Number.isFinite(savedTax) && savedTax > 0) return savedTax
+  const amount = parseFloat(item?.amount) || 0
+  const rate = parseFloat(item?.taxrate) || taxRateFromLabel(item?.taxlbl)
+  return rate > 0 ? amount * rate / 100 : 0
+}
+
+function taxSummaryRows(items = []) {
+  const rowsByLabel = new Map()
+  items.forEach(item => {
+    const amount = lineTaxAmount(item)
+    if (amount <= 0) return
+    const label = String(item?.taxlbl || 'Tax').trim() || 'Tax'
+    rowsByLabel.set(label, (rowsByLabel.get(label) || 0) + amount)
+  })
+  return Array.from(rowsByLabel, ([label, amount]) => ({ label, amount: roundMoney(amount) }))
+}
+
+function totalTaxAmount(items = []) {
+  return roundMoney(taxSummaryRows(items).reduce((sum, row) => sum + row.amount, 0))
+}
+
 function paymentInvoiceLabel(type, quotationNumber) {
   const label = String(type || '').trim() || 'Partial Payment'
   return `${label} for quotation ${quotationNumber || ''}`.trim()
@@ -364,12 +392,13 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
   const notes = sanitizeHtml(quotation.notes)
   const terms = printableText(quotation.terms, { dropConfirmation: true, dropSignature: true })
   const itemPages = paginateSalesDocumentItems(items, item => item.rate, item => item.amount)
+  const taxRows = taxSummaryRows(items)
   // Keep the total + terms + signature on the same page as the last items when
   // there is room, instead of always spilling onto a near-empty extra page.
   // Reserve enough lines for the summary block (total row, terms/notes text,
   // confirmation line and signature), sized from the actual terms length.
-  // Subtotal + Discount + Shipping Charges + Adjustment rows are always shown above the total.
-  const breakdownRows = 4
+  // Subtotal + tax + Discount + Shipping Charges + Adjustment rows are always shown above the total.
+  const breakdownRows = 4 + taxRows.length
   // Totals + confirmation line + signature block, in item-line units.
   const totalsReserve = 9 + breakdownRows
   // Notes/terms render full width in a smaller font: wrap at the real content
@@ -436,6 +465,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
   const renderSummary = () => `
     <div class="totals-block">
       <div class="totals-row"><span class="t-label">Subtotal</span><span class="t-value">${fmtMoney(subtotalVal)}</span></div>
+      ${taxRows.map(row => `<div class="totals-row"><span class="t-label">${escapeHtml(row.label)}</span><span class="t-value">+ ${fmtMoney(row.amount)}</span></div>`).join('')}
       <div class="totals-row"><span class="t-label">${escapeHtml(discountLabel)}</span><span class="t-value">&minus; ${fmtMoney(discountVal)}</span></div>
       <div class="totals-row"><span class="t-label">Shipping Charges</span><span class="t-value">+ ${fmtMoney(shippingVal)}</span></div>
       <div class="totals-row"><span class="t-label">Adjustment</span><span class="t-value">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
@@ -844,7 +874,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
           rate: i.rate || 0,
           taxid: String(i.taxid || ''),
           taxlbl: i.taxlbl || '',
-          taxrate: 0,
+          taxrate: taxRateFromLabel(i.taxlbl),
           amount: i.amount || 0,
         }))
       : [{ itemid: '', item: '', description: '', qty: 1, markup: '', base_rate: 0, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }]
@@ -981,7 +1011,9 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     : parseFloat(form.discountvalue) || 0
   const shipping = parseFloat(form.shipping) || 0
   const adjustment = parseFloat(form.adjustment) || 0
-  const total = subtotal - discountAmt + shipping + adjustment
+  const taxRows = taxSummaryRows(lineItems)
+  const taxTotal = totalTaxAmount(lineItems)
+  const total = subtotal + taxTotal - discountAmt + shipping + adjustment
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -1010,7 +1042,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       discouttype: form.discounttype,
       discountvalue: String(form.discountvalue),
       shiping_charge: shipping,
-      tax: 0,
+      tax: taxTotal,
       adjustment,
       total,
       companyid: parseInt(form.companyid),
@@ -1042,7 +1074,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
         description: i.description,
         qty: parseFloat(i.qty) || 1,
         rate: parseFloat(i.rate) || 0,
-        tax: i.taxrate > 0 ? (parseFloat(i.amount) * i.taxrate / 100) : 0,
+        tax: roundMoney(lineTaxAmount(i)),
         amount: parseFloat(i.amount) || 0,
         markup: i.markup ? String(i.markup) : null,
         itemid: i.itemid ? parseInt(i.itemid) : null,
@@ -1217,6 +1249,13 @@ function QuotationForm({ quotation, onSave, onCancel }) {
                   <span>Subtotal</span>
                   <span className="font-medium">{form.currency} {fmtMoney(subtotal)}</span>
                 </div>
+
+                {taxRows.map(row => (
+                  <div key={row.label} className="flex justify-between text-gray-600">
+                    <span>{row.label}</span>
+                    <span className="font-medium">+ {fmtMoney(row.amount)}</span>
+                  </div>
+                ))}
 
                 {/* Discount */}
                 <div className="flex items-center gap-2">
@@ -1538,6 +1577,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
   const isConverted = quotation.isconvert === 1
   const isPartiallyInvoiced = !isConverted && invoicedTotal > 0
   const contactName = resolvedContactName(quotation.contact_person, contact)
+  const taxRows = taxSummaryRows(items)
   const printableHtml = () => quotationHtml(quotation, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => setPreviewHtml(printableHtml())
   const downloadPdf = async () => {
@@ -1724,6 +1764,12 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
               <span>Subtotal</span>
               <span>{quotation.currency} {fmtMoney(quotation.subtotal)}</span>
             </div>
+            {taxRows.map(row => (
+              <div key={row.label} className="flex justify-between text-gray-600">
+                <span>{row.label}</span>
+                <span>+ {fmtMoney(row.amount)}</span>
+              </div>
+            ))}
             {quotation.discount > 0 && (
               <div className="flex justify-between text-gray-600">
                 <span>Discount {quotation.discouttype === '%' ? `(${quotation.discountvalue}%)` : '(RM)'}</span>

@@ -201,6 +201,10 @@ function catalogueItemSku(item) {
   return String(item?.sku || item?.name || '').trim()
 }
 
+function taxRateFromLabel(label = '') {
+  const rate = parseFloat(String(label || '').match(/[\d.]+/)?.[0] || 0)
+  return Number.isFinite(rate) ? rate : 0
+}
 
 function finalItemAmount(item) {
   const qty = parseFloat(item?.qty) || 0
@@ -218,6 +222,29 @@ function finalItemRate(item) {
   return rate
 }
 
+function lineTaxAmount(item) {
+  const savedTax = parseFloat(item?.tax)
+  if (Number.isFinite(savedTax) && savedTax > 0) return savedTax
+  const amount = finalItemAmount(item)
+  const rate = parseFloat(item?.taxrate) || taxRateFromLabel(item?.taxlbl)
+  return rate > 0 ? amount * rate / 100 : 0
+}
+
+function taxSummaryRows(items = []) {
+  const rowsByLabel = new Map()
+  items.forEach(item => {
+    const amount = lineTaxAmount(item)
+    if (amount <= 0) return
+    const label = String(item?.taxlbl || 'Tax').trim() || 'Tax'
+    rowsByLabel.set(label, (rowsByLabel.get(label) || 0) + amount)
+  })
+  return Array.from(rowsByLabel, ([label, amount]) => ({ label, amount: roundMoney(amount) }))
+}
+
+function totalTaxAmount(items = []) {
+  return roundMoney(taxSummaryRows(items).reduce((sum, row) => sum + row.amount, 0))
+}
+
 function addressLines(customer) {
   if (!customer) return []
   return [
@@ -231,6 +258,15 @@ function addressLines(customer) {
 
 function documentFileName(number, companyName, fallback = 'document') {
   return [number, companyName].map(value => String(value || '').trim()).filter(Boolean).join(' - ') || fallback
+}
+
+function moneyValue(value) {
+  const number = Number(value || 0)
+  return Number.isFinite(number) ? number : 0
+}
+
+function roundMoney(value) {
+  return Math.round(moneyValue(value) * 100) / 100
 }
 
 const SALES_PRINT_LINES_PER_PAGE = 32
@@ -353,11 +389,12 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
   const notes = sanitizeHtml(invoice.notes)
   const terms = printableText(invoice.term_condition, { dropConfirmation: true, dropSignature: true })
   const itemPages = paginateSalesDocumentItems(items, finalItemRate, finalItemAmount)
+  const taxRows = taxSummaryRows(items)
   // Keep the total + terms on the same page as the last items when there is
   // room, instead of always spilling onto a near-empty extra page. Reserve
   // lines for the total row and the terms/notes text, sized from their length.
-  // Subtotal + Discount + Shipping Charges + Adjustment rows are always shown above the total.
-  const breakdownRows = 4
+  // Subtotal + tax + Discount + Shipping Charges + Adjustment rows are always shown above the total.
+  const breakdownRows = 4 + taxRows.length
   // Totals block: Subtotal + breakdown rows + grand-total band, in item-line units.
   const totalsReserve = 6 + breakdownRows
   // Notes/policy render full width in a smaller font: wrap at the real content
@@ -426,6 +463,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
   const renderSummary = () => `
     <div class="inv-totals">
       <div class="inv-trow"><span>Subtotal</span><span class="v">${fmtMoney(subtotalVal)}</span></div>
+      ${taxRows.map(row => `<div class="inv-trow"><span>${escapeHtml(row.label)}</span><span class="v">+ ${fmtMoney(row.amount)}</span></div>`).join('')}
       <div class="inv-trow"><span>${escapeHtml(discountLabel)}</span><span class="v">&minus; ${fmtMoney(discountVal)}</span></div>
       <div class="inv-trow"><span>Shipping Charges</span><span class="v">+ ${fmtMoney(shippingVal)}</span></div>
       <div class="inv-trow"><span>Adjustment</span><span class="v">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
@@ -800,7 +838,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
           rate: i.rate || 0,
           taxid: String(i.taxid || ''),
           taxlbl: i.taxlbl || '',
-          taxrate: 0,
+          taxrate: taxRateFromLabel(i.taxlbl),
           amount: i.amount || 0,
         }))
       : [{ itemid: '', item: '', description: '', qty: 1, markup: '', base_rate: 0, rate: 0, taxid: '', taxlbl: '', taxrate: 0, amount: 0 }]
@@ -932,7 +970,9 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
   const discountAmt = form.discounttype === '%' ? subtotal * (parseFloat(form.discountvalue) || 0) / 100 : parseFloat(form.discountvalue) || 0
   const shipping = parseFloat(form.shipping) || 0
   const adjustment = parseFloat(form.adjustment) || 0
-  const total = subtotal - discountAmt + shipping + adjustment
+  const taxRows = taxSummaryRows(lineItems)
+  const taxTotal = totalTaxAmount(lineItems)
+  const total = subtotal + taxTotal - discountAmt + shipping + adjustment
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -963,7 +1003,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       discouttype: form.discounttype,
       discountvalue: String(form.discountvalue),
       shiping_charge: shipping,
-      tax: 0,
+      tax: taxTotal,
       adjustment,
       total,
       updated_at: new Date().toISOString(),
@@ -991,7 +1031,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
         description: i.description,
         qty: parseFloat(i.qty) || 1,
         rate: parseFloat(i.rate) || 0,
-        tax: i.taxrate > 0 ? (parseFloat(i.amount) * i.taxrate / 100) : 0,
+        tax: roundMoney(lineTaxAmount(i)),
         amount: parseFloat(i.amount) || 0,
         markup: i.markup ? String(i.markup) : null,
         itemid: i.itemid ? parseInt(i.itemid) : null,
@@ -1154,6 +1194,12 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
                   <span>Subtotal</span>
                   <span className="font-medium">{form.currency} {fmtMoney(subtotal)}</span>
                 </div>
+                {taxRows.map(row => (
+                  <div key={row.label} className="flex justify-between text-gray-600">
+                    <span>{row.label}</span>
+                    <span className="font-medium">+ {fmtMoney(row.amount)}</span>
+                  </div>
+                ))}
                 <div className="flex items-center gap-2">
                   <span className="text-gray-600 flex-1">Discount</span>
                   <div className="flex items-center gap-1">
@@ -1313,6 +1359,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
 
   const isOverdue = invoice.due_date && new Date(invoice.due_date) < new Date()
   const contactName = resolvedContactName(invoice.contact_person, contact)
+  const taxRows = taxSummaryRows(items)
   const printableHtml = () => invoiceHtml(invoice, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => setPreviewHtml(printableHtml())
   const downloadPdf = async () => {
@@ -1440,6 +1487,12 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
               <span>Subtotal</span>
               <span>{invoice.currency} {fmtMoney(invoice.subtotal)}</span>
             </div>
+            {taxRows.map(row => (
+              <div key={row.label} className="flex justify-between text-gray-600">
+                <span>{row.label}</span>
+                <span>+ {fmtMoney(row.amount)}</span>
+              </div>
+            ))}
             {invoice.discount > 0 && (
               <div className="flex justify-between text-gray-600">
                 <span>Discount {invoice.discouttype === '%' ? `(${invoice.discountvalue}%)` : '(RM)'}</span>
