@@ -206,6 +206,11 @@ function taxRateFromLabel(label = '') {
   return Number.isFinite(rate) ? rate : 0
 }
 
+function taxRateFromLookup(tax) {
+  const rate = parseFloat(tax?.rate)
+  return Number.isFinite(rate) ? rate : taxRateFromLabel(tax?.name)
+}
+
 function finalItemAmount(item) {
   const qty = parseFloat(item?.qty) || 0
   const rate = parseFloat(item?.rate) || 0
@@ -255,6 +260,15 @@ function totalTaxAmount(items = []) {
 
 function taxSummaryLabel(row, currency = 'MYR') {
   return `${row.label} on ${currency || 'MYR'} ${fmtMoney(row.taxableBase)}`
+}
+
+function documentTotalFromBreakdown(document, taxRows = []) {
+  const subtotal = Number(document?.subtotal ?? document?.total ?? 0)
+  const tax = taxRows.reduce((sum, row) => sum + moneyValue(row.amount), 0)
+  const discount = Number(document?.discount || 0)
+  const shipping = Number(document?.shiping_charge || 0)
+  const adjustment = Number(document?.adjustment || 0)
+  return roundMoney(subtotal + tax - discount + shipping + adjustment)
 }
 
 function addressLines(customer) {
@@ -468,6 +482,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
   const discountVal = Number(invoice.discount || 0)
   const shippingVal = Number(invoice.shiping_charge || 0)
   const adjustmentVal = Number(invoice.adjustment || 0)
+  const totalVal = documentTotalFromBreakdown(invoice, taxRows)
   const discountLabel = invoice.discouttype === '%' && Number(invoice.discountvalue || 0) > 0
     ? `Discount (${invoice.discountvalue}%)`
     : 'Discount'
@@ -479,7 +494,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
       <div class="inv-trow"><span>${escapeHtml(discountLabel)}</span><span class="v">&minus; ${fmtMoney(discountVal)}</span></div>
       <div class="inv-trow"><span>Shipping Charges</span><span class="v">+ ${fmtMoney(shippingVal)}</span></div>
       <div class="inv-trow"><span>Adjustment</span><span class="v">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
-      <div class="inv-trow inv-grand"><span>Total (RM)</span><span class="v">${fmtMoney(invoice.total)}</span></div>
+      <div class="inv-trow inv-grand"><span>Total (RM)</span><span class="v">${fmtMoney(totalVal)}</span></div>
     </div>
     <div class="terms-block">
       ${notes ? `<div class="section">${notes}</div>` : ''}
@@ -702,7 +717,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
   }
   const handleTaxSelect = (e) => {
     const tax = taxes.find(t => String(t.id) === e.target.value)
-    onChange(idx, { ...item, taxid: tax?.id || '', taxlbl: tax?.name || '', taxrate: tax ? parseFloat(tax.name.match(/[\d.]+/)?.[0] || 0) : 0 })
+    onChange(idx, { ...item, taxid: tax?.id || '', taxlbl: tax?.name || '', taxrate: tax ? taxRateFromLookup(tax) : 0 })
   }
 
   const inputCls = 'w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-400'
@@ -859,6 +874,18 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
   useEffect(() => { setSalesUsers(salesUsersQuery.data || []) }, [salesUsersQuery.data])
   useEffect(() => { setTaxes(taxesQuery.data || []) }, [taxesQuery.data])
   useEffect(() => { setPaymentTerms(paymentTermsQuery.data || []) }, [paymentTermsQuery.data])
+
+  useEffect(() => {
+    if (!taxes.length) return
+    setLineItems(prev => prev.map(item => {
+      if (!item.taxid) return item
+      const tax = taxes.find(row => String(row.id) === String(item.taxid))
+      if (!tax) return item
+      const taxrate = taxRateFromLookup(tax)
+      if (item.taxlbl === tax.name && Number(item.taxrate || 0) === taxrate) return item
+      return { ...item, taxlbl: item.taxlbl || tax.name, taxrate }
+    }))
+  }, [taxes])
 
   useEffect(() => {
     const load = async () => {
@@ -1354,18 +1381,20 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
           ? supabase.from('goodsservices').select('id, sku').in('id', itemIds)
           : Promise.resolve({ data: [] }),
         taxIds.length > 0
-          ? supabase.from('tax').select('id, name').in('id', taxIds)
+          ? supabase.from('tax').select('id, name, rate').in('id', taxIds)
           : Promise.resolve({ data: [] }),
       ])
       const contactRow = contactResult.data || null
       const customerRow = customerResult.data || null
       const skuByItemId = Object.fromEntries((goodsResult.data || []).map(row => [String(row.id), row.sku || '']))
       const taxNameById = Object.fromEntries((taxResult.data || []).map(row => [String(row.id), row.name || '']))
+      const taxRateById = Object.fromEntries((taxResult.data || []).map(row => [String(row.id), taxRateFromLookup(row)]))
       setInvoice(inv)
       setItems((ii || []).map(item => ({
         ...item,
         sku: skuByItemId[String(item.itemid)] || item.sku || '',
         taxlbl: item.taxlbl || taxNameById[String(item.taxid)] || '',
+        taxrate: item.taxrate || taxRateById[String(item.taxid)] || taxRateFromLabel(item.taxlbl),
       })))
       setContact(contactRow)
       setCustomer(customerRow)
@@ -1381,6 +1410,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
   const isOverdue = invoice.due_date && new Date(invoice.due_date) < new Date()
   const contactName = resolvedContactName(invoice.contact_person, contact)
   const taxRows = taxSummaryRows(items)
+  const invoiceTotal = documentTotalFromBreakdown(invoice, taxRows)
   const printableHtml = () => invoiceHtml(invoice, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => setPreviewHtml(printableHtml())
   const downloadPdf = async () => {
@@ -1534,7 +1564,7 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
             )}
             <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-900 text-base">
               <span>Total</span>
-              <span>{invoice.currency} {fmtMoney(invoice.total)}</span>
+              <span>{invoice.currency} {fmtMoney(invoiceTotal)}</span>
             </div>
           </div>
         </div>

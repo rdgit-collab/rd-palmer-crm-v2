@@ -79,7 +79,7 @@ export function usePaymentTerms() {
 }
 
 export function useTaxes() {
-  return useLookup('tax', 'id, name', 'name')
+  return useLookup('tax', 'id, name, rate', 'name')
 }
 
 export function useCategories() {

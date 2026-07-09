@@ -244,6 +244,11 @@ function taxRateFromLabel(label = '') {
   return Number.isFinite(rate) ? rate : 0
 }
 
+function taxRateFromLookup(tax) {
+  const rate = parseFloat(tax?.rate)
+  return Number.isFinite(rate) ? rate : taxRateFromLabel(tax?.name)
+}
+
 function lineTaxAmount(item) {
   const savedTax = parseFloat(item?.tax)
   if (Number.isFinite(savedTax) && savedTax > 0) return savedTax
@@ -277,6 +282,15 @@ function totalTaxAmount(items = []) {
 
 function taxSummaryLabel(row, currency = 'MYR') {
   return `${row.label} on ${currency || 'MYR'} ${fmtMoney(row.taxableBase)}`
+}
+
+function documentTotalFromBreakdown(document, taxRows = []) {
+  const subtotal = Number(document?.subtotal ?? document?.total ?? 0)
+  const tax = taxRows.reduce((sum, row) => sum + moneyValue(row.amount), 0)
+  const discount = Number(document?.discount || 0)
+  const shipping = Number(document?.shiping_charge || 0)
+  const adjustment = Number(document?.adjustment || 0)
+  return roundMoney(subtotal + tax - discount + shipping + adjustment)
 }
 
 function paymentInvoiceLabel(type, quotationNumber) {
@@ -470,6 +484,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
   const discountVal = Number(quotation.discount || 0)
   const shippingVal = Number(quotation.shiping_charge || 0)
   const adjustmentVal = Number(quotation.adjustment || 0)
+  const totalVal = documentTotalFromBreakdown(quotation, taxRows)
   const discountLabel = quotation.discouttype === '%' && Number(quotation.discountvalue || 0) > 0
     ? `Discount (${quotation.discountvalue}%)`
     : 'Discount'
@@ -481,7 +496,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
       <div class="totals-row"><span class="t-label">${escapeHtml(discountLabel)}</span><span class="t-value">&minus; ${fmtMoney(discountVal)}</span></div>
       <div class="totals-row"><span class="t-label">Shipping Charges</span><span class="t-value">+ ${fmtMoney(shippingVal)}</span></div>
       <div class="totals-row"><span class="t-label">Adjustment</span><span class="t-value">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
-      <div class="totals-row totals-grand"><span class="t-label">Total (RM)</span><span class="t-value">${fmtMoney(quotation.total)}</span></div>
+      <div class="totals-row totals-grand"><span class="t-label">Total (RM)</span><span class="t-value">${fmtMoney(totalVal)}</span></div>
     </div>
     <div class="terms-block">
       ${notes ? `<div class="section">${notes}</div>` : ''}
@@ -731,7 +746,7 @@ function LineItemRow({ item, idx, catalogueItems, taxes, onChange, onRemove }) {
       ...item,
       taxid: tax?.id || '',
       taxlbl: tax?.name || '',
-      taxrate: tax ? parseFloat(tax.name.match(/[\d.]+/)?.[0] || 0) : 0,
+      taxrate: tax ? taxRateFromLookup(tax) : 0,
     })
   }
 
@@ -896,6 +911,18 @@ function QuotationForm({ quotation, onSave, onCancel }) {
   useEffect(() => { setSalesUsers(salesUsersQuery.data || []) }, [salesUsersQuery.data])
   useEffect(() => { setTaxes(taxesQuery.data || []) }, [taxesQuery.data])
   useEffect(() => { setPaymentTerms(paymentTermsQuery.data || []) }, [paymentTermsQuery.data])
+
+  useEffect(() => {
+    if (!taxes.length) return
+    setLineItems(prev => prev.map(item => {
+      if (!item.taxid) return item
+      const tax = taxes.find(row => String(row.id) === String(item.taxid))
+      if (!tax) return item
+      const taxrate = taxRateFromLookup(tax)
+      if (item.taxlbl === tax.name && Number(item.taxrate || 0) === taxrate) return item
+      return { ...item, taxlbl: item.taxlbl || tax.name, taxrate }
+    }))
+  }, [taxes])
 
   useEffect(() => {
     const load = async () => {
@@ -1430,7 +1457,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
           ? supabase.from('goodsservices').select('id, sku').in('id', itemIds)
           : Promise.resolve({ data: [] }),
         taxIds.length > 0
-          ? supabase.from('tax').select('id, name').in('id', taxIds)
+          ? supabase.from('tax').select('id, name, rate').in('id', taxIds)
           : Promise.resolve({ data: [] }),
         q?.number
           ? supabase
@@ -1444,12 +1471,14 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
       const customerRow = customerResult.data || null
       const skuByItemId = Object.fromEntries((goodsResult.data || []).map(row => [String(row.id), row.sku || '']))
       const taxNameById = Object.fromEntries((taxResult.data || []).map(row => [String(row.id), row.name || '']))
+      const taxRateById = Object.fromEntries((taxResult.data || []).map(row => [String(row.id), taxRateFromLookup(row)]))
       const invoices = invoiceResult.data || []
       setQuotation(q)
       setItems((qi || []).map(item => ({
         ...item,
         sku: skuByItemId[String(item.itemid)] || item.sku || '',
         taxlbl: item.taxlbl || taxNameById[String(item.taxid)] || '',
+        taxrate: item.taxrate || taxRateById[String(item.taxid)] || taxRateFromLabel(item.taxlbl),
       })))
       setLinkedInvoices(invoices)
       setContact(contactRow)
@@ -1460,7 +1489,8 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
     load()
   }, [quotationId])
 
-  const quotationTotal = roundMoney(quotation?.total)
+  const taxRows = taxSummaryRows(items)
+  const quotationTotal = documentTotalFromBreakdown(quotation, taxRows)
   const invoicedTotal = roundMoney(linkedInvoices.reduce((sum, invoice) => sum + moneyValue(invoice.total), 0))
   const remainingTotal = Math.max(0, roundMoney(quotationTotal - invoicedTotal))
   const partialAmount = roundMoney(paymentAmount || (quotationTotal * (moneyValue(paymentPercent) / 100)))
@@ -1599,7 +1629,6 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
   const isConverted = quotation.isconvert === 1
   const isPartiallyInvoiced = !isConverted && invoicedTotal > 0
   const contactName = resolvedContactName(quotation.contact_person, contact)
-  const taxRows = taxSummaryRows(items)
   const printableHtml = () => quotationHtml(quotation, items, contactName, customer, contactPhone(contact), salesContactNumber)
   const openPreview = () => setPreviewHtml(printableHtml())
   const downloadPdf = async () => {
@@ -1812,7 +1841,7 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
             )}
             <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-900 text-base">
               <span>Total</span>
-              <span>{quotation.currency} {fmtMoney(quotation.total)}</span>
+              <span>{quotation.currency} {fmtMoney(quotationTotal)}</span>
             </div>
           </div>
         </div>
