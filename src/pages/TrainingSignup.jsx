@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   Calendar, Clock, MapPin, GraduationCap, Check, Info, Plus, X, ArrowRight,
   Sparkles, Users, FileText, TrendingUp, User,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseAnonKey, supabaseUrl } from '../lib/supabase'
 import { formatDate } from '../lib/dateFormat'
 import rdPalmerLogo from '../assets/rd-palmer-logo.png'
 import radiodetectionLogo from '../assets/radiodetection-training-logo.png'
 
 const blankPart = () => ({ participant_name: '', email: '', phone: '', nric: '', existing_user: null })
+const maxParticipants = 10
+const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
 const dateRangeLabel = session => {
   if (!session?.session_date) return 'TBA'
   if (session.end_date && session.end_date !== session.session_date) return `${formatDate(session.session_date)} - ${formatDate(session.end_date)}`
@@ -26,13 +28,52 @@ export default function TrainingSignup() {
   const [hrEmail, setHrEmail] = useState('')
   const [parts, setParts] = useState([blankPart()])
   const [website, setWebsite] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(0) // count registered
+  const turnstileRef = useRef(null)
+  const turnstileWidgetId = useRef(null)
 
   useEffect(() => {
     supabase.from('training_sessions').select('*').eq('slug', slug).eq('is_open', true).maybeSingle()
       .then(({ data }) => setSession(data || null))
   }, [slug])
+
+  useEffect(() => {
+    if (!turnstileSiteKey || !turnstileRef.current || done > 0) return undefined
+
+    let cancelled = false
+    const renderTurnstile = () => {
+      if (cancelled || !turnstileRef.current || !window.turnstile || turnstileWidgetId.current !== null) return
+      turnstileWidgetId.current = window.turnstile.render(turnstileRef.current, {
+        sitekey: turnstileSiteKey,
+        callback: token => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      })
+    }
+
+    if (window.turnstile) {
+      renderTurnstile()
+    } else {
+      const existing = document.querySelector('script[data-turnstile="true"]')
+      const script = existing || document.createElement('script')
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+      script.async = true
+      script.defer = true
+      script.dataset.turnstile = 'true'
+      script.addEventListener('load', renderTurnstile)
+      if (!existing) document.head.appendChild(script)
+    }
+
+    return () => {
+      cancelled = true
+      if (window.turnstile && turnstileWidgetId.current !== null) {
+        window.turnstile.remove(turnstileWidgetId.current)
+        turnstileWidgetId.current = null
+      }
+    }
+  }, [done])
 
   if (session === undefined) return <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">Loading…</div>
   if (session === null) return (
@@ -50,8 +91,12 @@ export default function TrainingSignup() {
   const trainersText = '' // names omitted on public page for privacy unless desired
 
   const setPart = (i, k, v) => setParts(prev => prev.map((p, idx) => idx === i ? { ...p, [k]: v } : p))
-  const addPart = () => setParts(prev => [...prev, blankPart()])
+  const addPart = () => setParts(prev => prev.length >= maxParticipants ? prev : [...prev, blankPart()])
   const rmPart = (i) => setParts(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev)
+  const resetTurnstile = () => {
+    setTurnstileToken('')
+    if (window.turnstile && turnstileWidgetId.current !== null) window.turnstile.reset(turnstileWidgetId.current)
+  }
 
   const submit = async () => {
     if (website.trim()) {
@@ -60,6 +105,8 @@ export default function TrainingSignup() {
     }
     if (!company.trim()) { alert('Please enter your company name.'); return }
     if (!hrd) { alert('Please indicate whether you are claiming HRD fund.'); return }
+    if (parts.length > maxParticipants) { alert(`Please register no more than ${maxParticipants} participants at once.`); return }
+    if (turnstileSiteKey && !turnstileToken) { alert('Please complete the verification check.'); return }
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i]
       if (!p.participant_name.trim() || !p.email.trim() || !p.phone.trim() || !p.nric.trim() || p.existing_user === null) {
@@ -67,23 +114,49 @@ export default function TrainingSignup() {
       }
     }
     setSubmitting(true)
-    const rows = parts.map(p => ({
-      session_id: session.id, source: 'public',
-      participant_name: p.participant_name.trim(), company: company.trim(), email: p.email.trim(),
-      phone: p.phone.trim(), nric: p.nric.trim(), industry: industry.trim(),
-      existing_user: p.existing_user === 'Yes', hrd_claim: hrd === 'Yes', hr_email: hrEmail.trim(),
-      referral_code: referralCode || null,
-    }))
-    const { error } = await supabase.from('training_registrations').insert(rows)
+    const payload = {
+      sessionId: session.id,
+      slug,
+      company,
+      industry,
+      hrdClaim: hrd === 'Yes',
+      hrEmail,
+      referralCode: referralCode || null,
+      website,
+      turnstileToken,
+      participants: parts.map(p => ({
+        participant_name: p.participant_name,
+        email: p.email,
+        phone: p.phone,
+        nric: p.nric,
+        existing_user: p.existing_user === 'Yes',
+      })),
+    }
+
+    let result = null
+    let responseOk = false
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/training-register`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+      responseOk = res.ok
+      result = await res.json().catch(() => null)
+    } catch (_) {
+      result = { error: 'Unable to submit right now. Please check your connection and try again.' }
+    }
     setSubmitting(false)
-    if (error) {
-      const msg = String(error.message || '')
-      if (msg.includes('full')) alert('This training session is already full.')
-      else if (msg.includes('closed')) alert('This training session is no longer accepting registrations.')
-      else alert('Something went wrong: ' + msg)
+    if (!responseOk || result?.ok === false) {
+      resetTurnstile()
+      alert(result?.error || 'Unable to submit right now. Please try again shortly.')
       return
     }
-    setDone(rows.length)
+    setDone(Number(result?.registered) || parts.length)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -201,7 +274,7 @@ export default function TrainingSignup() {
             <div className="w-18 h-18 rounded-full bg-green-50 text-green-600 flex items-center justify-center mx-auto mb-5" style={{ width: 72, height: 72 }}><Check size={36} /></div>
             <h2 className="text-2xl font-extrabold text-gray-900 mb-2">{done > 1 ? `${done} participants registered!` : "You're registered!"}</h2>
             <p className="text-gray-500 max-w-md mx-auto">Thanks! {done > 1 ? `All ${done} participants from ` : ''}<b>{company}</b> {done > 1 ? 'are' : 'is'} confirmed for <b>{session.title}</b>{session.session_date ? ` on ${dateRangeLabel(session)}` : ''}. We'll email payment & HRD details shortly.</p>
-            <button onClick={() => { setDone(0); setParts([blankPart()]); setCompany(''); setIndustry(''); setHrd(null); setHrEmail('') }}
+            <button onClick={() => { setDone(0); setParts([blankPart()]); setCompany(''); setIndustry(''); setHrd(null); setHrEmail(''); resetTurnstile() }}
               className="mt-6 border border-gray-200 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-medium text-gray-700">New registration</button>
           </div>
         ) : (
@@ -248,7 +321,13 @@ export default function TrainingSignup() {
                   </div>
                 </div>
               ))}
-              <button onClick={addPart} className="w-full border-[1.5px] border-dashed border-gray-300 rounded-xl py-3 text-sm font-semibold text-gray-700 hover:border-red-500 hover:text-red-600 hover:bg-white transition flex items-center justify-center gap-2 mb-5"><Plus size={16} /> Add another participant</button>
+              <button onClick={addPart} disabled={parts.length >= maxParticipants} className="w-full border-[1.5px] border-dashed border-gray-300 rounded-xl py-3 text-sm font-semibold text-gray-700 hover:border-red-500 hover:text-red-600 hover:bg-white transition flex items-center justify-center gap-2 mb-5 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={16} /> Add another participant</button>
+
+              {turnstileSiteKey && (
+                <div className="mb-4 min-h-[65px]">
+                  <div ref={turnstileRef} />
+                </div>
+              )}
 
               <button onClick={submit} disabled={submitting} className="w-full inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-3.5 rounded-xl font-semibold transition disabled:opacity-50">
                 {submitting ? 'Submitting…' : <>Submit registration <ArrowRight size={16} /></>}
