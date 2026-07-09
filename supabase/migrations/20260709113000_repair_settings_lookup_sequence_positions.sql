@@ -1,0 +1,20 @@
+-- Keep Settings lookup inserts from colliding with imported legacy IDs.
+select setval('public.account_type_id_seq', coalesce((select max(id) from public.account_type), 1), true);
+select setval('public.activity_type_id_seq', coalesce((select max(id) from public.activity_type), 1), true);
+select setval('public.category_id_seq', coalesce((select max(id) from public.category), 1), true);
+select setval('public.checklist_id_seq', coalesce((select max(id) from public.checklist), 1), true);
+select setval('public.city_id_seq', coalesce((select max(id) from public.city), 1), true);
+select setval('public.country_id_seq', coalesce((select max(id) from public.country), 1), true);
+select setval('public.industries_id_seq', coalesce((select max(id) from public.industries), 1), true);
+select setval('public.lead_id_seq', coalesce((select max(id) from public.lead), 1), true);
+select setval('public.mode_id_seq', coalesce((select max(id) from public.mode), 1), true);
+select setval('public.payment_term_id_seq', coalesce((select max(id) from public.payment_term), 1), true);
+select setval('public.service_type_id_seq', coalesce((select max(id) from public.service_type), 1), true);
+select setval('public.spare_id_seq', greatest(coalesce((select max(id) from public.spare), 1), 1), true);
+select setval('public.stage_id_seq', coalesce((select max(id) from public.stage), 1), true);
+select setval('public.state_id_seq', coalesce((select max(id) from public.state), 1), true);
+select setval('public.tax_id_seq', coalesce((select max(id) from public.tax), 1), true);
+select setval('public.termcondition_id_seq', coalesce((select max(id) from public.termcondition), 1), true);
+select setval('public.vendor_id_seq', coalesce((select max(id) from public.vendor), 1), true);
+select setval('public.booking_venues_id_seq', coalesce((select max(id) from public.booking_venues), 1), true);
+select setval('public.booking_vehicles_id_seq', coalesce((select max(id) from public.booking_vehicles), 1), true);

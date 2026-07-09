@@ -16,10 +16,18 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
   const [newExtra, setNewExtra]   = useState('')
   const [editVal, setEditVal]     = useState('')
   const [editExtra, setEditExtra] = useState('')
+  const [error, setError]         = useState('')
 
   const fetch = async () => {
     setLoading(true)
-    const { data } = await supabase.from(tableName).select('*').order(valueField)
+    const { data, error: loadError } = await supabase.from(tableName).select('*').order(valueField)
+    if (loadError) {
+      setError(loadError.message)
+      setRows([])
+      setLoading(false)
+      return
+    }
+    setError('')
     setRows(data || [])
     setLoading(false)
   }
@@ -30,7 +38,9 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
     const payload = { [valueField]: newVal.trim() }
     if (hasUserIdInt) payload.user_id = 1          // old Lovable tables use INTEGER user_id
     if (extraField) payload[extraField] = newExtra
-    await supabase.from(tableName).insert([payload])
+    setError('')
+    const { error: insertError } = await supabase.from(tableName).insert([payload])
+    if (insertError) { setError(insertError.message); return }
     logActivity({
       module: 'settings',
       action: 'create',
@@ -44,7 +54,9 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
   const handleUpdate = async (id) => {
     const payload = { [valueField]: editVal }
     if (extraField) payload[extraField] = editExtra
-    await supabase.from(tableName).update(payload).eq('id', id)
+    setError('')
+    const { error: updateError } = await supabase.from(tableName).update(payload).eq('id', id)
+    if (updateError) { setError(updateError.message); return }
     logActivity({
       module: 'settings',
       action: 'update',
@@ -57,7 +69,9 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
   }
 
   const handleDelete = async (id) => {
-    await supabase.from(tableName).delete().eq('id', id)
+    setError('')
+    const { error: deleteError } = await supabase.from(tableName).delete().eq('id', id)
+    if (deleteError) { setError(deleteError.message); return }
     logActivity({
       module: 'settings',
       action: 'delete',
@@ -76,6 +90,7 @@ function LookupPanel({ title, tableName, valueField = 'name', extraField = null,
           <Plus size={12} /> Add
         </button>
       </div>
+      {error && <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       <div className="divide-y divide-gray-100">
         {loading ? <div className="px-4 py-6 text-sm text-gray-400 text-center">Loading...</div>
         : rows.length === 0 && !adding ? <div className="px-4 py-6 text-sm text-gray-400 text-center">No entries yet.</div>
@@ -547,12 +562,18 @@ function TemplatesPanel() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [error, setError]   = useState('')
 
   useEffect(() => {
     supabase.from('app_setting')
       .select('key, value')
       .in('key', ['quotation_notes', 'quotation_terms', 'invoice_notes', 'invoice_terms', 'task_terms'])
-      .then(({ data }) => {
+      .then(({ data, error: loadError }) => {
+        if (loadError) {
+          setError(loadError.message)
+          setLoaded(true)
+          return
+        }
         const map = {}
         ;(data || []).forEach(r => { map[r.key] = r.value || '' })
         setVals(prev => ({ ...prev, ...map }))
@@ -562,9 +583,15 @@ function TemplatesPanel() {
 
   const handleSave = async () => {
     setSaving(true)
+    setError('')
     for (const [key, value] of Object.entries(vals)) {
-      await supabase.from('app_setting')
+      const { error: saveError } = await supabase.from('app_setting')
         .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+      if (saveError) {
+        setError(saveError.message)
+        setSaving(false)
+        return
+      }
     }
     setSaving(false)
     setSaved(true)
@@ -575,6 +602,7 @@ function TemplatesPanel() {
 
   return (
     <div className="space-y-6">
+      {error && <div className="border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <TemplateTextBlock label="Quotation — Notes" value={vals.quotation_notes} onChange={value => setVals(prev => ({ ...prev, quotation_notes: value }))} placeholder="e.g. Thank you for your interest. This quotation is valid for 30 days." />
         <TemplateTextBlock label="Quotation — Terms & Conditions" value={vals.quotation_terms} onChange={value => setVals(prev => ({ ...prev, quotation_terms: value }))} placeholder="e.g. 1. Prices are subject to change without notice..." />
@@ -697,7 +725,8 @@ function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
   const saveNew = async () => {
     const requiredMissing = fields.some(field => field.required && !String(newForm[field.key] || '').trim())
     if (requiredMissing) return
-    await onAdd(normaliseBookingPayload(fields, newForm))
+    const saved = await onAdd(normaliseBookingPayload(fields, newForm))
+    if (!saved) return
     setNewForm(emptyBookingForm(fields))
     setAdding(false)
   }
@@ -705,7 +734,8 @@ function BookingCrudPanel({ title, rows, fields, onAdd, onUpdate, onDelete }) {
   const saveEdit = async () => {
     const requiredMissing = fields.some(field => !field.createOnly && field.required && !String(editForm[field.key] || '').trim())
     if (requiredMissing) return
-    await onUpdate(editId, normaliseBookingPayload(fields, editForm, { editing: true }))
+    const saved = await onUpdate(editId, normaliseBookingPayload(fields, editForm, { editing: true }))
+    if (!saved) return
     setEditId(null)
   }
 
@@ -838,7 +868,7 @@ function BookingSettingsPanel() {
     const { error: mutationError } = await query
     if (mutationError) {
       setError(mutationError.message)
-      return
+      return false
     }
     logActivity({
       module: 'settings',
@@ -849,6 +879,7 @@ function BookingSettingsPanel() {
       summary: `${action === 'insert' ? 'Created' : action === 'update' ? 'Updated' : 'Deleted'} booking dropdown data`,
     })
     await load()
+    return true
   }
 
   const deleteRow = (tableName, id) => {
