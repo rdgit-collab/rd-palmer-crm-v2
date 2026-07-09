@@ -144,6 +144,7 @@ function LocationsPanel() {
   const [countries, setCountries] = useState([])
   const [states, setStates]       = useState([])
   const [cities, setCities]       = useState([])
+  const [error, setError]         = useState('')
 
   const [selCountry, setSelCountry] = useState('')
   const [selState, setSelState]     = useState('')
@@ -162,30 +163,38 @@ function LocationsPanel() {
   const [editVal, setEditVal]       = useState('')
 
   const loadCountries = async () => {
-    const { data } = await supabase.from('country').select('*').order('name')
+    const { data, error: loadError } = await supabase.from('country').select('*').order('name')
+    if (loadError) { setError(loadError.message); return }
+    setError('')
     setCountries(data || [])
   }
   const loadStates = async (countryId) => {
     if (!countryId) { setStates([]); return }
-    const [{ data: linkedStates }, { data: countryCities, error: cityErr }] = await Promise.all([
+    const [{ data: linkedStates, error: stateErr }, { data: countryCities, error: cityErr }] = await Promise.all([
       supabase.from('state').select('*').eq('country_id', countryId).order('name'),
       supabase.from('city').select('state_id').eq('country_id', countryId).not('state_id', 'is', null),
     ])
+    if (stateErr) { setError(stateErr.message); return }
+    if (cityErr) setError(cityErr.message)
     const cityStateIds = [...new Set((countryCities || []).map(row => row.state_id).filter(Boolean))]
-    const { data: cityStates } = !cityErr && cityStateIds.length > 0
+    const { data: cityStates, error: cityStateErr } = !cityErr && cityStateIds.length > 0
       ? await supabase.from('state').select('*').in('id', cityStateIds)
       : { data: [] }
+    if (cityStateErr) setError(cityStateErr.message)
     const merged = [...(linkedStates || []), ...cityStates].reduce((acc, state) => {
       if (!acc.some(item => String(item.id) === String(state.id))) acc.push(state)
       return acc
     }, [])
+    if (!cityErr && !cityStateErr) setError('')
     setStates(merged.sort((a, b) => (a.name || '').localeCompare(b.name || '')))
   }
   const loadCities = async (stateId) => {
     if (!stateId) { setCities([]); return }
     let q = supabase.from('city').select('*').eq('state_id', stateId).order('name')
     if (selCountry) q = q.eq('country_id', selCountry)
-    const { data } = await q
+    const { data, error: loadError } = await q
+    if (loadError) { setError(loadError.message); return }
+    setError('')
     setCities(data || [])
   }
 
@@ -196,15 +205,21 @@ function LocationsPanel() {
   // Country CRUD
   const addCountry = async () => {
     if (!newCountry.trim()) return
-    await supabase.from('country').insert([{ name: newCountry.trim() }])
+    setError('')
+    const { error: insertError } = await supabase.from('country').insert([{ name: newCountry.trim() }])
+    if (insertError) { setError(insertError.message); return }
     setNewCountry(''); setAddingCountry(false); loadCountries()
   }
   const updateCountry = async (id, field, val) => {
-    await supabase.from('country').update({ [field]: val }).eq('id', id)
+    setError('')
+    const { error: updateError } = await supabase.from('country').update({ [field]: val }).eq('id', id)
+    if (updateError) { setError(updateError.message); return }
     setEditCountry(null); loadCountries()
   }
   const deleteCountry = async (id) => {
-    await supabase.from('country').delete().eq('id', id)
+    setError('')
+    const { error: deleteError } = await supabase.from('country').delete().eq('id', id)
+    if (deleteError) { setError(deleteError.message); return }
     if (String(selCountry) === String(id)) setSelCountry('')
     loadCountries()
   }
@@ -212,15 +227,21 @@ function LocationsPanel() {
   // State CRUD
   const addState = async () => {
     if (!newState.trim() || !selCountry) return
-    await supabase.from('state').insert([{ name: newState.trim(), country_id: selCountry }])
+    setError('')
+    const { error: insertError } = await supabase.from('state').insert([{ name: newState.trim(), country_id: selCountry, user_id: 1 }])
+    if (insertError) { setError(insertError.message); return }
     setNewState(''); setAddingState(false); loadStates(selCountry)
   }
   const updateState = async (id) => {
-    await supabase.from('state').update({ name: editVal }).eq('id', id)
+    setError('')
+    const { error: updateError } = await supabase.from('state').update({ name: editVal }).eq('id', id)
+    if (updateError) { setError(updateError.message); return }
     setEditState(null); loadStates(selCountry)
   }
   const deleteState = async (id) => {
-    await supabase.from('state').delete().eq('id', id)
+    setError('')
+    const { error: deleteError } = await supabase.from('state').delete().eq('id', id)
+    if (deleteError) { setError(deleteError.message); return }
     if (String(selState) === String(id)) setSelState('')
     loadStates(selCountry)
   }
@@ -228,15 +249,21 @@ function LocationsPanel() {
   // City CRUD
   const addCity = async () => {
     if (!newCity.trim() || !selState) return
-    await supabase.from('city').insert([{ name: newCity.trim(), state_id: selState, country_id: selCountry || null }])
+    setError('')
+    const { error: insertError } = await supabase.from('city').insert([{ name: newCity.trim(), state_id: selState, country_id: selCountry || null, user_id: 1 }])
+    if (insertError) { setError(insertError.message); return }
     setNewCity(''); setAddingCity(false); loadCities(selState)
   }
   const updateCity = async (id) => {
-    await supabase.from('city').update({ name: editVal }).eq('id', id)
+    setError('')
+    const { error: updateError } = await supabase.from('city').update({ name: editVal }).eq('id', id)
+    if (updateError) { setError(updateError.message); return }
     setEditCity(null); loadCities(selState)
   }
   const deleteCity = async (id) => {
-    await supabase.from('city').delete().eq('id', id)
+    setError('')
+    const { error: deleteError } = await supabase.from('city').delete().eq('id', id)
+    if (deleteError) { setError(deleteError.message); return }
     loadCities(selState)
   }
 
@@ -245,7 +272,9 @@ function LocationsPanel() {
   const rowClass = "px-4 py-2 flex items-center gap-2 hover:bg-gray-50"
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div className="space-y-4">
+      {error && <div className="border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
       {/* Countries */}
       <div className={colClass}>
@@ -389,6 +418,7 @@ function LocationsPanel() {
         </div>
       </div>
 
+    </div>
     </div>
   )
 }
