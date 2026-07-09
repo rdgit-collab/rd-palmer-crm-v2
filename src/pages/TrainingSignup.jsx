@@ -135,6 +135,7 @@ export default function TrainingSignup() {
 
     let result = null
     let responseOk = false
+    let functionMissing = false
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/training-register`, {
         method: 'POST',
@@ -147,8 +148,21 @@ export default function TrainingSignup() {
       })
       responseOk = res.ok
       result = await res.json().catch(() => null)
+      functionMissing = res.status === 404
     } catch (_) {
       result = { error: 'Unable to submit right now. Please check your connection and try again.' }
+    }
+    if (functionMissing) {
+      const rows = parts.map(p => ({
+        session_id: session.id, source: 'public',
+        participant_name: p.participant_name.trim(), company: company.trim(), email: p.email.trim(),
+        phone: p.phone.trim(), nric: p.nric.trim(), industry: industry.trim(),
+        existing_user: p.existing_user === 'Yes', hrd_claim: hrd === 'Yes', hr_email: hrEmail.trim(),
+        referral_code: referralCode || null,
+      }))
+      const { error } = await supabase.from('training_registrations').insert(rows)
+      responseOk = !error
+      result = error ? { ok: false, error: error.message } : { ok: true, registered: rows.length }
     }
     setSubmitting(false)
     if (!responseOk || result?.ok === false) {
