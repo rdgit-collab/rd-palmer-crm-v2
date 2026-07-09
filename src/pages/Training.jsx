@@ -46,6 +46,20 @@ const durationFromDates = (start, end) => {
   return `${days} days`
 }
 
+function SelectableSignupLink({ url }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title={url}
+      className="block select-all break-all font-mono text-xs font-medium text-red-600 hover:underline"
+    >
+      {url}
+    </a>
+  )
+}
+
 export default function Training() {
   const { profile } = useAuth()
   const canManageTraining = hasAdminAccess(profile?.role_id)
@@ -207,8 +221,8 @@ export default function Training() {
                       {trs.length > 2 && <span className="rounded bg-gray-100 text-gray-500 px-2 py-0.5 text-xs">+{trs.length - 2}</span>}
                     </td>
                     {canViewParticipants && <td className="px-4 py-3"><b>{regCounts[s.id] || 0}</b><span className="text-gray-400"> / {s.capacity || 0}</span></td>}
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <span className="text-red-600 font-medium text-xs">{canManageTraining ? `/training/signup/${s.slug}` : trackedUrl.replace(window.location.origin, '')}</span>
+                    <td className="px-4 py-3 max-w-[320px]" onClick={e => e.stopPropagation()}>
+                      <SelectableSignupLink url={trackedUrl} />
                     </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                       {canManageTraining ? (
@@ -391,7 +405,9 @@ function SessionDetail({ sessionId, activeUsers, profile, canManageTraining, can
       <div className="bg-white border border-gray-200 rounded-xl p-3 mb-6 flex items-center gap-3 max-w-2xl">
         <Link2 size={15} className="text-gray-400 shrink-0" />
         <span className="text-xs font-semibold text-gray-500 shrink-0">{canManageTraining ? 'Signup link' : 'Your referral link'}</span>
-        <span className="flex-1 truncate font-mono text-xs text-gray-600">{url}</span>
+        <span className="min-w-0 flex-1">
+          <SelectableSignupLink url={url} />
+        </span>
         <button onClick={copyLink} disabled={!canManageTraining && !referralCode} className="inline-flex items-center gap-1 border border-gray-200 hover:bg-gray-50 disabled:opacity-50 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700">
           {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
         </button>
