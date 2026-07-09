@@ -255,16 +255,28 @@ function lineTaxAmount(item) {
 function taxSummaryRows(items = []) {
   const rowsByLabel = new Map()
   items.forEach(item => {
+    const taxableBase = parseFloat(item?.amount) || 0
     const amount = lineTaxAmount(item)
     if (amount <= 0) return
     const label = String(item?.taxlbl || 'Tax').trim() || 'Tax'
-    rowsByLabel.set(label, (rowsByLabel.get(label) || 0) + amount)
+    const row = rowsByLabel.get(label) || { label, taxableBase: 0, amount: 0 }
+    row.taxableBase += taxableBase
+    row.amount += amount
+    rowsByLabel.set(label, row)
   })
-  return Array.from(rowsByLabel, ([label, amount]) => ({ label, amount: roundMoney(amount) }))
+  return Array.from(rowsByLabel.values()).map(row => ({
+    ...row,
+    taxableBase: roundMoney(row.taxableBase),
+    amount: roundMoney(row.amount),
+  }))
 }
 
 function totalTaxAmount(items = []) {
   return roundMoney(taxSummaryRows(items).reduce((sum, row) => sum + row.amount, 0))
+}
+
+function taxSummaryLabel(row, currency = 'MYR') {
+  return `${row.label} on ${currency || 'MYR'} ${fmtMoney(row.taxableBase)}`
 }
 
 function paymentInvoiceLabel(type, quotationNumber) {
@@ -465,7 +477,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
   const renderSummary = () => `
     <div class="totals-block">
       <div class="totals-row"><span class="t-label">Subtotal</span><span class="t-value">${fmtMoney(subtotalVal)}</span></div>
-      ${taxRows.map(row => `<div class="totals-row"><span class="t-label">${escapeHtml(row.label)}</span><span class="t-value">+ ${fmtMoney(row.amount)}</span></div>`).join('')}
+      ${taxRows.map(row => `<div class="totals-row"><span class="t-label">${escapeHtml(taxSummaryLabel(row, quotation.currency || 'MYR'))}</span><span class="t-value">+ ${fmtMoney(row.amount)}</span></div>`).join('')}
       <div class="totals-row"><span class="t-label">${escapeHtml(discountLabel)}</span><span class="t-value">&minus; ${fmtMoney(discountVal)}</span></div>
       <div class="totals-row"><span class="t-label">Shipping Charges</span><span class="t-value">+ ${fmtMoney(shippingVal)}</span></div>
       <div class="totals-row"><span class="t-label">Adjustment</span><span class="t-value">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
@@ -544,6 +556,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
         .summary-only .blank-row td { height: 40mm; }
         .totals-block { width: 92mm; margin: 3mm 0 0 auto; font-size: 12px; }
         .totals-row { display: grid; grid-template-columns: 1fr 34mm; gap: 5mm; padding: 0.6mm 0; align-items: baseline; }
+        .totals-row .t-label { overflow-wrap: anywhere; }
         .totals-row .t-value { text-align: right; white-space: nowrap; }
         .totals-grand { border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 1.6mm 0; margin-top: 1.2mm; font-weight: 700; }
         .terms-block { margin: 5mm 2mm 8mm; font-size: 11px; line-height: 1.25; }
@@ -1251,9 +1264,9 @@ function QuotationForm({ quotation, onSave, onCancel }) {
                 </div>
 
                 {taxRows.map(row => (
-                  <div key={row.label} className="flex justify-between text-gray-600">
-                    <span>{row.label}</span>
-                    <span className="font-medium">+ {fmtMoney(row.amount)}</span>
+                  <div key={row.label} className="flex justify-between gap-3 text-gray-600">
+                    <span className="min-w-0">{taxSummaryLabel(row, form.currency)}</span>
+                    <span className="shrink-0 font-medium">+ {fmtMoney(row.amount)}</span>
                   </div>
                 ))}
 
@@ -1765,9 +1778,9 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
               <span>{quotation.currency} {fmtMoney(quotation.subtotal)}</span>
             </div>
             {taxRows.map(row => (
-              <div key={row.label} className="flex justify-between text-gray-600">
-                <span>{row.label}</span>
-                <span>+ {fmtMoney(row.amount)}</span>
+              <div key={row.label} className="flex justify-between gap-3 text-gray-600">
+                <span className="min-w-0">{taxSummaryLabel(row, quotation.currency || 'MYR')}</span>
+                <span className="shrink-0">+ {fmtMoney(row.amount)}</span>
               </div>
             ))}
             {quotation.discount > 0 && (

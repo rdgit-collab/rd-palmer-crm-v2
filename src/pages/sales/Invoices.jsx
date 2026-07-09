@@ -233,16 +233,28 @@ function lineTaxAmount(item) {
 function taxSummaryRows(items = []) {
   const rowsByLabel = new Map()
   items.forEach(item => {
+    const taxableBase = finalItemAmount(item)
     const amount = lineTaxAmount(item)
     if (amount <= 0) return
     const label = String(item?.taxlbl || 'Tax').trim() || 'Tax'
-    rowsByLabel.set(label, (rowsByLabel.get(label) || 0) + amount)
+    const row = rowsByLabel.get(label) || { label, taxableBase: 0, amount: 0 }
+    row.taxableBase += taxableBase
+    row.amount += amount
+    rowsByLabel.set(label, row)
   })
-  return Array.from(rowsByLabel, ([label, amount]) => ({ label, amount: roundMoney(amount) }))
+  return Array.from(rowsByLabel.values()).map(row => ({
+    ...row,
+    taxableBase: roundMoney(row.taxableBase),
+    amount: roundMoney(row.amount),
+  }))
 }
 
 function totalTaxAmount(items = []) {
   return roundMoney(taxSummaryRows(items).reduce((sum, row) => sum + row.amount, 0))
+}
+
+function taxSummaryLabel(row, currency = 'MYR') {
+  return `${row.label} on ${currency || 'MYR'} ${fmtMoney(row.taxableBase)}`
 }
 
 function addressLines(customer) {
@@ -463,7 +475,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
   const renderSummary = () => `
     <div class="inv-totals">
       <div class="inv-trow"><span>Subtotal</span><span class="v">${fmtMoney(subtotalVal)}</span></div>
-      ${taxRows.map(row => `<div class="inv-trow"><span>${escapeHtml(row.label)}</span><span class="v">+ ${fmtMoney(row.amount)}</span></div>`).join('')}
+      ${taxRows.map(row => `<div class="inv-trow"><span>${escapeHtml(taxSummaryLabel(row, invoice.currency || 'MYR'))}</span><span class="v">+ ${fmtMoney(row.amount)}</span></div>`).join('')}
       <div class="inv-trow"><span>${escapeHtml(discountLabel)}</span><span class="v">&minus; ${fmtMoney(discountVal)}</span></div>
       <div class="inv-trow"><span>Shipping Charges</span><span class="v">+ ${fmtMoney(shippingVal)}</span></div>
       <div class="inv-trow"><span>Adjustment</span><span class="v">${adjustmentVal < 0 ? '&minus; ' : '+ '}${fmtMoney(Math.abs(adjustmentVal))}</span></div>
@@ -537,7 +549,7 @@ function invoiceHtml(invoice, items, contactName, customer, contactMobile = '', 
         .summary-only .blank-row td { height: 40mm; }
         .inv-totals { width: 92mm; margin: 3mm 0 0 auto; font-size: 12px; }
         .inv-trow { display: grid; grid-template-columns: 1fr 34mm; gap: 5mm; padding: 0.6mm 0; align-items: baseline; }
-        .inv-trow > span:first-child { white-space: nowrap; }
+        .inv-trow > span:first-child { overflow-wrap: anywhere; }
         .inv-trow .v { text-align: right; white-space: nowrap; }
         .inv-grand { border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 1.6mm 0; margin-top: 1.2mm; font-weight: 700; }
         .inv-grand > span { font-weight: 700; }
@@ -1195,9 +1207,9 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
                   <span className="font-medium">{form.currency} {fmtMoney(subtotal)}</span>
                 </div>
                 {taxRows.map(row => (
-                  <div key={row.label} className="flex justify-between text-gray-600">
-                    <span>{row.label}</span>
-                    <span className="font-medium">+ {fmtMoney(row.amount)}</span>
+                  <div key={row.label} className="flex justify-between gap-3 text-gray-600">
+                    <span className="min-w-0">{taxSummaryLabel(row, form.currency)}</span>
+                    <span className="shrink-0 font-medium">+ {fmtMoney(row.amount)}</span>
                   </div>
                 ))}
                 <div className="flex items-center gap-2">
@@ -1488,9 +1500,9 @@ function InvoiceDetail({ invoiceId, onBack, onEdit, onClone }) {
               <span>{invoice.currency} {fmtMoney(invoice.subtotal)}</span>
             </div>
             {taxRows.map(row => (
-              <div key={row.label} className="flex justify-between text-gray-600">
-                <span>{row.label}</span>
-                <span>+ {fmtMoney(row.amount)}</span>
+              <div key={row.label} className="flex justify-between gap-3 text-gray-600">
+                <span className="min-w-0">{taxSummaryLabel(row, invoice.currency || 'MYR')}</span>
+                <span className="shrink-0">+ {fmtMoney(row.amount)}</span>
               </div>
             ))}
             {invoice.discount > 0 && (
