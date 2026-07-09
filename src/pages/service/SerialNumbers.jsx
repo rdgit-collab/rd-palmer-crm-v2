@@ -49,10 +49,39 @@ const emptyForm = {
   serial_number: '', warranty_period: '',
 }
 
+async function fetchItemNameLookup(serialRows = []) {
+  const skus = [...new Set(serialRows
+    .map(row => String(row.sku || '').trim())
+    .filter(Boolean))]
+
+  if (skus.length === 0) return {}
+
+  const { data, error } = await supabase
+    .from('goodsservices')
+    .select('sku, name')
+    .in('sku', skus)
+
+  if (error) return {}
+
+  const namesBySku = {}
+  ;(data || []).forEach(item => {
+    const sku = String(item.sku || '').trim()
+    const name = String(item.name || '').trim()
+    if (!sku || !name) return
+    if (!namesBySku[sku]) namesBySku[sku] = []
+    if (!namesBySku[sku].includes(name)) namesBySku[sku].push(name)
+  })
+
+  return Object.fromEntries(
+    Object.entries(namesBySku).map(([sku, names]) => [sku, names.join(', ')])
+  )
+}
+
 export default function SerialNumbers() {
   const { profile } = useAuth()
   const [view, setView]         = useState('list')
   const [rows, setRows]         = useState([])
+  const [itemNamesBySku, setItemNamesBySku] = useState({})
   const [total, setTotal]       = useState(0)
   const [page, setPage]         = useState(1)
   const [search, setSearch]     = useState('')
@@ -85,17 +114,22 @@ export default function SerialNumbers() {
 
     if (err) {
       setRows([])
+      setItemNamesBySku({})
       setTotal(0)
       setError(err.message)
     } else {
       const nextRows = data || []
       if (nextRows.length === 0 && page > 1) {
         setPage(1)
+        setItemNamesBySku({})
         setLoading(false)
         return
       }
       const nextTotal = nextRows.length > 0 ? Number(nextRows[0].total_count || 0) : 0
-      setRows(nextRows.map(({ total_count, ...row }) => row))
+      const serialRows = nextRows.map(({ total_count, ...row }) => row)
+      const itemNameLookup = await fetchItemNameLookup(serialRows)
+      setRows(serialRows)
+      setItemNamesBySku(itemNameLookup)
       setTotal(nextTotal)
     }
     setLoading(false)
@@ -234,6 +268,7 @@ export default function SerialNumbers() {
             <tr className="border-b border-gray-200 bg-gray-50">
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Serial Number</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">SKU</th>
+              <th className="text-left px-4 py-3 font-semibold text-gray-700">Item Name</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Category</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Customer</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Date</th>
@@ -243,12 +278,15 @@ export default function SerialNumbers() {
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={8} className="text-center py-12 text-gray-400">Loading...</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={8} className="text-center py-12 text-gray-400">No serial number records found.</td></tr>
+            {loading ? <tr><td colSpan={9} className="text-center py-12 text-gray-400">Loading...</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={9} className="text-center py-12 text-gray-400">No serial number records found.</td></tr>
             : rows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-semibold text-red-600">{r.serial_number || '—'}</td>
                 <td className="px-4 py-3 text-gray-700">{r.sku || '—'}</td>
+                <td className="px-4 py-3 text-gray-700 max-w-xs truncate" title={itemNamesBySku[String(r.sku || '').trim()] || ''}>
+                  {itemNamesBySku[String(r.sku || '').trim()] || '—'}
+                </td>
                 <td className="px-4 py-3 text-gray-600">
                   {r.category_status === 'matched' ? (r.category_name || '—') : 'Unmatched SKU'}
                 </td>
