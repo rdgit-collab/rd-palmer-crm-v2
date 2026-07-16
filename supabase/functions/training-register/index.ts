@@ -241,7 +241,15 @@ Deno.serve(async (req: Request) => {
     const ipHash = await sha256(getClientIp(req))
     const { data: rateLimit, error: rateError } = await supabaseAdmin
       .rpc('claim_training_signup_rate_limit', { p_ip_hash: ipHash, p_session_id: sessionId })
-    if (rateError) throw new Error('Registration is busy. Please try again shortly.')
+    if (rateError) {
+      console.error(JSON.stringify({
+        event: 'training_registration_rate_limit_error',
+        requestId: id,
+        code: rateError.code,
+        error: rateError.message,
+      }))
+      throw new Error('Registration is busy. Please try again shortly.')
+    }
     if (rateLimit && typeof rateLimit === 'object' && (rateLimit as Record<string, unknown>).allowed === false) {
       return jsonResponse(req, { ok: false, error: 'Too many registration attempts. Please try again shortly.' }, 429)
     }
