@@ -1,0 +1,22 @@
+name: Training signup smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/pages/TrainingSignup.jsx'
+      - 'supabase/functions/training-register/**'
+      - 'supabase/migrations/*training*'
+      - 'scripts/check-training-signup.mjs'
+      - '.github/workflows/training-signup-smoke.yml'
+
+jobs:
+  verify-public-signup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v22
+        with:
+          node-version: 22
+      - run: npm run check:training-signup

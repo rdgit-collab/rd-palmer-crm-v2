@@ -1,0 +1,6 @@
+project_id = "jpvjqmkvtnedpmmrddft"
+
+# This is a public customer form. The function performs its own validation,
+# origin handling, Turnstile verification, rate limiting, and database writes.
+[functions.training-register]
+verify_jwt = false

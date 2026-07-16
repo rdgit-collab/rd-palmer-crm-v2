@@ -12,6 +12,8 @@ import radiodetectionLogo from '../assets/radiodetection-training-logo.png'
 const blankPart = () => ({ participant_name: '', email: '', phone: '', nric: '', existing_user: null })
 const maxParticipants = 10
 const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
+const registrationServiceUrl = `${supabaseUrl}/functions/v1/training-register`
+const registrationTimeoutMs = 20_000
 const dateRangeLabel = session => {
   if (!session?.session_date) return 'TBA'
   if (session.end_date && session.end_date !== session.session_date) return `${formatDate(session.session_date)} - ${formatDate(session.end_date)}`
@@ -133,41 +135,43 @@ export default function TrainingSignup() {
       })),
     }
 
+    const requestId = crypto.randomUUID()
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), registrationTimeoutMs)
     let result = null
     let responseOk = false
-    let functionMissing = false
     try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/training-register`, {
+      const res = await fetch(registrationServiceUrl, {
         method: 'POST',
         headers: {
           apikey: supabaseAnonKey,
           Authorization: `Bearer ${supabaseAnonKey}`,
           'Content-Type': 'application/json',
+          'X-Client-Request-Id': requestId,
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       })
       responseOk = res.ok
       result = await res.json().catch(() => null)
-      functionMissing = res.status === 404
-    } catch (_) {
-      result = { error: 'Unable to submit right now. Please check your connection and try again.' }
+      if (!res.ok && !result?.error) {
+        result = { error: 'Registration service is temporarily unavailable. Please try again shortly or contact training@rd-palmer.my.' }
+      }
+    } catch (error) {
+      const timedOut = error?.name === 'AbortError'
+      result = {
+        error: timedOut
+          ? 'The registration service took too long to respond. We could not confirm that your application was received. Please contact training@rd-palmer.my with reference ' + requestId + '.'
+          : 'We could not reach the registration service. Your application was not confirmed. Please check your connection and try again, or contact training@rd-palmer.my with reference ' + requestId + '.',
+      }
+    } finally {
+      window.clearTimeout(timeout)
+      setSubmitting(false)
     }
-    if (functionMissing) {
-      const rows = parts.map(p => ({
-        session_id: session.id, source: 'public',
-        participant_name: p.participant_name.trim(), company: company.trim(), email: p.email.trim(),
-        phone: p.phone.trim(), nric: p.nric.trim(), industry: industry.trim(),
-        existing_user: p.existing_user === 'Yes', hrd_claim: hrd === 'Yes', hr_email: hrEmail.trim(),
-        referral_code: referralCode || null,
-      }))
-      const { error } = await supabase.from('training_registrations').insert(rows)
-      responseOk = !error
-      result = error ? { ok: false, error: error.message } : { ok: true, registered: rows.length }
-    }
-    setSubmitting(false)
     if (!responseOk || result?.ok === false) {
       resetTurnstile()
-      alert(result?.error || 'Unable to submit right now. Please try again shortly.')
+      const serverReference = result?.requestId && result.requestId !== requestId ? ` Reference: ${result.requestId}.` : ''
+      alert((result?.error || 'Unable to submit this registration. Please try again shortly.') + serverReference)
       return
     }
     setDone(Number(result?.registered) || parts.length)

@@ -18,16 +18,24 @@ function corsHeaders(req: Request) {
   const allowOrigin = origin && allowed.includes(origin) ? origin : allowed[0] || '*'
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-client-request-id',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Expose-Headers': 'x-request-id',
     'Vary': 'Origin',
   }
 }
 
-function jsonResponse(req: Request, body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
+function requestId(req: Request) {
+  const candidate = cleanText(req.headers.get('x-client-request-id'), 64)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate)
+    ? candidate
+    : crypto.randomUUID()
+}
+
+function jsonResponse(req: Request, body: Record<string, unknown>, status = 200, id = requestId(req)) {
+  return new Response(JSON.stringify({ ...body, requestId: id }), {
     status,
-    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(req), 'Content-Type': 'application/json', 'X-Request-Id': id },
   })
 }
 
@@ -141,30 +149,33 @@ async function verifyTurnstile(req: Request, token: unknown) {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) })
-  if (req.method !== 'POST') return jsonResponse(req, { ok: false, error: 'Method not allowed.' }, 405)
+  const id = requestId(req)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...corsHeaders(req), 'X-Request-Id': id } })
+  if (req.method !== 'GET' && req.method !== 'POST') return jsonResponse(req, { ok: false, error: 'Method not allowed.' }, 405, id)
 
   const origin = req.headers.get('origin')
   if (origin && !allowedOrigins().includes(origin)) {
-    return jsonResponse(req, { ok: false, error: 'This signup form is not available from this site.' }, 403)
+    return jsonResponse(req, { ok: false, error: 'This signup form is not available from this site.' }, 403, id)
   }
 
   const supabaseProjectUrl = Deno.env.get('SUPABASE_URL') || ''
   const serviceRoleKey = secretKey()
   if (!supabaseProjectUrl || !serviceRoleKey) {
-    return jsonResponse(req, { ok: false, error: 'Registration service is not configured.' }, 500)
+    return jsonResponse(req, { ok: false, error: 'Registration service is not configured.' }, 500, id)
   }
+
+  if (req.method === 'GET') return jsonResponse(req, { ok: true, status: 'ready' }, 200, id)
 
   let body: Record<string, unknown>
   try {
     body = await req.json()
   } catch (_) {
-    return jsonResponse(req, { ok: false, error: 'Invalid signup request.' }, 400)
+    return jsonResponse(req, { ok: false, error: 'Invalid signup request.' }, 400, id)
   }
 
   const participantInput = Array.isArray(body.participants) ? body.participants : []
   if (cleanText(body.website, 200)) {
-    return jsonResponse(req, { ok: true, registered: Math.max(1, Math.min(participantInput.length || 1, maxParticipants)) })
+    return jsonResponse(req, { ok: true, registered: Math.max(1, Math.min(participantInput.length || 1, maxParticipants)) }, 200, id)
   }
 
   try {
@@ -244,9 +255,11 @@ Deno.serve(async (req: Request) => {
       throw new Error('Unable to submit this registration. Please check the details and try again.')
     }
 
-    return jsonResponse(req, { ok: true, registered: participants.length })
+    console.log(JSON.stringify({ event: 'training_registration_submitted', requestId: id, sessionId, participantCount: participants.length }))
+    return jsonResponse(req, { ok: true, registered: participants.length }, 200, id)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unable to submit this registration.'
-    return jsonResponse(req, { ok: false, error: message }, 400)
+    console.error(JSON.stringify({ event: 'training_registration_failed', requestId: id, error: message }))
+    return jsonResponse(req, { ok: false, error: message }, 400, id)
   }
 })
