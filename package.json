@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "check:sales-pricing": "node scripts/check-sales-pricing.mjs",
     "check:training-signup": "node scripts/check-training-signup.mjs"
   },
   "dependencies": {
