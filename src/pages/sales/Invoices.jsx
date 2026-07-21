@@ -12,6 +12,12 @@ import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import PdfPreviewModal from '../../components/PdfPreviewModal'
 import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
+  finalSalesLineAmount as finalItemAmount,
+  finalSalesUnitPrice as finalItemRate,
+  markedSalesUnitPrice as markedRate,
+  normalizeSalesLinePricing,
+} from '../../lib/salesPricing'
+import {
   Plus, Search, Eye, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, FileText, Download, Bold, Underline, Copy, RefreshCw
 } from 'lucide-react'
@@ -21,11 +27,6 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 // Printed money cell: leave blank when the value is zero instead of showing 0.00.
 const fmtMoneyBlankZero = (n) => (Number(n || 0) === 0 ? '' : fmtMoney(n))
-const markedRate = (baseRate, markup) => {
-  const base = parseFloat(baseRate) || 0
-  const pct = parseFloat(markup) || 0
-  return base * (1 + pct / 100)
-}
 const PAGE_SIZE = 30
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
 const CUSTOMER_FORM_COLUMNS = 'id, company_name, assigned, assignto, address1, address2, city, state, zipcode, country'
@@ -209,22 +210,6 @@ function taxRateFromLabel(label = '') {
 function taxRateFromLookup(tax) {
   const rate = parseFloat(tax?.rate)
   return Number.isFinite(rate) ? rate : taxRateFromLabel(tax?.name)
-}
-
-function finalItemAmount(item) {
-  const qty = parseFloat(item?.qty) || 0
-  const rate = parseFloat(item?.rate) || 0
-  const amount = parseFloat(item?.amount)
-  if (Number.isFinite(amount)) return amount
-  return qty * rate
-}
-
-function finalItemRate(item) {
-  const qty = parseFloat(item?.qty) || 0
-  const rate = parseFloat(item?.rate) || 0
-  const amount = finalItemAmount(item)
-  if (qty > 0 && Math.abs(amount - qty * rate) > 0.01) return amount / qty
-  return rate
 }
 
 function lineTaxAmount(item) {
@@ -854,14 +839,13 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
 
   const [lineItems, setLineItems] = useState(
     invoice?._items?.length > 0
-      ? invoice._items.map(i => ({
+      ? invoice._items.map(i => normalizeSalesLinePricing({
           id: i.id,
           itemid: String(i.itemid || ''),
           item: i.item || '',
           description: cleanSalesText(i.description || ''),
           qty: i.qty || 1,
           markup: i.markup || '',
-          base_rate: i.markup ? (parseFloat(i.rate) || 0) / (1 + (parseFloat(i.markup) || 0) / 100) : (i.rate || 0),
           rate: i.rate || 0,
           taxid: String(i.taxid || ''),
           taxlbl: i.taxlbl || '',
@@ -1021,6 +1005,14 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     if (lineItems.every(i => !i.item.trim())) { setError('Add at least one line item'); return }
     setSaving(true); setError('')
 
+    const normalizedLineItems = lineItems.map(normalizeSalesLinePricing)
+    const savedSubtotal = normalizedLineItems.reduce((sum, i) => sum + i.amount, 0)
+    const savedDiscountAmt = form.discounttype === '%'
+      ? savedSubtotal * (parseFloat(form.discountvalue) || 0) / 100
+      : parseFloat(form.discountvalue) || 0
+    const savedTaxTotal = totalTaxAmount(normalizedLineItems)
+    const savedTotal = savedSubtotal + savedTaxTotal - savedDiscountAmt + shipping + adjustment
+
     const payload = {
       user_id: invoice?.user_id || getLegacyUserId(profile),
       companyid: parseInt(form.companyid),
@@ -1037,14 +1029,14 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       serial_number: invoice?.serial_number || '',
       currency: form.currency,
       notes: form.notes,
-      subtotal,
-      discount: discountAmt,
+      subtotal: savedSubtotal,
+      discount: savedDiscountAmt,
       discouttype: form.discounttype,
       discountvalue: String(form.discountvalue),
       shiping_charge: shipping,
-      tax: taxTotal,
+      tax: savedTaxTotal,
       adjustment,
-      total,
+      total: savedTotal,
       updated_at: new Date().toISOString(),
     }
 
@@ -1061,7 +1053,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
     const invoiceid = invResult.data.id
     if (isEdit) await supabase.from('invoice_item').delete().eq('invoiceid', invoiceid)
 
-    const validItems = lineItems.filter(i => i.item.trim())
+    const validItems = normalizedLineItems.filter(i => i.item.trim())
     if (validItems.length > 0) {
       const itemPayload = validItems.map(i => ({
         user_id: invResult.data.user_id || getLegacyUserId(profile),
@@ -1088,7 +1080,7 @@ function InvoiceForm({ invoice, onSave, onCancel }) {
       recordId: invoiceid,
       recordLabel: invResult.data.invoice_number,
       summary: `${isEdit ? 'Updated' : 'Created'} invoice ${invResult.data.invoice_number || invoiceid}`,
-      metadata: { companyid: form.companyid || null, total },
+      metadata: { companyid: form.companyid || null, total: savedTotal },
     })
 
     setSaving(false)

@@ -12,6 +12,12 @@ import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import PdfPreviewModal from '../../components/PdfPreviewModal'
 import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
 import {
+  finalSalesLineAmount as finalItemAmount,
+  finalSalesUnitPrice as finalItemRate,
+  markedSalesUnitPrice as markedRate,
+  normalizeSalesLinePricing,
+} from '../../lib/salesPricing'
+import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, FileText, RefreshCw, Download, Bold, Underline, Copy
 } from 'lucide-react'
@@ -21,11 +27,6 @@ const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit',
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 // Printed money cell: leave blank when the value is zero instead of showing 0.00.
 const fmtMoneyBlankZero = (n) => (Number(n || 0) === 0 ? '' : fmtMoney(n))
-const markedRate = (baseRate, markup) => {
-  const base = parseFloat(baseRate) || 0
-  const pct = parseFloat(markup) || 0
-  return base * (1 + pct / 100)
-}
 const PAGE_SIZE = 30
 const CURRENCIES = ['MYR', 'USD', 'SGD', 'EUR', 'GBP']
 const CUSTOMER_FORM_COLUMNS = 'id, company_name, assigned, assignto, address1, address2, city, state, zipcode, country'
@@ -417,7 +418,7 @@ function quotationHtml(quotation, items, contactName, customer, contactMobile = 
     .join('<br>')
   const notes = sanitizeHtml(quotation.notes)
   const terms = printableText(quotation.terms, { dropConfirmation: true, dropSignature: true })
-  const itemPages = paginateSalesDocumentItems(items, item => item.rate, item => item.amount)
+  const itemPages = paginateSalesDocumentItems(items, finalItemRate, finalItemAmount)
   const taxRows = taxSummaryRows(items)
   // Keep the total + terms + signature on the same page as the last items when
   // there is room, instead of always spilling onto a near-empty extra page.
@@ -891,14 +892,13 @@ function QuotationForm({ quotation, onSave, onCancel }) {
 
   const [lineItems, setLineItems] = useState(
     quotation?._items?.length > 0
-      ? quotation._items.map(i => ({
+      ? quotation._items.map(i => normalizeSalesLinePricing({
           id: i.id,
           itemid: String(i.itemid || ''),
           item: i.item || '',
           description: cleanSalesText(i.description || ''),
           qty: i.qty || 1,
           markup: i.markup || '',
-          base_rate: i.markup ? (parseFloat(i.rate) || 0) / (1 + (parseFloat(i.markup) || 0) / 100) : (i.rate || 0),
           rate: i.rate || 0,
           taxid: String(i.taxid || ''),
           taxlbl: i.taxlbl || '',
@@ -1063,6 +1063,17 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     if (lineItems.every(i => !i.item.trim())) { setError('Add at least one line item'); return }
     setSaving(true); setError('')
 
+    // Reconcile again at the persistence boundary. This protects saves and
+    // clones made from historical rows whose base rate and marked-up amount
+    // were stored separately.
+    const normalizedLineItems = lineItems.map(normalizeSalesLinePricing)
+    const savedSubtotal = normalizedLineItems.reduce((sum, i) => sum + i.amount, 0)
+    const savedDiscountAmt = form.discounttype === '%'
+      ? savedSubtotal * (parseFloat(form.discountvalue) || 0) / 100
+      : parseFloat(form.discountvalue) || 0
+    const savedTaxTotal = totalTaxAmount(normalizedLineItems)
+    const savedTotal = savedSubtotal + savedTaxTotal - savedDiscountAmt + shipping + adjustment
+
     const payload = {
       user_id: quotation?.user_id || getLegacyUserId(profile),
       name: form.name,
@@ -1077,14 +1088,14 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       currency: form.currency,
       notes: form.notes,
       terms: form.terms,
-      subtotal,
-      discount: discountAmt,
+      subtotal: savedSubtotal,
+      discount: savedDiscountAmt,
       discouttype: form.discounttype,
       discountvalue: String(form.discountvalue),
       shiping_charge: shipping,
-      tax: taxTotal,
+      tax: savedTaxTotal,
       adjustment,
-      total,
+      total: savedTotal,
       companyid: parseInt(form.companyid),
       isconvert: 0,
       updated_at: new Date().toISOString(),
@@ -1105,7 +1116,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
     if (isEdit) await supabase.from('quotation_item').delete().eq('qid', qid)
 
     // Insert line items
-    const validItems = lineItems.filter(i => i.item.trim())
+    const validItems = normalizedLineItems.filter(i => i.item.trim())
     if (validItems.length > 0) {
       const itemPayload = validItems.map(i => ({
         user_id: qResult.data.user_id || getLegacyUserId(profile),
@@ -1132,7 +1143,7 @@ function QuotationForm({ quotation, onSave, onCancel }) {
       recordId: qid,
       recordLabel: qResult.data.number,
       summary: `${isEdit ? 'Updated' : 'Created'} quotation ${qResult.data.number}`,
-      metadata: { companyid: form.companyid || null, total },
+      metadata: { companyid: form.companyid || null, total: savedTotal },
     })
 
     setSaving(false)
@@ -1571,9 +1582,9 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
         item: item.item,
         description: item.description,
         qty: item.qty,
-        rate: item.rate,
+        rate: finalItemRate(item),
         tax: item.tax,
-        amount: item.amount,
+        amount: finalItemAmount(item),
         itemid: item.itemid,
         taxid: item.taxid,
         taxlbl: item.taxlbl,
@@ -1799,9 +1810,9 @@ function QuotationDetail({ quotationId, onBack, onEdit, onClone, onConverted }) 
                   <td className="px-4 py-3 font-medium text-gray-900">{item.item}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs max-w-xs"><HtmlBlock value={item.description || '—'} /></td>
                   <td className="px-4 py-3 text-gray-700">{item.qty}</td>
-                  <td className="px-4 py-3 text-gray-700">{fmtMoney(item.rate)}</td>
+                  <td className="px-4 py-3 text-gray-700">{fmtMoney(finalItemRate(item))}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{item.taxlbl || '—'}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{fmtMoney(item.amount)}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{fmtMoney(finalItemAmount(item))}</td>
                 </tr>
               ))}
             </tbody>
