@@ -1,17 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import PaginationControls from '../../components/PaginationControls'
+import { formatDateTimeShort } from '../../lib/dateFormat'
 import { Search } from 'lucide-react'
 
 const PAGE_SIZE = 30
-
-function formatDate(value) {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('en-MY', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
 
 export default function ActivityLog() {
   const [rows, setRows] = useState([])
@@ -114,7 +107,7 @@ export default function ActivityLog() {
               <tr><td colSpan={6} className="py-12 text-center text-gray-400">No activity has been logged yet.</td></tr>
             ) : rows.map(row => (
               <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatDate(row.created_at)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatDateTimeShort(row.created_at)}</td>
                 <td className="px-4 py-3 text-gray-900">
                   {row.actor_name || '—'}
                   {row.actor_role_id && <span className="ml-1 text-xs text-gray-400">Role {row.actor_role_id}</span>}

@@ -4,13 +4,14 @@ import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
 import { applyTokenIlike, rankRowsBySearch } from '../../lib/searchUtils'
+import { formatShortDate } from '../../lib/dateFormat'
 import PaginationControls from '../../components/PaginationControls'
 import {
   Plus, Search, Pencil, Trash2, ArrowLeft, Save,
   X, ChevronLeft, ChevronRight, User
 } from 'lucide-react'
 
-const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmt = (d) => formatShortDate(d)
 const PAGE_SIZE = 30
 
 // ─── Contact Form (Add / Edit) ─────────────────────────────────────────────────

@@ -1,3 +1,5 @@
+import { formatDateTimeShort } from './dateFormat'
+
 export const WORK_THREAD_FILE_LIMIT = 3
 export const WORK_THREAD_FILE_SIZE_LIMIT = 10 * 1024 * 1024
 
@@ -42,16 +44,7 @@ export function workThreadRecordLabel(thread) {
 }
 
 export function formatThreadTime(value) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatDateTimeShort(value)
 }
 
 export function validateWorkThreadFiles(files = []) {

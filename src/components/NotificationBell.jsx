@@ -4,22 +4,18 @@ import { Bell } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { displayText } from '../lib/displayText'
+import { parseDateForDisplay } from '../lib/dateFormat'
 import PhoneNotificationControl from './PhoneNotificationControl'
 
 function timeAgo(ts) {
   if (!ts) return ''
-  const diff = Math.floor((Date.now() - parseNotificationTime(ts).getTime()) / 1000)
+  const parsed = parseDateForDisplay(ts)
+  if (!parsed) return ''
+  const diff = Math.floor((Date.now() - parsed.getTime()) / 1000)
   if (diff < 60)   return 'just now'
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   return `${Math.floor(diff / 86400)}d ago`
-}
-
-function parseNotificationTime(value) {
-  const text = String(value || '').trim()
-  if (!text) return new Date(NaN)
-  if (/[zZ]|[+-]\d\d:?\d\d$/.test(text)) return new Date(text)
-  return new Date(`${text.replace(' ', 'T')}Z`)
 }
 
 function notificationLink(item) {

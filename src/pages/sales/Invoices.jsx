@@ -11,6 +11,7 @@ import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import PdfPreviewModal from '../../components/PdfPreviewModal'
 import { downloadHtmlPdf, pdfFileName } from '../../lib/downloadPdf'
+import { formatShortDate } from '../../lib/dateFormat'
 import {
   finalSalesLineAmount as finalItemAmount,
   finalSalesUnitPrice as finalItemRate,
@@ -23,7 +24,7 @@ import {
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmt = (d) => formatShortDate(d)
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 // Printed money cell: leave blank when the value is zero instead of showing 0.00.
 const fmtMoneyBlankZero = (n) => (Number(n || 0) === 0 ? '' : fmtMoney(n))

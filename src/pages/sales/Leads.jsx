@@ -9,6 +9,7 @@ import PaginationControls from '../../components/PaginationControls'
 import CustomerSearchSelect from '../../components/CustomerSearchSelect'
 import { hasAdminAccess, isSalesRole, isWaterRole, ROLE_WATER } from '../../lib/roles'
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
+import { formatShortDate } from '../../lib/dateFormat'
 import {
   useAccountTypes,
   useActivityStatuses,
@@ -26,7 +27,7 @@ import {
   X, ChevronLeft, ChevronRight, Building2, Phone, Mail, CalendarClock, Edit2
 } from 'lucide-react'
 
-const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmt = (d) => formatShortDate(d)
 const PAGE_SIZE = 30
 
 const lookupName = (items, id, fallbackPrefix) => {

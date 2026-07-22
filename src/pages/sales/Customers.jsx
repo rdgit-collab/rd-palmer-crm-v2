@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { getLegacyUserId } from '../../lib/legacyUsers'
 import { logActivity } from '../../lib/activityLog'
+import { formatShortDate, parseDateForDisplay } from '../../lib/dateFormat'
 import { useAccountTypes, useAssignableUsers, useCountries, useIndustries } from '../../hooks/useLookups'
 import PaginationControls from '../../components/PaginationControls'
 import {
@@ -12,9 +13,9 @@ import {
 } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const fmt = (d) => formatShortDate(d)
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const newestFirst = (a, b) => new Date(b.created_at || b.date || b.updated_at || 0) - new Date(a.created_at || a.date || a.updated_at || 0)
+const newestFirst = (a, b) => (parseDateForDisplay(b.created_at || b.date || b.updated_at)?.getTime() || 0) - (parseDateForDisplay(a.created_at || a.date || a.updated_at)?.getTime() || 0)
 
 
 // ─── Customer Form (Add / Edit) ────────────────────────────────────────────────

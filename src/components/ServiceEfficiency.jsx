@@ -4,12 +4,15 @@ import { fetchAllRows, fetchRowsByIds } from '../lib/fetchAllRows'
 import { useAssignableUsers, useLegacyUsers } from '../hooks/useLookups'
 import { getUserName } from '../lib/legacyUsers'
 import { displayText } from '../lib/displayText'
+import { formatDateKey, parseDateForDisplay } from '../lib/dateFormat'
 
 const DAY_MS = 86400000
 
 function parseDateOnly(value) {
   if (!value) return null
-  const date = new Date(String(value).slice(0, 10) + 'T00:00:00')
+  const key = formatDateKey(value)
+  if (!key) return null
+  const date = new Date(`${key}T00:00:00`)
   return Number.isNaN(date.getTime()) ? null : date
 }
 
@@ -40,6 +43,19 @@ function monthBounds(month) {
   const [year, monthNumber] = month.split('-').map(Number)
   const lastDay = new Date(year, monthNumber, 0).getDate()
   return { start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, '0')}` }
+}
+
+function malaysiaDayBoundaryUtc(day, endOfDay = false) {
+  const [year, monthNumber, dayNumber] = day.split('-').map(Number)
+  const instant = new Date(Date.UTC(
+    year,
+    monthNumber - 1,
+    dayNumber,
+    endOfDay ? 15 : -8,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+  ))
+  return instant.toISOString().replace('T', ' ').replace('Z', '')
 }
 
 function trailingMonths(count) {
@@ -98,11 +114,11 @@ export default function ServiceEfficiency({ month, monthLabel, staffRows = [] })
         gte: { startdate: monthStart },
         lte: { startdate: monthEnd },
       }),
-      // Tickets completed within the selected month (completed_at is a timestamp,
-      // so bound the range to the whole last day).
+      // completed_at is stored as a UTC-style timestamp without a zone; query
+      // with UTC bounds for the selected Malaysia calendar month.
       fetchAllRows('ticket', 'id, date, due_date, completed_at', 'id', {
-        gte: { completed_at: `${monthStart} 00:00:00` },
-        lte: { completed_at: `${monthEnd} 23:59:59` },
+        gte: { completed_at: malaysiaDayBoundaryUtc(monthStart) },
+        lte: { completed_at: malaysiaDayBoundaryUtc(monthEnd, true) },
       }),
     ]).then(async ([trendTickets, openTickets, monthTickets, monthTasks, completedTickets]) => {
       const firstTasks = await fetchRowsByIds(
@@ -207,13 +223,13 @@ export default function ServiceEfficiency({ month, monthLabel, staffRows = [] })
     let onTimeCount = 0
     ;(data.completedTickets || []).forEach(t => {
       const created = parseDateOnly(t.date)
-      const completed = parseDateOnly(t.completed_at)
+      const completed = parseDateForDisplay(t.completed_at)
       if (created && completed) {
         tatCount += 1
         tatDaysTotal += Math.max(0, Math.floor((completed.getTime() - created.getTime()) / DAY_MS))
       }
       const due = String(t.due_date || '').slice(0, 10)
-      const completedDay = String(t.completed_at || '').slice(0, 10)
+      const completedDay = formatDateKey(t.completed_at)
       if (due && completedDay) {
         dueCount += 1
         if (completedDay <= due) onTimeCount += 1

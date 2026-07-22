@@ -6,14 +6,14 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { formatDate } from '../lib/dateFormat'
+import { formatDate, formatShortDate } from '../lib/dateFormat'
 import { logActivity } from '../lib/activityLog'
 import SignedFileLink from '../components/SignedFileLink'
 import { STATUS_GROUPS } from '../lib/trainingStatus'
 import { ROLE_SALES, hasAdminAccess } from '../lib/roles'
 
 const slugify = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48)
-const fmtShort = v => v ? new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''
+const fmtShort = v => formatShortDate(v, '', { year: false })
 const userName = u => u ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : '—'
 const initials = n => String(n || '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
 const signupUrl = (slug, referralCode = '') => `${window.location.origin}/training/signup/${slug}${referralCode ? `?ref=${encodeURIComponent(referralCode)}` : ''}`

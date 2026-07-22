@@ -11,6 +11,7 @@ import {
   workThreadRecordLabel,
   workThreadRoute,
 } from '../lib/workThreads'
+import { parseDateForDisplay } from '../lib/dateFormat'
 
 const INBOX_LIMIT = 60
 
@@ -51,7 +52,9 @@ export default function WorkInbox() {
     const readAt = readsByThread[String(thread.id)]
     if (!latest?.created_at) return false
     if (String(latest.created_by_old_user_id || '') === String(currentOldUserId || '')) return false
-    return !readAt || new Date(latest.created_at) > new Date(readAt)
+    const latestAt = parseDateForDisplay(latest.created_at)
+    const lastReadAt = parseDateForDisplay(readAt)
+    return !!latestAt && (!lastReadAt || latestAt > lastReadAt)
   }).length, [currentOldUserId, messagesByThread, readsByThread, threads])
 
   const fetchInbox = useCallback(async () => {
@@ -181,7 +184,11 @@ export default function WorkInbox() {
                 const readAt = readsByThread[String(thread.id)]
                 const unread = latest?.created_at &&
                   String(latest.created_by_old_user_id || '') !== String(currentOldUserId || '') &&
-                  (!readAt || new Date(latest.created_at) > new Date(readAt))
+                  (() => {
+                    const latestAt = parseDateForDisplay(latest.created_at)
+                    const lastReadAt = parseDateForDisplay(readAt)
+                    return !!latestAt && (!lastReadAt || latestAt > lastReadAt)
+                  })()
                 return (
                   <button
                     key={thread.id}

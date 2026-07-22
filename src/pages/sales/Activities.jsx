@@ -7,6 +7,7 @@ import { hasAdminAccess, isSalesManagerRole, isSalesRole, isWaterRole, ROLE_WATE
 import { isClosedStageName, isTerminalActivityStatus } from '../../lib/activityStatus'
 import { logActivity } from '../../lib/activityLog'
 import { notifyUser } from '../../lib/notifyUser'
+import { formatShortDate } from '../../lib/dateFormat'
 import {
   useActivityStatuses,
   useActivityTypes,
@@ -39,7 +40,7 @@ const TABS = [
 ]
 
 function fmt(d) {
-  return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+  return formatShortDate(d, '-')
 }
 
 function todayString(offset = 0) {

@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getLegacyUserId } from '../lib/legacyUsers'
 import { displayText } from '../lib/displayText'
 import { isSalesRole, isSalesLikeRole, isServiceRole } from '../lib/roles'
+import { formatShortDate } from '../lib/dateFormat'
 
 // ── Shared loading spinner ────────────────────────────────────────
 function DashboardSpinner({ label }) {
@@ -98,7 +99,7 @@ function priorityColor(p) {
 }
 
 function fmtDate(value) {
-  return value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'
+  return formatShortDate(value, '—', { year: false })
 }
 
 function formatDaysOverdue(days) {

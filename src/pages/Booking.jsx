@@ -9,6 +9,7 @@ import { getLegacyUserId } from '../lib/legacyUsers'
 import { hasAdminAccess } from '../lib/roles'
 import { logActivity } from '../lib/activityLog'
 import { notifyUser } from '../lib/notifyUser'
+import { formatDateTime, formatMalaysiaDateTimeInput, formatTime, malaysiaDateTimeInputToIso, parseDateForDisplay } from '../lib/dateFormat'
 
 const statusStyles = {
   pending: 'bg-amber-100 text-amber-700',
@@ -42,12 +43,8 @@ const emptyForm = {
   notes: '',
 }
 
-function pad(value) {
-  return String(value).padStart(2, '0')
-}
-
 function localInputValue(date = new Date()) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return formatMalaysiaDateTimeInput(date)
 }
 
 function monthLabel(date) {
@@ -78,30 +75,16 @@ function sameDay(a, b) {
 }
 
 function dateKey(date) {
+  const pad = value => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 function bookingFallsOnDay(booking, day) {
-  const start = new Date(booking.start_at)
-  const end = new Date(booking.end_at)
+  const start = parseDateForDisplay(booking.start_at)
+  const end = parseDateForDisplay(booking.end_at)
+  if (!start || !end) return false
   return start <= new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59) &&
     end >= new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0)
-}
-
-function formatDateTime(value) {
-  if (!value) return '—'
-  return new Date(value).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatTime(value) {
-  if (!value) return ''
-  return new Date(value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
 function displayName(user) {
@@ -136,7 +119,8 @@ function isClosedBooking(booking) {
 }
 
 function isPastBooking(booking, now = new Date()) {
-  return booking?.end_at && new Date(booking.end_at) < now
+  const end = parseDateForDisplay(booking?.end_at)
+  return !!end && end < now
 }
 
 function escapeHtml(value = '') {
@@ -358,7 +342,9 @@ export default function Booking() {
     let cancelled = false
 
     const checkAvailability = async () => {
-      const hasValidRange = form.start_at && form.end_at && new Date(form.end_at) > new Date(form.start_at)
+      const startIso = malaysiaDateTimeInputToIso(form.start_at)
+      const endIso = malaysiaDateTimeInputToIso(form.end_at)
+      const hasValidRange = startIso && endIso && endIso > startIso
       if (!showForm || !['equipment', 'vehicle'].includes(form.booking_type) || !hasValidRange) {
         setUnavailableItemIds([])
         setUnavailableVehicleIds([])
@@ -367,8 +353,6 @@ export default function Booking() {
       }
 
       setCheckingAvailability(true)
-      const startIso = new Date(form.start_at).toISOString()
-      const endIso = new Date(form.end_at).toISOString()
 
       let conflictQuery = supabase
         .from('bookings')
@@ -477,8 +461,8 @@ export default function Booking() {
       vehicle_id: booking.vehicle_id ? String(booking.vehicle_id) : '',
       purpose: booking.purpose || (booking.booking_type === 'venue' ? 'Meeting' : 'Demo'),
       customer_name: booking.customer_name || '',
-      start_at: localInputValue(new Date(booking.start_at)),
-      end_at: localInputValue(new Date(booking.end_at)),
+      start_at: localInputValue(parseDateForDisplay(booking.start_at)),
+      end_at: localInputValue(parseDateForDisplay(booking.end_at)),
       notes: booking.notes || '',
     })
     setSelectedItems((itemsByBooking[String(booking.id)] || []).map(item => item.id))
@@ -553,7 +537,9 @@ export default function Booking() {
       setSaving(false)
       return
     }
-    if (!form.start_at || !form.end_at || new Date(form.end_at) <= new Date(form.start_at)) {
+    const startIso = malaysiaDateTimeInputToIso(form.start_at)
+    const endIso = malaysiaDateTimeInputToIso(form.end_at)
+    if (!startIso || !endIso || endIso <= startIso) {
       setError('Please choose a valid start and end date/time.')
       setSaving(false)
       return
@@ -567,8 +553,8 @@ export default function Booking() {
       requested_by_old_user_id: editingBooking?.requested_by_old_user_id || getLegacyUserId(profile),
       purpose: form.purpose || 'Other',
       customer_name: form.customer_name.trim(),
-      start_at: new Date(form.start_at).toISOString(),
-      end_at: new Date(form.end_at).toISOString(),
+      start_at: startIso,
+      end_at: endIso,
       status: editingBooking?.status || (form.booking_type === 'vehicle' ? 'pending' : 'approved'),
       notes: form.notes.trim(),
     }
