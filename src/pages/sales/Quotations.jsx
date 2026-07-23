@@ -2049,7 +2049,15 @@ export default function Quotations() {
       })
       if (error) throw error
       const result = Array.isArray(data) ? data[0] : data
-      setQuotations(Array.isArray(result?.rows) ? result.rows : [])
+      const quotationRows = Array.isArray(result?.rows) ? result.rows : []
+      if (quotationRows.length === 0) {
+        setQuotations([])
+      } else {
+        const ids = quotationRows.map(row => row.id).filter(Boolean)
+        const { data: salesRows } = await supabase.from('quotation').select('id, sales_person').in('id', ids)
+        const salesById = new Map((salesRows || []).map(row => [String(row.id), row.sales_person || '']))
+        setQuotations(quotationRows.map(row => ({ ...row, sales_person: row.sales_person || salesById.get(String(row.id)) || '' })))
+      }
       setTotal(Number(result?.total_count || 0))
     } catch (error) {
       setQuotations([])

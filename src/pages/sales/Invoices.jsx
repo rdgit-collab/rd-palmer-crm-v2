@@ -1636,9 +1636,16 @@ export default function Invoices() {
         setInvoices([])
       } else {
         const ids = invoiceRows.map(row => row.id).filter(Boolean)
-        const { data: termRows } = await supabase.from('invoice').select('id, terms').in('id', ids)
-        const termsById = new Map((termRows || []).map(row => [String(row.id), row.terms || '']))
-        setInvoices(invoiceRows.map(row => ({ ...row, terms: row.terms || termsById.get(String(row.id)) || '' })))
+        const { data: detailRows } = await supabase.from('invoice').select('id, terms, sales_person').in('id', ids)
+        const detailsById = new Map((detailRows || []).map(row => [String(row.id), row]))
+        setInvoices(invoiceRows.map(row => {
+          const detail = detailsById.get(String(row.id))
+          return {
+            ...row,
+            terms: row.terms || detail?.terms || '',
+            sales_person: row.sales_person || detail?.sales_person || '',
+          }
+        }))
       }
       setTotal(Number(result?.total_count || 0))
     } catch (error) {
